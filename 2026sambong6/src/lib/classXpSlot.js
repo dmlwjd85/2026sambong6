@@ -98,13 +98,12 @@ export function classXpGrantDecision(xp, lastSlot, slotKey) {
 }
 
 /**
- * 이번 슬롯에 서버 트랜잭션을 돌릴 학생만 고릅니다.
- * 마스터 계정, 빈 id(예: 'student_' 문서), 이미 이번 슬롯을 받은 학생은 읽지 않습니다.
- * 화면 데이터에서 xp가 숫자가 아닌 학생은 invalidXp로 따로 돌려줍니다.
+ * 이번 종에 경험치를 줄 학생만 고릅니다. 서버를 읽지 않고 화면 데이터만 봐요.
+ * 마스터 계정, 빈 id(예: 'student_' 문서), 화면 데이터에서 이미 이번 종을 받은 학생은 뺍니다.
+ * 화면 데이터에서 xp가 숫자가 아닌 학생은 invalidXp로 따로 돌려줍니다(묶음 저장 전체가 거절되지 않게요).
  * skip(학생 → true)으로 신용 불량처럼 대상이 아닌 학생을 뺍니다.
- * settled(id → true)는 이 기기가 이번 슬롯에 이미 처리했거나 잠시 쉬는 학생이에요(화면 데이터가 늦게 와도 다시 읽지 않아요).
  */
-export function classXpTargets(students, slotKey, skip = () => false, settled = () => false) {
+export function classXpTargets(students, slotKey, skip = () => false) {
     const pending = [];
     const invalidXp = [];
     for (const stu of Array.isArray(students) ? students : []) {
@@ -115,33 +114,55 @@ export function classXpTargets(students, slotKey, skip = () => false, settled = 
         const decision = classXpGrantDecision(stu.xp, stu.lastClassXpSlot, slotKey);
         if (decision === 'already') continue;
         if (decision === 'invalid-xp') invalidXp.push(id);
-        else if (settled(id)) continue;
         else pending.push(id);
     }
     return { pending, invalidXp };
 }
 
-/** 사용량 초과·거절 뒤 다시 시도하지 않고 쉬는 시간(15분). */
-export const CLASS_XP_PAUSE_MS = 15 * 60 * 1000;
+/** 종이 친 뒤 주기까지 기다리는 시간(20초). 기기 시계가 조금 빨라도 서버 규칙이 같은 종으로 보게 여유를 둬요. */
+export const CLASS_XP_FIRE_DELAY_MS = 20 * 1000;
 
-/** 쉬기 기록. 새로고침해도 이어지도록 저장소에 JSON으로 넣어요. */
-export function classXpPauseRecord(nowMs, kind, ms = CLASS_XP_PAUSE_MS) {
-    return { at: nowMs, until: nowMs + ms, kind: String(kind || '') };
-}
+/** 타이머를 한 번에 거는 최대 시간(6시간). 기기가 잠들었다 깨거나 시계가 바뀌어도 다시 계산해요. */
+export const CLASS_XP_MAX_WAIT_MS = 6 * 60 * 60 * 1000;
+
+/** 한 번에 묶어 저장할 학생 수. Firestore 한 번 저장 한도(500)보다 넉넉히 작게 둬요. */
+export const CLASS_XP_CHUNK = 400;
 
 /**
- * 저장된 쉬기 기록에서 아직 유효한 끝 시각(ms)을 돌려줘요. 쉬지 않으면 0이에요.
- * 끝 시각이 지났거나, 형식이 틀렸거나, 끝 시각이 지금+쉬는 시간보다 멀면(기기 시계를 되돌린 경우) 0이에요.
+ * 다음에 경험치를 줄 시각(ms): 평일 다음 종 시각 + 20초. 일주일 안에 없으면 null이에요.
+ * 종 시각은 지났지만 20초가 아직 안 지났으면 그 종을 돌려줘요.
  */
-export function classXpPauseUntil(raw, nowMs, ms = CLASS_XP_PAUSE_MS) {
-    let rec = raw;
-    if (typeof raw === 'string') {
-        try { rec = JSON.parse(raw); } catch (_) { return 0; }
+export function classXpNextFireMs(nowMs, delayMs = CLASS_XP_FIRE_DELAY_MS) {
+    if (!Number.isFinite(nowMs)) return null;
+    for (let d = 0; d < 8; d += 1) {
+        const wall = kstWallClock(new Date(nowMs + d * 86400000));
+        if (wall.weekday === 0 || wall.weekday === 6) continue;
+        for (const bell of CLASS_XP_END_TIMES) {
+            const fireMs = slotFromWall(wall, bell).slotMs + delayMs;
+            if (fireMs > nowMs) return fireMs;
+        }
     }
-    const until = Number(rec && rec.until);
-    if (!Number.isFinite(until) || !Number.isFinite(nowMs)) return 0;
-    if (until <= nowMs || until > nowMs + ms) return 0;
-    return until;
+    return null;
+}
+
+/** 타이머 대기 시간(ms). 최소 1초, 최대 6시간이에요. */
+export function classXpTimerDelay(nowMs, fireMs, maxMs = CLASS_XP_MAX_WAIT_MS) {
+    if (!Number.isFinite(fireMs) || !Number.isFinite(nowMs)) return maxMs;
+    return Math.max(1000, Math.min(fireMs - nowMs, maxMs));
+}
+
+/** 이 기기가 이 종을 이미 줬는지(또는 주려고 했는지). 저장소 값은 마지막으로 준 종 키예요. */
+export function classXpGivenOnDevice(raw, slotKey) {
+    return !!slotKey && String(raw == null ? '' : raw) === String(slotKey);
+}
+
+/** 학생 id 목록을 묶음 크기로 나눠요. */
+export function classXpChunks(ids, size = CLASS_XP_CHUNK) {
+    const list = Array.isArray(ids) ? ids : [];
+    const step = Math.max(1, Math.floor(size) || 1);
+    const out = [];
+    for (let i = 0; i < list.length; i += step) out.push(list.slice(i, i + step));
+    return out;
 }
 
 /** 저장 실패를 거절(denied), 사용량 초과(quota), 그 밖(other)으로 나눕니다. */
@@ -166,14 +187,14 @@ export function classXpIssueMessage(kind, timeStr, labels = []) {
     const when = timeStr ? `${timeStr} ` : '';
     const who = labelList(labels);
     if (kind === 'quota') {
-        return `⏰ ${when}수업 종료 경험치를 아직 못 줬어요. 오늘 서버 사용량이 다 차서 저장이 막혔어요. 풀리면 자동으로 다시 줄게요.`;
+        return `⏰ ${when}수업 종료 경험치를 못 줬어요. 오늘 서버 사용량이 다 차서 이번 종은 건너뛰어요.`;
     }
     if (kind === 'denied') {
-        return `⏰ ${when}수업 종료 경험치를 저장하지 못했어요. 이 기기 시계를 한국 시간(서울)으로 자동 설정해 주세요. 15분 뒤 자동으로 다시 시도해요.`;
+        return `⏰ ${when}수업 종료 경험치를 저장하지 못해 이번 종은 건너뛰어요. 이 기기 시계를 한국 시간(서울)으로 자동 설정해 주세요.`;
+    }
+    if (kind === 'other') {
+        return `⏰ ${when}수업 종료 경험치를 저장하지 못해 이번 종은 건너뛰어요. 다음 종에는 다시 줄게요.`;
     }
     if (!who) return '';
-    if (kind === 'xp') {
-        return `⏰ ${when}수업 종료 경험치를 못 준 학생이 있어요. 경험치 값이 숫자가 아니에요: ${who}`;
-    }
-    return `⏰ ${when}수업 종료 경험치를 못 받은 학생이 있어요. 잠시 뒤 다시 줄게요: ${who}`;
+    return `⏰ ${when}수업 종료 경험치를 못 준 학생이 있어요. 경험치 값이 숫자가 아니에요: ${who}`;
 }

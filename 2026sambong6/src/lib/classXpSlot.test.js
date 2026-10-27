@@ -11,6 +11,9 @@ import {
     classXpGivenOnDevice,
     classXpIssueMessage,
     classXpNextFireMs,
+    classXpNoticeFirstToday,
+    classXpNoticeKey,
+    classXpStudentLabel,
     classXpTimerDelay,
     classXpSlotFromTime,
     classXpTargets,
@@ -137,22 +140,57 @@ describe('수업 XP 대상 고르기와 알림 문구', () => {
         assert.equal(classXpErrorKind(null), 'other');
     });
 
-    it('알림 문구는 해요체이고 빈 이름을 넣지 않는다', () => {
+    it('알림 문구는 다정한 해요체이고 빈 이름을 넣지 않는다', () => {
         const quota = classXpIssueMessage('quota', '10:30');
-        assert.match(quota, /10:30 수업 종료 경험치를 못 줬어요/);
-        assert.match(quota, /이번 종은 건너뛰어요\.$/);
+        assert.match(quota, /10:30 수업 종료 경험치를 이번에는 못 드렸어요/);
+        assert.match(quota, /사용량이 다 차서/);
         assert.match(classXpIssueMessage('denied', '10:30'), /한국 시간/);
-        assert.match(classXpIssueMessage('other', '10:30'), /이번 종은 건너뛰어요/);
+        assert.match(classXpIssueMessage('other', '10:30'), /다음 종에 다시 챙길게요/);
+        assert.equal(classXpIssueMessage('aborted', '10:30'), classXpIssueMessage('other', '10:30'));
         assert.equal(
             classXpIssueMessage('xp', '10:30', ['3. 홍길동', '', '  ']),
-            '⏰ 10:30 수업 종료 경험치를 못 준 학생이 있어요. 경험치 값이 숫자가 아니에요: 3. 홍길동',
+            '⏰ 10:30 경험치를 못 받은 학생이 있어요. 경험치 값이 숫자가 아니라서 그래요: 3. 홍길동. 학생 정보에서 한 번 살펴봐 주세요.',
         );
         assert.equal(classXpIssueMessage('xp', '10:30', ['']), '');
         const many = classXpIssueMessage('xp', '10:30', ['1. 가', '2. 나', '3. 다', '4. 라', '5. 마', '6. 바', '7. 사']);
-        assert.match(many, /5\. 마 외 2명$/);
+        assert.match(many, /5\. 마 외 2명\. /);
         for (const text of [quota, many, classXpIssueMessage('denied', '13:50'), classXpIssueMessage('other', '13:50')]) {
             assert.doesNotMatch(text, /습니다|, ,|: ,|다시 시도/);
+            assert.match(text, /요\.$/);
         }
+    });
+
+    it('409는 aborted로 따로 나눈다', () => {
+        assert.equal(classXpErrorKind({ code: 'aborted' }), 'aborted');
+        assert.equal(classXpErrorKind({ code: 'firestore/aborted' }), 'aborted');
+    });
+
+    it('C-4: 이름이 없어 번호가 겹치는 라벨은 "23번"으로 줄인다', () => {
+        assert.equal(classXpStudentLabel('23', '23. 23'), '23번');
+        assert.equal(classXpStudentLabel('23', '23. 23 (전학)'), '23번 (전학)');
+        assert.equal(classXpStudentLabel('23', ''), '23번');
+        assert.equal(classXpStudentLabel('3', '3. 홍길동'), '3. 홍길동');
+        assert.equal(classXpStudentLabel('2', '2. 23'), '2. 23');
+        assert.doesNotMatch(classXpIssueMessage('xp', '11:20', [classXpStudentLabel('23', '23. 23')]), /23\. 23/);
+    });
+
+    it('B-2: 토스트 하루 한 번 키를 이유별로 나눈다', () => {
+        const mem = new Map();
+        const storage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)) };
+        assert.notEqual(classXpNoticeKey('c1', 'xp'), classXpNoticeKey('c1', 'quota'));
+        assert.notEqual(classXpNoticeKey('c1', 'denied'), classXpNoticeKey('c1', 'quota'));
+        // 11:20에 xp 안내가 뜬 날, 13:50의 429 안내도 꼭 떠요.
+        assert.equal(classXpNoticeFirstToday(storage, 'c1', 'xp', '2026-10-27'), true);
+        assert.equal(classXpNoticeFirstToday(storage, 'c1', 'quota', '2026-10-27'), true);
+        assert.equal(classXpNoticeFirstToday(storage, 'c1', 'denied', '2026-10-27'), true);
+        // 같은 이유는 하루 한 번만이에요.
+        assert.equal(classXpNoticeFirstToday(storage, 'c1', 'quota', '2026-10-27'), false);
+        assert.equal(classXpNoticeFirstToday(storage, 'c1', 'xp', '2026-10-27'), false);
+        // 다음 날에는 다시 떠요. 다른 학급과 섞이지 않아요.
+        assert.equal(classXpNoticeFirstToday(storage, 'c1', 'quota', '2026-10-28'), true);
+        assert.equal(classXpNoticeFirstToday(storage, 'c2', 'quota', '2026-10-27'), true);
+        const broken = { getItem: () => { throw new Error('x'); }, setItem: () => {} };
+        assert.equal(classXpNoticeFirstToday(broken, 'c1', 'quota', '2026-10-27'), false);
     });
 
     it('다음 종 시각 + 20초에 타이머를 한 번 건다', () => {

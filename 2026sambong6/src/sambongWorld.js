@@ -549,6 +549,7 @@ import { CLASS_XP_FIRE_DELAY_MS, classXpCatchupSlot, classXpChunks, classXpError
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
+import { levelXpForDisplay } from './lib/levelDisplay.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
@@ -21933,8 +21934,10 @@ ${subjectLine}
                         statusMessage: window.playerState.statusMessage || data.statusMessage,
                     }
                     : data;
-                const lv = getLevelInfo(displayData.xp || 0);
-                const exactLv = calculateExactLevel(displayData.xp || 0);
+                // Lv 표시: 대시보드(#79)와 같은 계산. 경험치가 없거나 0 이하이면 0으로 보고 그려요(Lv.NaN 방지, 표시만).
+                const lvXp = levelXpForDisplay(displayData.xp);
+                const lv = getLevelInfo(lvXp);
+                const exactLv = calculateExactLevel(lvXp);
 
                 const aura = applyEquippedAura(displayData, lv.info.borderColor, 'shadow-md');
                 let border = aura.border;
@@ -25543,9 +25546,11 @@ ${subjectLine}
             maybeShowConvenienceOrderPopup();
             maybeShowMusicTimeRequestPopup({ fromCache: false });
             
+            // 경험치가 없거나 0 이하이면 Lv·막대는 0으로 보고 그려요(Lv.NaN 방지, 표시만). 광장 카드와 같은 계산이에요.
             const xp = window.playerState.xp || 0;
-            const lvInfo = getLevelInfo(xp); 
-            const exactLv = calculateExactLevel(xp);
+            const lvXp = levelXpForDisplay(xp);
+            const lvInfo = getLevelInfo(lvXp); 
+            const exactLv = calculateExactLevel(lvXp);
             
             const mySid = localStorage.getItem('sambong_student_id');
             const dashAura = applyEquippedAura(window.playerState, 'border-slate-600', 'shadow-lg');
@@ -25664,8 +25669,8 @@ ${subjectLine}
             }
 
             let prevMax = lvInfo.index > 0 ? LEVEL_DATA[lvInfo.index-1].max : 0;
-            let curMax = lvInfo.info.max === Infinity ? xp : lvInfo.info.max;
-            let progress = exactLv >= 100 ? 100 : ((xp - prevMax) / (curMax - prevMax)) * 100;
+            let curMax = lvInfo.info.max === Infinity ? lvXp : lvInfo.info.max;
+            let progress = exactLv >= 100 ? 100 : ((lvXp - prevMax) / (curMax - prevMax)) * 100;
             
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);

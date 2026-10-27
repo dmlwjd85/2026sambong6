@@ -1213,8 +1213,12 @@ describe('firestore rules: 보드게임 방 정리(hostUid·30분)', { skip: emu
         await assertSucceeds(deleteDoc(doc(other().firestore(), roomPath('bg_r1'))));
     });
 
-    it('같은 학번 방장이 다른 기기에서, 10분 넘게 빈 내 알까기 방을 새로 만들 수 있어요', async () => {
+    it('R2-2: 같은 학번이라도 다른 기기(uid)는 hostUid가 있는 알까기 방을 덮어쓰지 못하고, 다른 id로 새로 만들어요', async () => {
         await seed(makeRoom({ id: 'alk_1', gameType: 'alkkagi', ageMin: 12 }), 'alk_1');
+        await assertFails(setDoc(doc(other().firestore(), roomPath('alk_1')), makeRoom({ id: 'alk_1', gameType: 'alkkagi', ageMin: 0, hostUid: 'uid-other' })));
+        await assertSucceeds(setDoc(doc(other().firestore(), roomPath('alk_1_ab12cd')), makeRoom({ id: 'alk_1_ab12cd', gameType: 'alkkagi', ageMin: 0, hostUid: 'uid-other' })));
+        // 30분이 지나면 누구나 덮어써요(정리 대상)
+        await seed(makeRoom({ id: 'alk_1', gameType: 'alkkagi', ageMin: 31 }), 'alk_1');
         await assertSucceeds(setDoc(doc(other().firestore(), roomPath('alk_1')), makeRoom({ id: 'alk_1', gameType: 'alkkagi', ageMin: 0, hostUid: 'uid-other' })));
     });
 });
@@ -1250,7 +1254,8 @@ describe('firestore rules: 보드게임 방 쪼개 쓰기 막기(QA rules88 45�
         const host = testEnv.authenticatedContext('uid-host').firestore();
         const other = testEnv.authenticatedContext('uid-other').firestore();
         const anon = testEnv.unauthenticatedContext().firestore();
-        const room = (o = {}) => ({ gameType: 'alkkagi', hostId: '1', hostUid: 'uid-host', status: 'waiting', members: [{ id: '1' }], joinRequests: [], createdAt: now, updatedAt: now, lastActivityAt: now, ...o });
+        // r3: 새 방 모양(R2-1)에 맞게 방장 자리에 uid와 memberUids를 넣어요.
+        const room = (o = {}) => ({ gameType: 'alkkagi', hostId: '1', hostUid: 'uid-host', status: 'waiting', members: [{ id: '1', uid: 'uid-host' }], memberUids: ['uid-host'], joinRequests: [], createdAt: now, updatedAt: now, lastActivityAt: now, ...o });
         const noHost = (r) => { const { hostUid, ...rest } = r; return rest; };
         const seed = (id, d) => testEnv.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `${RP}/${id}`), d));
         const R = (id) => doc(other, `${RP}/${id}`);
@@ -1272,8 +1277,9 @@ describe('firestore rules: 보드게임 방 쪼개 쓰기 막기(QA rules88 45�
         await t('2 hostUid 없이 만들기(옛 화면)', false, setDoc(H('bg_x'), noHost(room())));
         await t('3 남의 uid로 만들기', false, setDoc(R('alk_2'), room({ hostId: '2' })));
         await t('4 비로그인 만들기', false, setDoc(doc(anon, `${RP}/alk_3`), room()));
-        await t('5 남이 참가 신청', true, updateDoc(R('alk_1'), { joinRequests: [{ id: '2', status: 'pending' }], updatedAt: now + 1 }));
-        await t('6 남이 수 두기/playing', true, updateDoc(R('alk_1'), { status: 'playing', updatedAt: now + 2 }));
+        await t('5 남이 참가 신청(내 uid)', true, updateDoc(R('alk_1'), { joinRequests: [{ id: '2', status: 'pending', uid: 'uid-other' }], updatedAt: now + 1 }));
+        await t('5b 남이 uid 없이 참가 신청(r3 R2-3에서 막음)', false, updateDoc(R('alk_1'), { joinRequests: [{ id: '2', status: 'pending', uid: 'uid-other' }, { id: '3', status: 'pending' }], updatedAt: now + 1 }));
+        await t('6 남이 승인 없이 playing으로 시작(r3 R2-3에서 막음)', false, updateDoc(R('alk_1'), { status: 'playing', updatedAt: now + 2 }));
         await t('7 남이 닫기(status=closed)', false, updateDoc(R('alk_1'), { status: 'closed' }));
         await seed('alk_1', room());
         await t('8 남이 hostUid 바꿔치기', false, updateDoc(R('alk_1'), { hostUid: 'uid-other' }));
@@ -1341,7 +1347,9 @@ describe('firestore rules: 보드게임 방 쪼개 쓰기 막기(QA rules88 45�
     it('옛 화면 o1~o5: 앱 배포와 규칙 게시 사이', async () => {
         const { room, noHost, seed, R, t } = ctx();
         await seed('o1', room());
-        await t('o1 옛 화면 참가 신청(hostUid 안 건드림)', true, updateDoc(R('o1'), { joinRequests: [{ id: '2' }] }));
+        // r3 R2-3: 남(비참가자)의 신청은 내 uid가 든 신청만 받아요. 옛 화면(v1.47)은 tx.set으로 hostUid도 지워서 원래 막혀 있었어요.
+        await t('o1 옛 화면 참가 신청(uid 없음, r3에서 막음)', false, updateDoc(R('o1'), { joinRequests: [{ id: '2' }] }));
+        await t('o1b 새 화면 참가 신청(내 uid)', true, updateDoc(R('o1'), { joinRequests: [{ id: '2', status: 'pending', uid: 'uid-other' }] }));
         await t('o2 옛 화면이 hostUid 있는 방 위에 tx.set(hostUid 없음)', false, setDoc(R('o1'), noHost(room({ hostId: '2' }))));
         await seed('o3', noHost(room()));
         await t('o3 옛 방(hostUid 없음)에 옛 화면 tx.set', true, setDoc(R('o3'), noHost(room({ hostId: '2' }))));
@@ -1373,7 +1381,9 @@ describe('firestore rules: 보드게임 방 쪼개 쓰기 막기(QA rules88 45�
         await t('남의 uid로 자리 넣기 금지', false, updateDoc(R('m1'), { members: [hostSeat, { id: '2', uid: 'uid-x' }], memberUids: ['uid-host', 'uid-x'] }));
         await t('자리는 안 넣고 memberUids에만 나 넣기 금지', false, updateDoc(R('m1'), { memberUids: ['uid-host', 'uid-other'] }));
         await t('방장 자리를 빼며 내 자리 넣기 금지', false, updateDoc(R('m1'), { members: [mySeat], memberUids: ['uid-other'] }));
-        await t('대기 방에 내 자리 하나 넣기', true, updateDoc(R('m1'), { members: [hostSeat, mySeat], memberUids: ['uid-host', 'uid-other'] }));
+        // r3 R2-3: 자리는 방장 승인으로만 생겨요(앱도 스스로 자리를 넣지 않아요).
+        await t('대기 방에 내 자리 하나 넣기(승인 없이, r3에서 막음)', false, updateDoc(R('m1'), { members: [hostSeat, mySeat], memberUids: ['uid-host', 'uid-other'] }));
+        await seed('m1', room({ members: [hostSeat, mySeat], memberUids: ['uid-host', 'uid-other'], maxPlayers: 2 }));
         await t('내 자리 빼기', true, updateDoc(R('m1'), { members: [hostSeat], memberUids: ['uid-host'] }));
         await seed('m2', room({ status: 'playing', members: [hostSeat], memberUids: ['uid-host'] }));
         await t('두는 중인 판에 끼어들기 금지', false, updateDoc(R('m2'), { members: [hostSeat, mySeat], memberUids: ['uid-host', 'uid-other'] }));
@@ -1385,11 +1395,145 @@ describe('firestore rules: 보드게임 방 쪼개 쓰기 막기(QA rules88 45�
     });
 
     it('lastActivityAt은 줄지 않고 서버 시각 근처여야 해요', async () => {
-        const { now, room, seed, R, t } = ctx();
+        const { now, room, seed, R, H, t } = ctx();
         await seed('l1', room({ lastActivityAt: now - 5 * M }));
-        await t('지금 시각으로 올리기', true, updateDoc(R('l1'), { lastActivityAt: Date.now() }));
-        await t('한 시간 뒤로 미리 올리기 금지', false, updateDoc(R('l1'), { lastActivityAt: Date.now() + 60 * M }));
-        await t('문자열로 바꾸기 금지', false, updateDoc(R('l1'), { lastActivityAt: 'x' }));
-        await t('그대로 두고 다른 칸만 쓰기', true, updateDoc(R('l1'), { updatedAt: Date.now() }));
+        await t('방장이 지금 시각으로 올리기', true, updateDoc(H('l1'), { lastActivityAt: Date.now() }));
+        await t('남(비참가자)이 올리기만 하기(r3 R2-3에서 막음)', false, updateDoc(R('l1'), { lastActivityAt: Date.now() }));
+        await t('한 시간 뒤로 미리 올리기 금지', false, updateDoc(H('l1'), { lastActivityAt: Date.now() + 60 * M }));
+        await t('문자열로 바꾸기 금지', false, updateDoc(H('l1'), { lastActivityAt: 'x' }));
+        await t('그대로 두고 다른 칸만 쓰기', true, updateDoc(H('l1'), { updatedAt: Date.now() }));
+    });
+});
+
+// #88 r3: QA r2 R2-1~R2-4 공격(rules88b c1~c13 + 추가)을 옮겼어요. 거부여야 하는 건 모두 거부돼야 해요.
+describe('firestore rules: 보드게임 방 QA r2 공격(R2-1~R2-4)', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {
+    /** @type {import('@firebase/rules-unit-testing').RulesTestEnvironment | null} */
+    let testEnv = null;
+    const RP = 'artifacts/sambong-class-2026/public/data/boardGameRooms';
+    const M = 60000;
+    before(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId,
+            firestore: { rules: fs.readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8') },
+        });
+    });
+    after(async () => { if (testEnv) await testEnv.cleanup(); });
+    beforeEach(async () => { await testEnv.clearFirestore(); });
+
+    function ctx() {
+        const now = Date.now();
+        const fs0 = (uid) => testEnv.authenticatedContext(uid).firestore();
+        const A = fs0('uid-A'); // 방장(학번 1)
+        const B = fs0('uid-B'); // 참가자(학번 2)
+        const C = fs0('uid-C'); // 남(학번 3)
+        const D = (db, id) => doc(db, `${RP}/${id}`);
+        const seed = (id, d) => testEnv.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `${RP}/${id}`), d));
+        const fresh = (o = {}) => ({
+            id: 'x', gameType: 'gomoku', status: 'waiting', hostId: '1', hostUid: 'uid-A', hostName: '민준',
+            minPlayers: 2, maxPlayers: 2, members: [{ id: '1', name: '민준', role: 'host', seat: 0, uid: 'uid-A' }],
+            joinRequests: [], timerEnabled: false, timerSec: 30, lastActivityAt: now, createdAt: now, updatedAt: now,
+            round: 0, game: { board: [], winner: '' }, participantIds: ['1'], memberUids: ['uid-A'], ...o,
+        });
+        const playing = (o = {}) => fresh({
+            status: 'playing', createdAt: now - 5 * M, lastActivityAt: now - 1 * M,
+            members: [{ id: '1', name: '민준', role: 'host', seat: 0, uid: 'uid-A' }, { id: '2', name: '서연', role: 'player', seat: 1, uid: 'uid-B' }],
+            participantIds: ['1', '2'], memberUids: ['uid-A', 'uid-B'], ...o,
+        });
+        const t = async (name, allow, p) => {
+            try {
+                if (allow) await assertSucceeds(p); else await assertFails(p);
+            } catch (e) {
+                throw new Error(`${name}: ${allow ? '허용' : '거부'}이어야 해요 (${e && (e.code || e.message)})`);
+            }
+        };
+        return { now, A, B, C, D, seed, fresh, playing, t };
+    }
+
+    it('R2-1 만들기: 시각 ±10분·대기·방장 혼자일 때만', async () => {
+        const { now, A, D, fresh, t } = ctx();
+        await t('지금 시각 새 방', true, setDoc(D(A, 'r_ok'), fresh()));
+        await t('c7 createdAt 1년 뒤로 만들기', false, setDoc(D(A, 'r1'), fresh({ createdAt: now + 365 * 24 * 60 * M, lastActivityAt: now + 365 * 24 * 60 * M })));
+        await t('createdAt 11분 뒤', false, setDoc(D(A, 'r2'), fresh({ createdAt: now + 11 * M })));
+        await t('createdAt 11분 전', false, setDoc(D(A, 'r3'), fresh({ createdAt: now - 11 * M })));
+        await t('lastActivityAt 11분 뒤', false, setDoc(D(A, 'r4'), fresh({ lastActivityAt: now + 11 * M })));
+        await t('c8 createdAt=1·playing으로 만들기', false, setDoc(D(A, 'r5'), fresh({ createdAt: 1, status: 'playing' })));
+        await t('playing으로 만들기', false, setDoc(D(A, 'r6'), fresh({ status: 'playing' })));
+        await t('finished로 만들기', false, setDoc(D(A, 'r7'), fresh({ status: 'finished' })));
+        await t('남을 넣은 채 만들기(2명)', false, setDoc(D(A, 'r8'), fresh({ members: [{ id: '1', uid: 'uid-A' }, { id: '2', uid: 'uid-B' }], memberUids: ['uid-A', 'uid-B'], participantIds: ['1', '2'] })));
+        await t('방장 자리 uid가 남', false, setDoc(D(A, 'r9'), fresh({ members: [{ id: '1', uid: 'uid-B' }] })));
+        await t('memberUids에 남 끼우기', false, setDoc(D(A, 'r10'), fresh({ memberUids: ['uid-A', 'uid-B'] })));
+        await t('participantIds에 남 끼우기', false, setDoc(D(A, 'r11'), fresh({ participantIds: ['1', '7'] })));
+        await t('신청을 미리 넣어 만들기', false, setDoc(D(A, 'r12'), fresh({ joinRequests: [{ id: '7', status: 'approved' }] })));
+        await t('자리 id가 방장 학번이 아님', false, setDoc(D(A, 'r13'), fresh({ members: [{ id: '9', uid: 'uid-A' }] })));
+    });
+
+    it('R2-1 덮어쓰기: 정리된 자리에 새로 쓸 때도 같은 모양만', async () => {
+        const { now, A, C, D, seed, fresh, t } = ctx();
+        const due = fresh({ hostUid: 'uid-X', createdAt: now - 31 * M, lastActivityAt: now - 31 * M });
+        await seed('o1', due);
+        await t('30분 지난 방 덮어쓰기(미래 createdAt)', false, setDoc(D(C, 'o1'), fresh({ hostId: '3', hostUid: 'uid-C', members: [{ id: '3', uid: 'uid-C' }], memberUids: ['uid-C'], participantIds: ['3'], createdAt: now + 60 * M })));
+        await t('30분 지난 방 덮어쓰기(playing)', false, setDoc(D(C, 'o1'), fresh({ hostId: '3', hostUid: 'uid-C', members: [{ id: '3', uid: 'uid-C' }], memberUids: ['uid-C'], participantIds: ['3'], status: 'playing' })));
+        await t('30분 지난 방 덮어쓰기(정상)', true, setDoc(D(C, 'o1'), fresh({ hostId: '3', hostUid: 'uid-C', members: [{ id: '3', uid: 'uid-C' }], memberUids: ['uid-C'], participantIds: ['3'] })));
+        const { hostUid, ...legacy } = fresh({ createdAt: now - 2 * M });
+        await seed('o2', legacy);
+        await t('옛 방(hostUid 없음) 차지하며 createdAt 미래로', false, setDoc(D(C, 'o2'), { ...legacy, hostUid: 'uid-C', createdAt: now + 60 * M }));
+        await seed('o3', fresh({ status: 'finished' }));
+        await t('내 끝난 방 다시 쓰기(미래 시각)', false, setDoc(D(A, 'o3'), fresh({ createdAt: now + 60 * M, lastActivityAt: now + 60 * M })));
+        await t('내 끝난 방 다시 쓰기(정상)', true, setDoc(D(A, 'o3'), fresh()));
+    });
+
+    it('R2-2: 같은 hostId만으로는 hostUid 있는 방을 못 덮어써요', async () => {
+        const { now, A, C, D, seed, fresh, t } = ctx();
+        const spoof = fresh({ hostUid: 'uid-C', members: [{ id: '1', uid: 'uid-C' }], memberUids: ['uid-C'] });
+        await seed('alk_1', fresh({ gameType: 'alkkagi', status: 'finished' }));
+        await t('c6 끝난 방을 같은 hostId·내 uid로 덮어쓰기', false, setDoc(D(C, 'alk_1'), { ...spoof, gameType: 'alkkagi' }));
+        await seed('alk_1', fresh({ gameType: 'alkkagi', status: 'closed' }));
+        await t('c6b 닫힌 방', false, setDoc(D(C, 'alk_1'), { ...spoof, gameType: 'alkkagi' }));
+        await seed('alk_1', fresh({ gameType: 'alkkagi', lastActivityAt: now - 11 * M, createdAt: now - 12 * M }));
+        await t('c6c 10분 멈춘 대기 방', false, setDoc(D(C, 'alk_1'), { ...spoof, gameType: 'alkkagi' }));
+        await t('다른 id(alk_1_xxxxxx)로는 만들어요', true, setDoc(D(C, 'alk_1_ab12cd'), { ...spoof, gameType: 'alkkagi' }));
+        await t('같은 기기 방장은 10분 멈춘 내 방 다시 써요', true, setDoc(D(A, 'alk_1'), fresh({ gameType: 'alkkagi' })));
+    });
+
+    it('R2-3: 남(비참가자)은 판·신청·자리·정리 시각을 못 바꿔요', async () => {
+        const { now, A, B, C, D, seed, fresh, playing, t } = ctx();
+        await seed('p', playing());
+        await t('c1 남이 수 바꾸기', false, updateDoc(D(C, 'p'), { game: { board: [1], winner: '' } }));
+        await t('c1c 남이 승자 정하기', false, updateDoc(D(C, 'p'), { game: { board: [], winner: 'white' }, status: 'finished' }));
+        await t('c5 남이 진행 판 lastActivityAt 밀기', false, updateDoc(D(C, 'p'), { lastActivityAt: Date.now() }));
+        await t('c13 남이 큰 칸 붙이기', false, updateDoc(D(C, 'p'), { junk: 'x'.repeat(1000) }));
+        await t('참가자는 수를 둬요', true, updateDoc(D(B, 'p'), { game: { board: [1], winner: '' }, lastActivityAt: Date.now() }));
+        const reqB = { id: '2', name: '서연', status: 'pending', at: now, uid: 'uid-B' };
+        await seed('w', fresh({ joinRequests: [reqB], participantIds: ['1', '2'] }));
+        await t('c2 남이 남의 신청 지우기', false, updateDoc(D(C, 'w'), { joinRequests: [], participantIds: ['1'] }));
+        await t('c2c 남이 남의 신청 승인하기', false, updateDoc(D(C, 'w'), { joinRequests: [{ ...reqB, status: 'approved' }] }));
+        await t('남이 남 uid로 신청 넣기', false, updateDoc(D(C, 'w'), { joinRequests: [reqB, { id: '3', status: 'pending', uid: 'uid-X' }] }));
+        await t('남이 승인된 신청 넣기', false, updateDoc(D(C, 'w'), { joinRequests: [reqB, { id: '3', status: 'approved', uid: 'uid-C' }] }));
+        await t('c3 남이 participantIds에 다른 학번 넣기', false, updateDoc(D(C, 'w'), { participantIds: ['1', '2', '7'] }));
+        await t('c3b 내 신청과 함께 다른 학번도 넣기', false, updateDoc(D(C, 'w'), { joinRequests: [reqB, { id: '3', status: 'pending', uid: 'uid-C' }], participantIds: ['1', '2', '3', '7'] }));
+        await t('c4 승인 없이 자리 차지', false, updateDoc(D(C, 'w'), { members: [{ id: '1', uid: 'uid-A' }, { id: '3', uid: 'uid-C' }], memberUids: ['uid-A', 'uid-C'] }));
+        await t('c4c 남이 시작하기', false, updateDoc(D(C, 'w'), { status: 'playing' }));
+        await t('c4d 남이 인원 바꾸기', false, updateDoc(D(C, 'w'), { maxPlayers: 9 }));
+        await t('남이 대기 방 lastActivityAt만 밀기', false, updateDoc(D(C, 'w'), { lastActivityAt: Date.now() }));
+        await t('남이 내 신청 넣기(정상)', true, updateDoc(D(C, 'w'), { joinRequests: [reqB, { id: '3', status: 'pending', at: now, uid: 'uid-C' }], participantIds: ['1', '2', '3'], lastActivityAt: Date.now() }));
+        await t('남이 내 신청 취소(정상)', true, updateDoc(D(C, 'w'), { joinRequests: [reqB], participantIds: ['1', '2'], lastActivityAt: Date.now() }));
+        await t('방장은 승인해요', true, updateDoc(D(A, 'w'), { joinRequests: [{ ...reqB, status: 'approved' }], members: [{ id: '1', uid: 'uid-A' }, { id: '2', uid: 'uid-B' }], memberUids: ['uid-A', 'uid-B'] }));
+        await seed('idle', fresh({ lastActivityAt: now - 11 * M, createdAt: now - 12 * M }));
+        await t('10분 멈춘 방 남이 닫기(정리, #83 #7 유지)', true, updateDoc(D(C, 'idle'), { status: 'closed' }));
+        await seed('busy', fresh());
+        await t('#83 #7 활동 중인 방 남이 닫기', false, updateDoc(D(C, 'busy'), { status: 'closed' }));
+    });
+
+    it('R2-4: uid 없이 승인된 자리는 내 uid만 채우고 끝내거나 나가요', async () => {
+        const { B, C, D, seed, playing, t } = ctx();
+        const noUid = playing({ members: [{ id: '1', uid: 'uid-A' }, { id: '2', name: '서연', role: 'player', seat: 1 }], memberUids: ['uid-A'] });
+        const claimed = { members: [{ id: '1', uid: 'uid-A' }, { id: '2', name: '서연', role: 'player', seat: 1, uid: 'uid-B' }], memberUids: ['uid-A', 'uid-B'], lastActivityAt: Date.now() };
+        await seed('q', noUid);
+        await t('uid 채우면서 판도 바꾸기', false, updateDoc(D(B, 'q'), { ...claimed, game: { board: [9], winner: '' } }));
+        await t('uid 채우면서 자리 이름 바꾸기', false, updateDoc(D(B, 'q'), { ...claimed, members: [claimed.members[0], { ...claimed.members[1], name: '가짜' }] }));
+        await t('uid 채우기(자리 차지)', true, updateDoc(D(B, 'q'), claimed));
+        await t('이미 uid 있는 자리를 남이 다시 차지', false, updateDoc(D(C, 'q'), { members: [claimed.members[0], { ...claimed.members[1], uid: 'uid-C' }], memberUids: ['uid-A', 'uid-C'] }));
+        await t('채운 뒤 끝내기', true, updateDoc(D(B, 'q'), { status: 'finished', lastActivityAt: Date.now() }));
+        await t('채운 뒤 내 자리 빼고 나가기', true, updateDoc(D(B, 'q'), { members: [claimed.members[0]], memberUids: ['uid-A'] }));
     });
 });

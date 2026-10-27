@@ -467,6 +467,27 @@ service cloud.firestore {
       function roomTimesOk(n) {
         return n.get('createdAt', null) is number && n.get('lastActivityAt', null) is number;
       }
+      // 서버 시각 앞뒤 10분 안의 숫자
+      function roomTimeNear(v) {
+        return v is number
+          && v <= request.time.toMillis() + 600000
+          && v >= request.time.toMillis() - 600000;
+      }
+      // 새로 만드는 방 모양(R2-1): 대기 상태, 방장 한 명(내 uid), 신청 없음, 만든 시각·마지막 활동이 서버 시각 앞뒤 10분 안.
+      // 미래 시각으로 만들어 정리를 피하거나 로비 맨 위를 차지하는 방을 막아요.
+      function roomFreshShape(n) {
+        let m = roomMembers(n);
+        return n.get('status', '') == 'waiting'
+          && roomTimeNear(n.get('createdAt', null))
+          && roomTimeNear(n.get('lastActivityAt', null))
+          && n.get('hostId', '') is string && n.get('hostId', '') != ''
+          && m.size() == 1
+          && m[0].get('id', '') == n.get('hostId', '')
+          && m[0].get('uid', '') == request.auth.uid
+          && roomMemberUids(n) == [request.auth.uid]
+          && n.get('joinRequests', []) == []
+          && n.get('participantIds', [n.get('hostId', '')]) == [n.get('hostId', '')];
+      }
       // lastActivityAt: 그대로이거나, 줄지 않고 서버 시각 앞뒤 10분 안의 숫자
       function roomActivityOk(d, n) {
         let before = d.get('lastActivityAt', 0);
@@ -482,27 +503,77 @@ service cloud.firestore {
         return ('createdAt' in d && n.get('createdAt', null) == d.createdAt)
           || (!('createdAt' in d) && (!('createdAt' in n) || (roomIsMine(d) && n.createdAt is number)));
       }
-      // 참가자가 자기 자리 하나만 넣기(대기 중, 정원 안) 또는 빼기
+      // 참가자가 자기 자리 하나만 빼기. 승인 없이 자리 넣기는 막아요(R2-3, 자리는 방장 승인으로만 생겨요).
       function roomSelfSeatOnly(d, n) {
         let dm = roomMembers(d);
         let nm = roomMembers(n);
         let du = roomMemberUids(d);
         let nu = roomMemberUids(n);
         let me = request.auth.uid;
-        return (d.get('status', '') == 'waiting'
-            && nm.size() == dm.size() + 1 && nm.hasAll(dm)
-            && nm.removeAll(dm).size() == 1 && nm.removeAll(dm)[0].get('uid', '') == me
-            && !(me in du) && nu.size() == du.size() + 1 && nu.hasAll(du) && (me in nu)
-            && nm.size() <= d.get('maxPlayers', 2))
-          || (nm.size() + 1 == dm.size() && dm.hasAll(nm)
-            && dm.removeAll(nm).size() == 1 && dm.removeAll(nm)[0].get('uid', '') == me
-            && (me in du) && nu.size() + 1 == du.size() && du.hasAll(nu) && !(me in nu));
+        return nm.size() + 1 == dm.size() && dm.hasAll(nm)
+          && dm.removeAll(nm).size() == 1 && dm.removeAll(nm)[0].get('uid', '') == me
+          && (me in du) && nu.size() + 1 == du.size() && du.hasAll(nu) && !(me in nu);
       }
       function roomMembersOk(d, n) {
         return (n.get('members', null) == d.get('members', null)
             && n.get('memberUids', null) == d.get('memberUids', null))
           || roomIsMine(d)
           || roomSelfSeatOnly(d, n);
+      }
+      // R2-4: uid 없이 승인된 자리(옛 화면이 섞였을 때 생겨요) 하나에 내 uid만 채우기. 다른 칸·상태·판은 그대로예요.
+      function roomClaimSeatOnly(d, n) {
+        let dm = roomMembers(d);
+        let nm = roomMembers(n);
+        let me = request.auth.uid;
+        let gone = dm.removeAll(nm);
+        let added = nm.removeAll(dm);
+        return !(me in roomMemberUids(d))
+          && !roomIsMine(d)
+          && nm.size() == dm.size()
+          && gone.size() == 1 && added.size() == 1
+          && gone[0].get('uid', '') == ''
+          && added[0].get('uid', '') == me
+          && added[0].diff(gone[0]).affectedKeys().hasOnly(['uid'])
+          && roomMemberUids(n).size() == roomMemberUids(d).size() + 1
+          && roomMemberUids(n).hasAll(roomMemberUids(d))
+          && (me in roomMemberUids(n))
+          && n.diff(d).affectedKeys().hasOnly(['members', 'memberUids', 'lastActivityAt', 'updatedAt', 'round'])
+          && n.get('round', 0) == d.get('round', 0);
+      }
+      // R2-3: 방장·참가자가 아닌 기기가 할 수 있는 일만.
+      // - 대기 방에 내 신청(내 uid, pending) 하나 넣기·바꾸기, 또는 내 신청 빼기
+      // - 10분 넘게 멈춘 방 닫기
+      // 판(game)·자리·상태·방 설정은 못 바꾸고, 두는 중인 판의 마지막 활동도 못 밀어요.
+      function roomOutsiderJoinOk(d, n) {
+        let dj = d.get('joinRequests', []);
+        let nj = n.get('joinRequests', []);
+        let me = request.auth.uid;
+        let addedJ = nj.removeAll(dj);
+        let goneJ = dj.removeAll(nj);
+        let dp = d.get('participantIds', []);
+        let np = n.get('participantIds', []);
+        return d.get('status', '') == 'waiting'
+          && dj is list && nj is list && dp is list && np is list
+          && n.diff(d).affectedKeys().hasOnly(['joinRequests', 'participantIds', 'lastActivityAt', 'updatedAt', 'round'])
+          && n.get('round', 0) == d.get('round', 0)
+          && addedJ.size() <= 1 && goneJ.size() <= 1 && addedJ.size() + goneJ.size() >= 1
+          && (addedJ.size() == 0
+            || (addedJ[0].get('uid', '') == me && addedJ[0].get('status', '') == 'pending'))
+          && (goneJ.size() == 0 || goneJ[0].get('uid', '') == me)
+          && np.removeAll(dp).hasOnly(addedJ.size() == 1 ? [addedJ[0].get('id', '')] : [])
+          && dp.removeAll(np).hasOnly(goneJ.size() == 1 ? [goneJ[0].get('id', '')] : []);
+      }
+      function roomOutsiderCloseOk(d, n) {
+        return n.get('status', '') == 'closed'
+          && roomIdle(d)
+          && n.diff(d).affectedKeys().hasOnly(['status', 'lastActivityAt', 'updatedAt', 'round'])
+          && n.get('round', 0) == d.get('round', 0);
+      }
+      function roomOutsiderOk(d, n) {
+        return roomIsParty(d)
+          || roomOutsiderJoinOk(d, n)
+          || roomOutsiderCloseOk(d, n)
+          || roomClaimSeatOnly(d, n);
       }
       // 상태: playing·finished → waiting 금지, closed는 되돌리지 않음.
       // finished·closed로 바꾸기와 끝난 판 다시 두기는 방장·참가자만(10분 넘게 멈춘 방 닫기는 누구나).
@@ -522,25 +593,32 @@ service cloud.firestore {
             || (n.get('hostId', '') == d.get('hostId', '')
               && roomCreatedOk(d, n)
               && roomActivityOk(d, n)
-              && roomMembersOk(d, n)
-              && roomStatusOk(d, n)));
+              && (roomClaimSeatOnly(d, n)
+                || (roomMembersOk(d, n) && roomStatusOk(d, n)))
+              && roomOutsiderOk(d, n)));
       }
-      // 같은 문서에 새로 만든 방: 대기 상태, 방장 한 명, 만든 시각은 예전 방보다 앞서지 않음
+      // 같은 문서에 새로 만든 방: 새 방 모양(roomFreshShape)이고, 만든 시각은 예전 방보다 앞서지 않음
       function roomFreshOver(d, n) {
         let before = d.get('createdAt', 0);
-        return n.get('status', '') == 'waiting'
-          && roomMembers(n).size() <= 1
+        return roomFreshShape(n)
           && (!(before is number) || n.createdAt >= before);
       }
-      // 같은 문서에 새 방 덮어쓰기(hostUid를 내 것으로): 옛 방이거나, 새 방 모양으로
-      // 30분 정리 대상 위에, 또는 내 방·같은 학번 방이 끝났거나(finished·closed) 10분 넘게 비었을 때만.
+      // hostUid가 없는 옛 방에 방장이 내 uid를 적기(만든 시각 그대로, 마지막 활동은 서버 시각 근처)
+      function roomLegacyClaimOk(d, n) {
+        return (('createdAt' in d) ? n.get('createdAt', null) == d.createdAt : roomTimeNear(n.get('createdAt', null)))
+          && roomActivityOk(d, n);
+      }
+      // 같은 문서에 새 방 덮어쓰기(hostUid를 내 것으로):
+      // - 옛 방(hostUid 없음): 내 uid를 적는 쓰기이거나 새 방 모양
+      // - 새 방 모양으로, 30분 정리 대상 위에, 또는 내 방(hostUid가 내 uid)이 끝났거나(finished·closed) 10분 넘게 비었을 때만.
+      //   R2-2: hostUid가 있는 방은 같은 학번(hostId)만으로는 덮어쓰지 못해요(남의 학번으로 방을 막는 걸 막아요).
       // (두는 중인 판·끝난 판을 대기로 되돌리는 쪼개 쓰기는 여기서도 막혀요.)
       function roomOverwriteOk(d, n) {
         return roomIsMine(n) && roomTimesOk(n) && (
-          roomIsLegacy(d)
+          (roomIsLegacy(d) && (roomLegacyClaimOk(d, n) || roomFreshOver(d, n)))
           || (roomFreshOver(d, n) && (
             roomCleanupAgeDue(d)
-            || ((roomIsMine(d) || n.get('hostId', '') == d.get('hostId', '')) && (
+            || (roomIsMine(d) && (
               d.get('status', '') in ['finished', 'closed']
               || roomIdle(d)))
           ))
@@ -553,7 +631,8 @@ service cloud.firestore {
         && request.resource.data.hostId is string
         && request.resource.data.status is string
         && roomTimesOk(request.resource.data)
-        && roomIsMine(request.resource.data);
+        && roomIsMine(request.resource.data)
+        && roomFreshShape(request.resource.data);
       allow update: if signedIn() && (
         roomUpdateKeepsRoom(resource.data, request.resource.data)
         || roomOverwriteOk(resource.data, request.resource.data)

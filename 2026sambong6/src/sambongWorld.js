@@ -248,6 +248,8 @@ import {
     expireIdleBoardRoom,
     getBoardGameDef,
     hostBoardRoomId,
+    parseBoardLeftRooms,
+    rememberBoardLeftRoom,
     isRoomHost,
     isRoomIdleExpired,
     isRoomMember,
@@ -12020,7 +12022,20 @@ ${subjectLine}
         // 알까기 상태
         let _alkBoard = null;
         let _alkLocal = null; // { game, ai } — 한 화면 둘이서(ai 없음) 또는 AI와 하기(ai: { level, color, seed, job, thinking, pulling })
-        const _alkLeftRooms = new Set(); // 판 중에 나간 방(boardRoomInstanceKey): 자동으로 다시 들어가지 않아요
+        // 판 중에 나갔거나 끝난 판에서 나온 방(boardRoomInstanceKey): 자동으로 다시 들어가지 않아요.
+        // 새로고침해도 옛 방으로 끌려가지 않게 같은 탭 sessionStorage에도 남겨요.
+        const BOARD_LEFT_ROOMS_KEY = 'sambong_board_left_rooms_v1';
+        const _alkLeftRooms = new Set((() => {
+            try { return parseBoardLeftRooms(sessionStorage.getItem(BOARD_LEFT_ROOMS_KEY)); } catch (_) { return []; }
+        })());
+        function rememberLeftBoardRoom(room) {
+            const key = boardRoomInstanceKey(room);
+            if (!key) return;
+            _alkLeftRooms.add(key);
+            try {
+                sessionStorage.setItem(BOARD_LEFT_ROOMS_KEY, JSON.stringify(rememberBoardLeftRoom(Array.from(_alkLeftRooms), key)));
+            } catch (_) { /* 저장 못 해도 이번 화면에서는 기억해요 */ }
+        }
         let _alkResumeTried = false;
         const ALKKAGI_GUIDE_OLD_KEY = 'sambong_alk_guide_seen'; // 예전 '기기당 한 번' 기억(이제 안 써요, 지우기만 해요)
         const ALKKAGI_GUIDE_TEXT = '세게 당길수록 멀리 가지만, 알이 떨리면 조금 빗나갈 수 있어요.';
@@ -14696,7 +14711,7 @@ ${subjectLine}
                     if (!ok) return;
                     await forfeitAlkkagiNow();
                     // 나간 사람은 결과 카드 대신 방 목록으로 가요. 이 방으로는 저절로 다시 들어가지 않아요.
-                    _alkLeftRooms.add(boardRoomInstanceKey(alkRoom));
+                    rememberLeftBoardRoom(alkRoom);
                     _boardGameActiveId = '';
                     saveAlkkagiResume('');
                     showBoardGameView('lobby');
@@ -14717,7 +14732,7 @@ ${subjectLine}
                 return;
             }
             // 끝난 판에서 나가면 그 방으로는 저절로 다시 들어가지 않아요.
-            if (room && room.status === 'finished') _alkLeftRooms.add(boardRoomInstanceKey(room));
+            if (room && room.status === 'finished') rememberLeftBoardRoom(room);
             clearGomokuAiSession();
             clearChessAiSession();
             _boardGameActiveId = '';

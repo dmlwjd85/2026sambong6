@@ -69,8 +69,19 @@ export function boardRoomStatusLabel(status) {
     return map[String(status || '')] || '대기';
 }
 
-export function createBoardRoomId() {
-    return `bg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+/** 방 id 시간 부분의 기준(36진수 9자리 최대값). 이 값에서 만든 시각을 빼서 새 방일수록 id가 앞에 와요. */
+export const BOARD_ROOM_ID_TIME_MAX = 36 ** 9 - 1;
+
+/**
+ * 새 방 id: `bg_0` + (기준 − 만든 시각)을 36진수 9자리로 + 임의 6자.
+ * Firestore는 orderBy가 없으면 문서 id 오름차순으로 limit을 자르므로, 새 방일수록 id가 앞에 오게 만들어
+ * 정렬·복합 색인 없이도 방이 많을 때 옛 방부터 잘리게 해요.
+ * 예전 id(`bg_` + 시각, 맨 앞 글자가 '0'이 아님)보다 항상 앞에 와요.
+ */
+export function createBoardRoomId(now = Date.now()) {
+    const t = Math.max(0, Math.floor(Number(now) || Date.now()));
+    const rev = Math.max(0, BOARD_ROOM_ID_TIME_MAX - t).toString(36).padStart(9, '0');
+    return `bg_0${rev}_${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`;
 }
 
 /**
@@ -234,7 +245,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
     if (!def || !hid) return { ok: false, error: 'bad_create', room: null };
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     const room = emptyBoardRoom(def.id, t);
-    room.id = String(id || '').trim().slice(0, 40) || createBoardRoomId();
+    room.id = String(id || '').trim().slice(0, 40) || createBoardRoomId(t);
     room.hostId = hid;
     room.hostName = cleanName(hostName) || hid;
     room.timerEnabled = timerEnabled === true;
@@ -437,6 +448,32 @@ export function boardRoomInstanceKey(room) {
     return r.id ? `${r.id}:${r.createdAt}` : '';
 }
 
+/** 나온 끝난 방 기억(같은 탭 sessionStorage)에 남기는 최대 개수. */
+export const BOARD_LEFT_ROOMS_MAX = 30;
+
+/** 저장해 둔 '나온 방' 목록을 읽어요. 깨진 값은 빈 목록이에요. */
+export function parseBoardLeftRooms(raw) {
+    let arr = raw;
+    if (typeof raw === 'string') {
+        try { arr = JSON.parse(raw); } catch (_) { arr = null; }
+    }
+    if (!Array.isArray(arr)) return [];
+    const out = [];
+    arr.forEach((k) => {
+        const key = typeof k === 'string' ? k.trim().slice(0, 80) : '';
+        if (key && !out.includes(key)) out.push(key);
+    });
+    return out.slice(-BOARD_LEFT_ROOMS_MAX);
+}
+
+/** '나온 방' 목록에 하나 더해요. 오래된 것부터 버려 상한을 지켜요. */
+export function rememberBoardLeftRoom(list, key) {
+    const out = parseBoardLeftRooms(list).filter((k) => k !== key);
+    const k = typeof key === 'string' ? key.trim().slice(0, 80) : '';
+    if (k) out.push(k);
+    return out.slice(-BOARD_LEFT_ROOMS_MAX);
+}
+
 /**
  * 다른 방에 들어가거나 방을 새로 만들 때 정리할 대상.
  * 내가 방장으로 열어 둔 대기 방, 다른 방에 넣어 둔 참가 대기만 모읍니다.
@@ -612,9 +649,9 @@ export function boardRoomParticipantIds(room) {
     return ids;
 }
 
-/** 로비 목록 질의 한 번에 받는 방 수 상한. */
+/** 로비 목록 질의 한 번에 받는 방 수 상한. 방 id가 새 방일수록 앞이라(createBoardRoomId) 넘치면 옛 방부터 빠져요. */
 export const BOARD_LOBBY_QUERY_LIMIT = 30;
-/** 내 방(참가 중·신청 중) 질의 상한. */
+/** 내 방(참가 중·신청 중) 질의 상한. 넘치면 옛 방부터 빠져요(알까기 방장 고정 id alk_ 는 맨 앞). */
 export const BOARD_MINE_QUERY_LIMIT = 10;
 
 /** 로비 질의에 넣을 상태. 알까기는 끝난 방을 목록에 보이지 않아서 빼요. */

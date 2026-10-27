@@ -1,7 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    BOARD_LEFT_ROOMS_MAX,
     BOARD_LOBBY_QUERY_LIMIT,
+    BOARD_MINE_QUERY_LIMIT,
+    createBoardRoomId,
+    parseBoardLeftRooms,
+    rememberBoardLeftRoom,
+    boardRoomInstanceKey,
     BOARD_ROOM_IDLE_TTL_MS,
     boardLobbyQueryStatuses,
     boardRoomParticipantIds,
@@ -387,5 +393,78 @@ describe('boardGameRooms subscription scope (읽기 절약)', () => {
         assert.deepEqual(boardLobbyQueryStatuses('alkkagi'), ['waiting', 'playing']);
         assert.deepEqual(boardLobbyQueryStatuses('gomoku'), ['waiting', 'playing', 'finished']);
         assert.ok(BOARD_LOBBY_QUERY_LIMIT >= 20);
+    });
+});
+
+// Firestore는 orderBy 없이 limit을 걸면 문서 id 오름차순으로 앞에서부터 잘라요(같은 바이트 순서로 흉내 내요).
+function firestoreLimit(rooms, pred, n) {
+    return rooms.filter(pred).sort((a, b) => (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))).slice(0, n);
+}
+
+describe('방이 많아도 새 방이 목록에 보여요(정렬·색인 없이)', () => {
+    const T0 = Date.UTC(2026, 9, 27, 1, 0, 0);
+
+    it('새 방 id일수록 앞에 오고, 예전 id(bg_+시각)보다도 앞이에요', () => {
+        const a = createBoardRoomId(T0);
+        const b = createBoardRoomId(T0 + 1);
+        const c = createBoardRoomId(T0 + 60 * 60 * 1000);
+        assert.match(a, /^bg_0[0-9a-z]{9}_[0-9a-z]{6}$/);
+        assert.ok(c < b && b < a);
+        const legacy = `bg_${(T0 + 5 * 60 * 60 * 1000).toString(36)}_abcdef`;
+        assert.ok(a < legacy, '예전 형식 방은 새 형식 뒤에 와요');
+        assert.ok(a.length <= 40);
+    });
+
+    it('같은 종류 방이 31개 넘게 있어도 방금 만든 방이 로비 질의(limit)에 들어가요', () => {
+        const rooms = [];
+        for (let i = 0; i < 35; i++) {
+            const st = ['waiting', 'playing', 'finished'][i % 3];
+            const made = createBoardRoom({ gameType: 'gomoku', hostId: `h${i}`, hostName: `방장${i}`, now: T0 + i * 1000 }).room;
+            rooms.push({ ...made, status: st });
+        }
+        const fresh = createBoardRoom({ gameType: 'gomoku', hostId: 'new1', hostName: '새방장', now: T0 + 40 * 1000 }).room;
+        rooms.push(fresh);
+        assert.ok(rooms.length > BOARD_LOBBY_QUERY_LIMIT);
+        const statuses = boardLobbyQueryStatuses('gomoku');
+        const got = firestoreLimit(rooms, (r) => r.gameType === 'gomoku' && statuses.includes(r.status), BOARD_LOBBY_QUERY_LIMIT);
+        assert.equal(got.length, BOARD_LOBBY_QUERY_LIMIT);
+        assert.ok(got.some((r) => r.id === fresh.id), '새 방이 보여야 해요');
+        // 잘리는 건 가장 옛 방들이에요.
+        assert.ok(!got.some((r) => r.hostId === 'h0'));
+        assert.ok(listVisibleBoardRooms(got, T0 + 41 * 1000).some((r) => r.id === fresh.id));
+    });
+
+    it('내 방이 11개 넘게 있어도 방금 참가 신청한 방이 내 방 질의(limit)에 들어가요', () => {
+        const rooms = [];
+        for (let i = 0; i < 12; i++) {
+            const type = i % 2 ? 'chess' : 'gomoku';
+            const made = createBoardRoom({ gameType: type, hostId: `m${i}`, hostName: `방장${i}`, now: T0 + i * 1000 }).room;
+            const asked = requestJoinBoardRoom(made, { studentId: 's1', studentName: '나', now: T0 + i * 1000 + 10 }).room;
+            rooms.push(boardRoomToDoc(asked));
+        }
+        const fresh = createBoardRoom({ gameType: 'chess', hostId: 'mx', hostName: '새방장', now: T0 + 60 * 1000 }).room;
+        const freshAsked = boardRoomToDoc(requestJoinBoardRoom(fresh, { studentId: 's1', studentName: '나', now: T0 + 61 * 1000 }).room);
+        rooms.push(freshAsked);
+        assert.ok(rooms.length > BOARD_MINE_QUERY_LIMIT);
+        const got = firestoreLimit(rooms, (r) => r.participantIds.includes('s1'), BOARD_MINE_QUERY_LIMIT);
+        assert.equal(got.length, BOARD_MINE_QUERY_LIMIT);
+        assert.ok(got.some((r) => r.id === fresh.id), '새로 신청한 방이 보여야 해요');
+    });
+});
+
+describe('나온 끝난 방 기억(sessionStorage)', () => {
+    it('저장·읽기와 상한, 깨진 값', () => {
+        const room = createBoardRoom({ gameType: 'gomoku', hostId: 'a', hostName: 'A', now: 1000 }).room;
+        const key = boardRoomInstanceKey(room);
+        const saved = JSON.stringify(rememberBoardLeftRoom([], key));
+        assert.deepEqual(parseBoardLeftRooms(saved), [key]);
+        assert.deepEqual(parseBoardLeftRooms('{깨짐'), []);
+        assert.deepEqual(parseBoardLeftRooms(null), []);
+        let list = [];
+        for (let i = 0; i < BOARD_LEFT_ROOMS_MAX + 5; i++) list = rememberBoardLeftRoom(list, `r${i}:1`);
+        assert.equal(list.length, BOARD_LEFT_ROOMS_MAX);
+        assert.equal(list[list.length - 1], `r${BOARD_LEFT_ROOMS_MAX + 4}:1`);
+        assert.ok(!list.includes('r0:1'));
+        assert.deepEqual(rememberBoardLeftRoom(['x:1', 'y:1'], 'x:1'), ['y:1', 'x:1']);
     });
 });

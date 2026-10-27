@@ -31176,10 +31176,6 @@ ${subjectLine}
 
             const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
 
-            // 실시간으로 받은 설정에 이번 주 주급 정산이 이미 기록돼 있으면 트랜잭션(읽기)을 열지 않아요.
-            // 지급 금액 계산과 중복 지급 방지는 아래 트랜잭션이 그대로 맡아요.
-            if (window.globalSettings && window.globalSettings.lastSalaryWeek === wId) return;
-
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
             const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
 

@@ -12241,7 +12241,8 @@ ${subjectLine}
             const me = boardGameSelfId();
             // 두는 중 > 대기 > 결과 순서로 내 방을 골라요. 끝난 옛 방 때문에 방금 만든 방이 닫히지 않게 해요.
             const mineActive = pickMyActiveBoardRoom(rows, me);
-            if (mineActive) void vacateOtherBoardRooms(mineActive.id);
+            // 끝난 판은 '지금 앉은 자리'가 아니에요. 끝난 방 때문에 새로 낸 참가 신청·새로 연 방이 지워지지 않게 해요.
+            if (mineActive && mineActive.status !== 'finished') void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
             // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.

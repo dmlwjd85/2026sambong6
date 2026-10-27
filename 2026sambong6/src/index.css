@@ -714,6 +714,30 @@
             flex: 0 0 auto;
         }
         .praise-thumb-down { transform: rotate(180deg); }
+        /* 좁은 광장 카드(폰 6칸 자리표 등): 따봉·역따봉을 카드 폭 안에 반씩 나눠 넣고,
+           아이콘 아래에 숫자를 두어 세 자리 숫자(120)도 넘치거나 이웃 카드와 겹치지 않게 합니다.
+           터치 영역은 버튼마다 최소 약 24×25px을 지킵니다. */
+        @container (max-width: 6rem) {
+            .praise-pair { gap: 0.1rem; }
+            .praise-btn {
+                flex: 1 1 0;
+                min-width: 0;
+                max-width: 2.6rem;
+                flex-direction: column;
+                gap: 0.05rem;
+                padding: 0.1rem 0;
+                border-radius: 0.55rem;
+                font-size: 8px;
+                letter-spacing: -0.03em;
+            }
+            .praise-btn img { width: 0.72rem; height: 0.72rem; }
+        }
+        /* 아주 좁은 카드: 경험치는 윗줄, 온도계·봉은 아랫줄로 나눠 숫자가 옆 카드로 넘치지 않게 합니다. */
+        @container (max-width: 5.2rem) {
+            .plaza-card-stats { flex-wrap: wrap; justify-content: center; column-gap: 0.12rem; row-gap: 0.05rem; }
+            .plaza-card-stats .plaza-stat-xp { flex: 0 0 100%; text-align: center; }
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer { min-width: 0; padding: 0 0.1rem; }
+        }
         .plaza-dislike-reason {
             max-width: 100%;
             margin-top: 0.12rem;

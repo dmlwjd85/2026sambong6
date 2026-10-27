@@ -13526,8 +13526,8 @@ ${subjectLine}
             _chessPending = null;
             _chessPromo = null;
             const room = currentBoardGameRoom();
-            if (room && room.gameType === 'chess') _boardGameType = 'chess';
-            if (room && room.gameType === 'alkkagi') _boardGameType = 'alkkagi';
+            // 다른 게임 목록에서 '내 방'으로 들어올 때도 그 방 게임 화면을 보여 줘요(오목 방이 체스 판으로 보이던 문제).
+            if (room && getBoardGameDef(room.gameType)) _boardGameType = room.gameType;
             showBoardGameView('play');
             if (room && room.gameType === 'chess') renderChessPlay(room);
             else if (room && room.gameType === 'alkkagi') renderAlkkagiPlay(room);

@@ -5092,7 +5092,7 @@ function redrawPlazaGrantsUi() {
             if (!el) {
                 el = document.createElement('div');
                 el.id = 'appToast';
-                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
+                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] w-max max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
                 document.body.appendChild(el);
             }
             const warn = !!(opts && opts.tone === 'warn');

@@ -92,22 +92,27 @@ describe('광장 카드 보석 등급(시안 A)', () => {
     it('renderPlaza 학생 카드에 등급 클래스가 붙고 쨈 글꼴은 한 번만 불러와요', () => {
         assert.match(src, /class="plaza-card [^"]*relative\$\{tierClass\}/);
         // 글꼴 CSS 는 한 함수에서만, 한 번만 불러와요
-        const loader = sliceBetween(src, 'function loadAlkkagiFontsOnce() {', '\n        }');
-        assert.match(loader, /if \(loadAlkkagiFontsOnce\.started\) return;\s*loadAlkkagiFontsOnce\.started = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        const loader = sliceBetween(src, 'function loadAlkkagiFontsOnce(opts) {', '\n        }');
+        assert.match(loader, /^function loadAlkkagiFontsOnce\(opts\) \{\s*if \(loadAlkkagiFontsOnce\.started\) return;/);
+        assert.match(loader, /loadAlkkagiFontsOnce\.started = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        // 한가할 때 불러오기는 한 번만 예약해요
+        assert.match(loader, /if \(loadAlkkagiFontsOnce\.queued\) return;\s*loadAlkkagiFontsOnce\.queued = true;/);
+        assert.match(loader, /requestIdleCallback\(run, \{ timeout: 2000 \}\)/);
         assert.equal(src.split("import('./alkkagiFonts.css')").length - 1, 1, '글꼴 CSS import 는 한 곳에만 있어야 해요');
         assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Title'/);
     });
 
     it('B-1: 쨈 제목 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
-        // renderPlaza 는 광장이 숨어 있어도 앱 시작 때 불리므로, 광장 칸이 보일 때만 글꼴을 불러요
-        const body = sliceBetween(src, 'const container = document.getElementById(\'plazaContainer\');\n            if(!container) return;', 'const createCard');
-        assert.match(body, /const plazaSectionEl = document\.getElementById\('plazaSection'\);\s*if \(plazaSectionEl && !plazaSectionEl\.classList\.contains\('hidden'\)\) loadAlkkagiFontsOnce\(\);/);
+        // renderPlaza 는 광장이 숨어 있어도 앱 시작 때 불리므로, 여기서는 글꼴을 부르지 않아요
+        const body = sliceBetween(src, 'window.renderPlaza = function(studentsData, gmData, gmaData) {', 'const createCard');
+        assert.ok(body.length > 0);
+        assert.doesNotMatch(body, /loadAlkkagiFontsOnce\(\)/);
         assert.doesNotMatch(body, /import\('\.\/alkkagiFonts\.css'\)/);
         // 광장 탭으로 바꿀 때 불러요
         const sw = sliceBetween(src, 'window.switchTab = function(tabId, subOrOpts) {', "if(activeSec) activeSec.classList.remove('hidden');");
         assert.ok(sw.length > 0);
         const afterShow = src.slice(src.indexOf("if(activeSec) activeSec.classList.remove('hidden');", src.indexOf('window.switchTab = function(tabId, subOrOpts) {')), src.indexOf("const activeBtn = document.getElementById('tab-' + tabId);"));
-        assert.match(afterShow, /if \(tabId === 'plaza'\) loadAlkkagiFontsOnce\(\);/);
+        assert.match(afterShow, /if \(tabId === 'plaza'\) loadAlkkagiFontsOnce\(\{ idle: true \}\);/);
         // 알까기 판도 같은 함수로 불러요
         assert.match(sliceBetween(src, 'function ensureAlkkagiBoard() {', '_alkBoard = createAlkkagiBoard('), /loadAlkkagiFontsOnce\(\);/);
     });
@@ -124,5 +129,26 @@ describe('광장 카드 좁은 화면(폰 6칸 자리표)', () => {
         const block = sliceBetween(css, '@container (max-width: 6rem) {', '.praise-btn img { width: 0.72rem; height: 0.72rem; }\n        }');
         assert.match(block, /\.praise-btn \{[^}]*flex: 1 1 0;[^}]*min-width: 0;/);
         assert.match(block, /flex-direction: column;/);
+    });
+
+    it('C-1: 320·360px 폰에서 수치는 두 줄(경험치 / 온도계·봉)이고 아주 좁으면 온도계 아이콘만 빼요', () => {
+        const block = sliceBetween(css, '@container (max-width: 5.2rem) {', '\n        }');
+        assert.match(block, /\.plaza-card-stats \{ flex-wrap: wrap;/);
+        assert.match(block, /\.plaza-stat-xp \{ flex: 0 0 100%;/);
+        assert.match(block, /\.plaza-learning-thermometer \{ min-width: 0; max-width: none;/);
+        const tiny = sliceBetween(css, '@container (max-width: 2.9rem) {', '\n        }');
+        assert.match(tiny, /\.plaza-therm-ico \{ display: none; \}/);
+        // 온도계 아이콘은 따로 감싸서 숫자만 남길 수 있어요
+        assert.match(src, /<span class="plaza-therm-ico" aria-hidden="true">🌡<\/span>\$\{value >= 0 \? '\+' : ''\}\$\{value\}<\/span>/);
+    });
+
+    it('C-1: 폰에서도 방패 배지는 보이고, 카드 안쪽 오른쪽 위에 깜빡이지 않게 붙어요', () => {
+        const phone = sliceBetween(css, '.plaza-card-extra { display: none !important; }', '/* 자리표 연동');
+        const badge = sliceBetween(phone, '.plaza-card .plaza-card-extra.plaza-hp-badge {', '}');
+        assert.match(badge, /display: flex !important;/);
+        assert.match(badge, /top: 0\.12rem;/);
+        assert.match(badge, /right: 0\.12rem;/);
+        assert.match(badge, /animation: none;/);
+        assert.match(src, /plaza-card-extra plaza-hp-badge absolute/);
     });
 });

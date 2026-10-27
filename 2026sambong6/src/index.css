@@ -649,6 +649,8 @@
             white-space: nowrap;
             overflow: hidden;
         }
+        /* 온도계 아이콘과 숫자 사이 띄움(예전 '🌡 +0'의 빈칸 자리) */
+        .plaza-learning-thermometer .plaza-therm-ico { margin-right: 0.25em; }
 
         /* 광장 학생 카드 배열: 크게 4명 / 중간 5명 / 작게 6명 (한 줄, 넓은 화면) */
         .plaza-cards {
@@ -732,11 +734,20 @@
             }
             .praise-btn img { width: 0.72rem; height: 0.72rem; }
         }
-        /* 아주 좁은 카드: 경험치는 윗줄, 온도계·봉은 아랫줄로 나눠 숫자가 옆 카드로 넘치지 않게 합니다. */
+        /* 아주 좁은 카드(320·360px 폰 자리표): 경험치는 윗줄, 온도계·봉은 아랫줄 — 두 줄 안에 들어가요.
+           온도계는 아이콘을 작게, 글자 간격을 살짝 좁혀 봉과 한 줄에 놓아요. 숫자가 아주 길면(예: -20과 네 자리 봉)
+           옆 카드로 넘치지 않게 셋째 줄로 내려가요. */
         @container (max-width: 5.2rem) {
-            .plaza-card-stats { flex-wrap: wrap; justify-content: center; column-gap: 0.12rem; row-gap: 0.05rem; }
+            .plaza-card-stats { flex-wrap: wrap; justify-content: center; column-gap: 0.08rem; row-gap: 0.05rem; }
             .plaza-card-stats .plaza-stat-xp { flex: 0 0 100%; text-align: center; }
-            .plaza-card .plaza-card-stats .plaza-learning-thermometer { min-width: 0; padding: 0 0.1rem; }
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer { min-width: 0; max-width: none; padding: 0 0.08rem; font-size: 7px !important; letter-spacing: -0.03em; }
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer .plaza-therm-ico { font-size: 6px !important; margin-right: 0.05em; }
+            .plaza-card .plaza-card-stats .plaza-stat-bong { letter-spacing: -0.03em; }
+            .plaza-cards .plaza-card .plaza-card-stats { padding-left: 0.06rem !important; padding-right: 0.06rem !important; }
+        }
+        /* 320px 폰처럼 카드가 더 좁으면 온도계 아이콘은 빼고 색 테두리와 숫자만 보여요(눌러 보면 '학습 온도계' 설명이 떠요). */
+        @container (max-width: 2.9rem) {
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer .plaza-therm-ico { display: none; }
         }
         .plaza-dislike-reason {
             max-width: 100%;
@@ -926,9 +937,25 @@
                 padding: 0.22rem 0 !important;
                 min-height: 0;
             }
-            /* 스마트폰: 방패·직업·컨디션·등급이름은 숨기고 얼굴·이름·수치만 남깁니다. */
+            /* 스마트폰: 직업·컨디션·등급이름은 숨기고 얼굴·이름·수치만 남깁니다. */
             .plaza-card-extra { display: none !important; }
             .plaza-rank-name { display: none; }
+            /* 방패는 폰에서도 보여요: 카드 오른쪽 위 안쪽에 작게 붙여 옆 카드와 겹치지 않아요(깜빡임 없음). */
+            .plaza-card .plaza-card-extra.plaza-hp-badge {
+                display: flex !important;
+                align-items: center;
+                top: 0.12rem;
+                right: 0.12rem;
+                font-size: 0.68rem;
+                line-height: 1;
+                animation: none;
+                filter: drop-shadow(0 1px 1px rgba(2, 6, 23, 0.8));
+            }
+            .plaza-card .plaza-hp-badge > span {
+                font-size: 7px !important;
+                line-height: 1.1;
+                margin-left: -0.15rem;
+            }
 
             /* 자리표 연동: 부동산과 같은 열을 유지하고 크게 보이게 함 */
             .plaza-cards.plaza-cards-seating {

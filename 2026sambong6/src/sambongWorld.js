@@ -550,6 +550,7 @@ import { classXpSkewFromDateHeader, classXpStoredSkew, runClassXpGrant } from '.
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
+import { levelXpForDisplay } from './lib/levelDisplay.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
@@ -10260,6 +10261,8 @@ ${subjectLine}
             
             const activeSec = document.getElementById(tabId + 'Section');
             if(activeSec) activeSec.classList.remove('hidden');
+            // 광장을 열 때 카드 이름표 글꼴을 불러와요. 로그인 화면에서는 받지 않고, 광장을 그린 뒤 한가할 때 받아요.
+            if (tabId === 'plaza') loadAlkkagiFontsOnce({ idle: true });
             
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
@@ -12030,7 +12033,22 @@ ${subjectLine}
         let _alkSeen = { roomId: '', moveCount: -1 };
         let _alkWriting = false;
         let _alkBusy = false;
-        let _alkFontsLoaded = false;
+        // 쨈 글꼴 CSS(제목 약 443KB 포함)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요.
+        // 앱을 켤 때 바로 받지 않게 해서 첫 화면이 가벼워요. (함수 선언이라 위쪽 switchTab에서 불러도 안전해요)
+        // { idle: true } 이면 첫 화면을 다 그린 뒤 한가할 때(최대 2초 안에) 불러와요. 알까기 판은 바로 불러요.
+        function loadAlkkagiFontsOnce(opts) {
+            if (loadAlkkagiFontsOnce.started) return;
+            if (opts && opts.idle) {
+                if (loadAlkkagiFontsOnce.queued) return;
+                loadAlkkagiFontsOnce.queued = true;
+                const run = () => loadAlkkagiFontsOnce();
+                if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2000 });
+                else setTimeout(run, 300);
+                return;
+            }
+            loadAlkkagiFontsOnce.started = true;
+            import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+        }
         let _boardGameActiveId = '';
         let _boardGameWriteChain = Promise.resolve();
         let _boardGameIdleTimer = 0;
@@ -14005,10 +14023,7 @@ ${subjectLine}
             if (_alkBoard) return _alkBoard;
             const canvas = document.getElementById('alkkagiCanvas');
             if (!canvas) return null;
-            if (!_alkFontsLoaded) {
-                _alkFontsLoaded = true;
-                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
-            }
+            loadAlkkagiFontsOnce();
             _alkBoard = createAlkkagiBoard(canvas, {
                 onShot: (shot) => {
                     markAlkkagiGuideSeen();
@@ -15790,7 +15805,7 @@ ${subjectLine}
                 : value < 0
                     ? 'text-red-200 border-red-400/40 bg-red-950/60'
                     : 'text-slate-300 border-slate-500/40 bg-slate-900/60';
-            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP">🌡 ${value >= 0 ? '+' : ''}${value}</span>`;
+            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP"><span class="plaza-therm-ico" aria-hidden="true">🌡</span>${value >= 0 ? '+' : ''}${value}</span>`;
         }
 
         function isLearningThermometerLocallyBusy() {
@@ -21902,11 +21917,8 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
-            // 카드 이름표의 쨈 제목 글꼴: 알까기와 같은 글꼴 CSS를 한 번만 불러옵니다(이미 불러왔으면 건너뜀).
-            if (!_alkFontsLoaded) {
-                _alkFontsLoaded = true;
-                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
-            }
+            // 카드 이름표의 쨈 제목 글꼴은 여기서 부르지 않아요. renderPlaza 는 앱 시작 때(광장이 안 보여도) 불리므로,
+            // 글꼴은 switchTab('plaza') 에서만 불러와요. 글꼴이 오기 전에는 Noto Sans KR로 보여요.
 
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
@@ -21937,8 +21949,10 @@ ${subjectLine}
                         statusMessage: window.playerState.statusMessage || data.statusMessage,
                     }
                     : data;
-                const lv = getLevelInfo(displayData.xp || 0);
-                const exactLv = calculateExactLevel(displayData.xp || 0);
+                // Lv 표시: 대시보드(#79)와 같은 계산. 경험치가 없거나 0 이하이면 0으로 보고 그려요(Lv.NaN 방지, 표시만).
+                const lvXp = levelXpForDisplay(displayData.xp);
+                const lv = getLevelInfo(lvXp);
+                const exactLv = calculateExactLevel(lvXp);
 
                 const aura = applyEquippedAura(displayData, lv.info.borderColor, 'shadow-md');
                 let border = aura.border;
@@ -25547,9 +25561,11 @@ ${subjectLine}
             maybeShowConvenienceOrderPopup();
             maybeShowMusicTimeRequestPopup({ fromCache: false });
             
+            // 경험치가 없거나 0 이하이면 Lv·막대는 0으로 보고 그려요(Lv.NaN 방지, 표시만). 광장 카드와 같은 계산이에요.
             const xp = window.playerState.xp || 0;
-            const lvInfo = getLevelInfo(xp); 
-            const exactLv = calculateExactLevel(xp);
+            const lvXp = levelXpForDisplay(xp);
+            const lvInfo = getLevelInfo(lvXp); 
+            const exactLv = calculateExactLevel(lvXp);
             
             const mySid = localStorage.getItem('sambong_student_id');
             const dashAura = applyEquippedAura(window.playerState, 'border-slate-600', 'shadow-lg');
@@ -25668,8 +25684,8 @@ ${subjectLine}
             }
 
             let prevMax = lvInfo.index > 0 ? LEVEL_DATA[lvInfo.index-1].max : 0;
-            let curMax = lvInfo.info.max === Infinity ? xp : lvInfo.info.max;
-            let progress = exactLv >= 100 ? 100 : ((xp - prevMax) / (curMax - prevMax)) * 100;
+            let curMax = lvInfo.info.max === Infinity ? lvXp : lvInfo.info.max;
+            let progress = exactLv >= 100 ? 100 : ((lvXp - prevMax) / (curMax - prevMax)) * 100;
             
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);

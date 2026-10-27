@@ -3,8 +3,17 @@ import assert from 'node:assert/strict';
 import {
     CLASS_XP_END_TIMES,
     classXpCatchupSlot,
+    classXpErrorKind,
     classXpGrantDecision,
+    CLASS_XP_FIRE_DELAY_MS,
+    CLASS_XP_MAX_WAIT_MS,
+    classXpChunks,
+    classXpGivenOnDevice,
+    classXpIssueMessage,
+    classXpNextFireMs,
+    classXpTimerDelay,
     classXpSlotFromTime,
+    classXpTargets,
     keepServerClassXpSlot,
     kstWallClock,
     omitClassXpSlot,
@@ -90,5 +99,94 @@ describe('수업 XP 슬롯 (KST)', () => {
 
         const emptySlot = keepServerClassXpSlot(backup, { lastClassXpSlot: '' });
         assert.equal(emptySlot.lastClassXpSlot, '');
+    });
+});
+describe('수업 XP 대상 고르기와 알림 문구', () => {
+    const slot = '2026_10_27_10:30';
+
+    it('마스터, 빈 id, 이미 받은 학생, 신용 불량 학생은 읽지 않는다', () => {
+        const students = [
+            { id: 'gm', xp: 0 },
+            { id: 'gm_a', xp: 0 },
+            { id: '', pin: '0000' },
+            { id: '  ', xp: 3 },
+            { id: '1', xp: 120, lastClassXpSlot: slot },
+            { id: '2', xp: 120, creditDefault: true },
+            { id: '3', xp: 120, lastClassXpSlot: '2026_10_27_09:40' },
+            { id: '4', xp: 120 },
+            { id: '5', xp: '12' },
+            null,
+        ];
+        const { pending, invalidXp } = classXpTargets(students, slot, (s) => !!s.creditDefault);
+        assert.deepEqual(pending, ['3', '4']);
+        assert.deepEqual(invalidXp, ['5']);
+    });
+
+    it('모두 받은 뒤에는 읽을 학생이 없다', () => {
+        const students = [{ id: '1', xp: 125, lastClassXpSlot: slot }, { id: '2', xp: 125, lastClassXpSlot: slot }];
+        assert.deepEqual(classXpTargets(students, slot), { pending: [], invalidXp: [] });
+        assert.deepEqual(classXpTargets(null, slot), { pending: [], invalidXp: [] });
+    });
+
+    it('저장 실패를 거절·사용량 초과·기타로 나눈다', () => {
+        assert.equal(classXpErrorKind({ code: 'permission-denied' }), 'denied');
+        assert.equal(classXpErrorKind({ code: 'firestore/permission-denied' }), 'denied');
+        assert.equal(classXpErrorKind({ code: 'resource-exhausted' }), 'quota');
+        assert.equal(classXpErrorKind({ code: 'firestore/resource-exhausted' }), 'quota');
+        assert.equal(classXpErrorKind({ code: 'unavailable' }), 'other');
+        assert.equal(classXpErrorKind(null), 'other');
+    });
+
+    it('알림 문구는 해요체이고 빈 이름을 넣지 않는다', () => {
+        const quota = classXpIssueMessage('quota', '10:30');
+        assert.match(quota, /10:30 수업 종료 경험치를 못 줬어요/);
+        assert.match(quota, /이번 종은 건너뛰어요\.$/);
+        assert.match(classXpIssueMessage('denied', '10:30'), /한국 시간/);
+        assert.match(classXpIssueMessage('other', '10:30'), /이번 종은 건너뛰어요/);
+        assert.equal(
+            classXpIssueMessage('xp', '10:30', ['3. 홍길동', '', '  ']),
+            '⏰ 10:30 수업 종료 경험치를 못 준 학생이 있어요. 경험치 값이 숫자가 아니에요: 3. 홍길동',
+        );
+        assert.equal(classXpIssueMessage('xp', '10:30', ['']), '');
+        const many = classXpIssueMessage('xp', '10:30', ['1. 가', '2. 나', '3. 다', '4. 라', '5. 마', '6. 바', '7. 사']);
+        assert.match(many, /5\. 마 외 2명$/);
+        for (const text of [quota, many, classXpIssueMessage('denied', '13:50'), classXpIssueMessage('other', '13:50')]) {
+            assert.doesNotMatch(text, /습니다|, ,|: ,|다시 시도/);
+        }
+    });
+
+    it('다음 종 시각 + 20초에 타이머를 한 번 건다', () => {
+        const at = (h, m, s = 0, day = 27) => Date.UTC(2026, 9, day, h - 9, m, s);
+        assert.equal(CLASS_XP_FIRE_DELAY_MS, 20000);
+        // 화요일 08:00 → 09:40:20
+        assert.equal(classXpNextFireMs(at(8, 0)), at(9, 40, 20));
+        // 종이 친 뒤 20초 안이면 그 종을 기다려요.
+        assert.equal(classXpNextFireMs(at(9, 40, 5)), at(9, 40, 20));
+        assert.equal(classXpNextFireMs(at(9, 40, 20)), at(10, 30, 20));
+        assert.equal(classXpNextFireMs(at(12, 30)), at(13, 50, 20));
+        // 마지막 종 뒤에는 다음 평일 첫 종이에요. 금요일 15:00 → 월요일 09:40:20
+        assert.equal(classXpNextFireMs(at(15, 0, 0, 30)), Date.UTC(2026, 10, 2, 0, 40, 20));
+        assert.equal(classXpNextFireMs(at(15, 0)), at(9, 40, 20, 28));
+        assert.equal(classXpNextFireMs(Number.NaN), null);
+        // 타이머 대기 시간은 1초~6시간이에요.
+        assert.equal(classXpTimerDelay(at(8, 0), at(9, 40, 20)), 100 * 60 * 1000 + 20000);
+        assert.equal(classXpTimerDelay(at(15, 0), at(9, 40, 20, 28)), CLASS_XP_MAX_WAIT_MS);
+        assert.equal(classXpTimerDelay(at(9, 40, 20), at(9, 40, 20)), 1000);
+        assert.equal(classXpTimerDelay(at(8, 0), null), CLASS_XP_MAX_WAIT_MS);
+    });
+
+    it('이 기기가 이미 준 종은 다시 주지 않는다', () => {
+        assert.equal(classXpGivenOnDevice('2026_10_27_10:30', '2026_10_27_10:30'), true);
+        assert.equal(classXpGivenOnDevice('2026_10_27_09:40', '2026_10_27_10:30'), false);
+        assert.equal(classXpGivenOnDevice(null, '2026_10_27_10:30'), false);
+        assert.equal(classXpGivenOnDevice('', ''), false);
+    });
+
+    it('학생을 400명씩 묶어 한 번에 저장한다', () => {
+        const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
+        assert.deepEqual(classXpChunks(ids).map((c) => c.length), [25]);
+        assert.deepEqual(classXpChunks(Array.from({ length: 801 }, (_, i) => i)).map((c) => c.length), [400, 400, 1]);
+        assert.deepEqual(classXpChunks([]), []);
+        assert.deepEqual(classXpChunks(null), []);
     });
 });

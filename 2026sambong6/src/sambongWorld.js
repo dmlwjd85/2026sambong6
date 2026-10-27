@@ -255,6 +255,8 @@ import {
     listLobbyBoardRooms,
     parseBoardRoomCleanedMemory,
     pickBoardRoomsToCleanup,
+    boardRoomCleanupDelayMs,
+    claimBoardRoomHostUid,
     pickMyActiveBoardRoom,
     boardRoomCleanupKey,
     rejectJoinBoardRoom,
@@ -1297,7 +1299,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.47';
+        const APP_VERSION = 'v1.48';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -9785,12 +9787,31 @@ ${subjectLine}
             if (isVisible('studentElectionOverlay')) return true;
             if (isVisible('rpsOverlay')) return true;
             if (typeof _rpsGame !== 'undefined' && _rpsGame && _rpsGame.sessionId && _rpsGame.phase !== 'idle') return true;
-            if (isVisible('classtoolsSection')) return true;
+            // 보드게임 탭은 로비·게임 고르기 화면이거나 판이 끝났을 때만 새로고침해도 돼요(옛 화면이 오래 남지 않게).
+            if (isVisible('classtoolsSection') && !isBoardGameTabReloadSafe()) return true;
             if (typeof isClassToolFullscreenOpen === 'function' && isClassToolFullscreenOpen()) return true;
             if (_lotteryRunning || _classWheelSpinning || _electionCounting) return true;
             if (_classTimerEndAt || _classTimerAlarmId) return true;
             if (isLearningThermometerLocallyBusy() || _learningThermometerSettlementRunning) return true;
             return false;
+        }
+
+        /** 보드게임 탭을 보고 있고, 지금 새로고침해도 두던 판이 끊기지 않으면 true */
+        function isBoardGameTabReloadSafe() {
+            try {
+                if (classtoolSub !== 'boardgames') return false;
+                if (_boardGameView === 'home' || _boardGameView === 'lobby') return true;
+                if (_boardGameView !== 'play') return false;
+                if (_alkLocal || _chessAiSession) return false;
+                if (_gomokuAiSession) {
+                    const g = _gomokuAiSession.game || {};
+                    return !!(g.winner || g.endReason === 'draw');
+                }
+                const room = currentBoardGameRoom();
+                return !room || room.status === 'finished' || room.status === 'closed';
+            } catch (_) {
+                return false;
+            }
         }
 
         /** 탭 세션 시작 시각 기준 1시간 경과 시 새로고침(로컬 조작·새로고침 악용 완화) — 수업도구 사용 중에는 연기 */
@@ -12297,7 +12318,15 @@ ${subjectLine}
             // 지우기 전에 먼저 기억해요. 실패해도 이 기기는 다시 시도하지 않아요(다른 기기나 30분 정리가 맡아요).
             due.forEach((room) => { mem = rememberBoardRoomCleaned(mem, boardRoomCleanupKey(room), now); });
             writeBoardCleanedMemory(mem);
+            const myUid = auth.currentUser.uid;
+            // 여러 기기가 같은 방을 동시에 지우지 않게 기기마다 다르게 기다린 뒤, 실시간 목록에 그대로 있을 때만 지워요.
             for (const room of due) {
+                const key = boardRoomCleanupKey(room);
+                const wait = boardRoomCleanupDelayMs(room, myUid);
+                if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+                const live = _boardGameRooms.find((r) => r.id === room.id);
+                if (!live || boardRoomCleanupKey(live) !== key) continue;
+                if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) continue;
                 try {
                     await deleteDoc(boardGameRoomRef(room.id));
                 } catch (e) {
@@ -13169,6 +13198,25 @@ ${subjectLine}
             return _boardGameWriteChain;
         }
 
+        // 규칙이 쓰기를 막으면(옛 화면·오래된 방) 새로고침 안내를 띄워요. 같은 안내는 1분에 한 번만요.
+        const BOARD_STALE_NOTICE = '화면이 오래돼서 방에 저장하지 못했어요.<br>새로고침해 주세요.';
+        let _boardStaleNoticeAt = 0;
+        function isBoardWriteDenied(e) {
+            const code = String((e && e.code) || '');
+            return code === 'permission-denied' || code === 'firestore/permission-denied'
+                || /Missing or insufficient permissions/i.test(String(e && e.message));
+        }
+        async function showBoardStaleNotice(quiet = false) {
+            const now = Date.now();
+            if (now - _boardStaleNoticeAt < 60000) return;
+            _boardStaleNoticeAt = now;
+            if (quiet && typeof window.showToast === 'function') {
+                window.showToast('화면이 오래됐어요. 새로고침해 주세요.', 6000);
+                return;
+            }
+            await window.customAlert(BOARD_STALE_NOTICE);
+        }
+
         async function mutateBoardRoom(roomId, mutator, opts = {}) {
             if (!db) return null;
             const silent = !!(opts && opts.silent);
@@ -13185,11 +13233,21 @@ ${subjectLine}
                     const room = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
                     const result = mutator(room);
                     if (!result || result.ok === false) throw new Error((result && result.error) || 'invalid');
-                    tx.set(ref, boardRoomToDoc(result.room));
-                    return result.room;
+                    // 옛 화면이 hostUid 없이 덮어쓴 내 방이면 내 uid를 다시 적어 둬요.
+                    const nextRoom = claimBoardRoomHostUid(result.room, {
+                        hostId: boardGameSelfId(),
+                        uid: auth && auth.currentUser ? auth.currentUser.uid : '',
+                    });
+                    tx.set(ref, boardRoomToDoc(nextRoom));
+                    return nextRoom;
                 });
             } catch (e) {
                 const code = e && e.message;
+                if (isBoardWriteDenied(e)) {
+                    console.warn('mutateBoardRoom', roomId, 'permission-denied');
+                    await showBoardStaleNotice(silent);
+                    return null;
+                }
                 if (silent) {
                     console.warn('mutateBoardRoom', roomId, code);
                     return null;
@@ -13759,7 +13817,8 @@ ${subjectLine}
                 } else if (decision.action === 'reuse') {
                     // 이미 있는 내 방은 방금 쓴 것으로 표시해, 곧바로 10분 정리에 걸리지 않게 해요.
                     // hostUid가 없는 옛 방이면 이번에 내 uid를 적어 둬요(있으면 그대로 둬요).
-                    tx.set(ref, boardRoomToDoc({ ...existing, hostUid: existing.hostUid || myUid, lastActivityAt: now, updatedAt: now }));
+                    const claimed = claimBoardRoomHostUid(existing, { hostId: me, uid: myUid });
+                    tx.set(ref, boardRoomToDoc({ ...claimed, lastActivityAt: Math.max(existing.lastActivityAt || 0, now), updatedAt: now }));
                 }
                 return decision;
             });
@@ -13804,7 +13863,9 @@ ${subjectLine}
                 }
             } catch (e) {
                 console.error('createBoardGameRoom', e);
-                outcome = { action: 'alert', text: '방을 만들지 못했습니다.' };
+                outcome = isBoardWriteDenied(e)
+                    ? { action: 'alert', text: BOARD_STALE_NOTICE }
+                    : { action: 'alert', text: '방을 만들지 못했습니다.' };
             } finally {
                 _boardGameCreating = false;
                 setBoardGameCreateBusy(false);
@@ -13865,6 +13926,7 @@ ${subjectLine}
                 studentId: me,
                 studentName: boardGameSelfName(),
                 now: Date.now(),
+                uid: auth && auth.currentUser ? auth.currentUser.uid : '',
             })));
         };
 

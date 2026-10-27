@@ -401,7 +401,7 @@
     display: grid;
     place-items: center;
     padding: 20px;
-    background: rgba(59, 36, 18, 0.38);
+    background: rgba(59, 36, 18, 0.5);
     animation: alk-fade 0.16s ease-out;
 }
 /* 방 목록 위에 띄우는 알까기 창(방 지우기·이미 만든 방 안내). 판 화면 밖이라 색 변수를 여기서 줘요. */

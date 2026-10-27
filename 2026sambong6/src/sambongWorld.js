@@ -229,6 +229,7 @@ import {
     applyBoardRoomGame,
     approveJoinBoardRoom,
     boardRoomErrorText,
+    boardRoomInstanceKey,
     boardRoomToDoc,
     boardRoomStatusLabel,
     cancelJoinBoardRoom,
@@ -236,13 +237,17 @@ import {
     collectBoardRoomVacateActions,
     continueBoardRoom,
     createBoardRoom,
+    decideBoardRoomCreate,
+    deleteWaitingBoardRoom,
     expireIdleBoardRoom,
     getBoardGameDef,
+    hostBoardRoomId,
     isRoomHost,
     isRoomIdleExpired,
     isRoomMember,
     isTurnTimedOut,
-    listVisibleBoardRooms,
+    listLobbyBoardRooms,
+    pickMyActiveBoardRoom,
     rejectJoinBoardRoom,
     remainingSeats,
     requestJoinBoardRoom,
@@ -11840,6 +11845,8 @@ ${subjectLine}
                 }
             }
             if (_classToolShareFollower && !fromShare) return;
+            // 알까기 방 목록에서 창을 닫으면, 아직 아무도 받지 않은 내 대기 방도 닫아요.
+            if (classtoolSub === 'boardgames' && isClassToolFullscreenOpen() && _boardGameView === 'lobby' && _boardGameType === 'alkkagi') void closeMyWaitingAlkkagiRooms();
             const share = currentClassToolShare();
             const shouldPublish = !fromShare
                 && !_classToolShareApplying
@@ -12005,7 +12012,7 @@ ${subjectLine}
         // 알까기 상태
         let _alkBoard = null;
         let _alkLocal = null; // { game, ai } — 한 화면 둘이서(ai 없음) 또는 AI와 하기(ai: { level, color, seed, job, thinking, pulling })
-        const _alkLeftRooms = new Set(); // 판 중에 나간 방: 자동으로 다시 들어가지 않아요
+        const _alkLeftRooms = new Set(); // 판 중에 나간 방(boardRoomInstanceKey): 자동으로 다시 들어가지 않아요
         let _alkResumeTried = false;
         const ALKKAGI_GUIDE_OLD_KEY = 'sambong_alk_guide_seen'; // 예전 '기기당 한 번' 기억(이제 안 써요, 지우기만 해요)
         const ALKKAGI_GUIDE_TEXT = '세게 당길수록 멀리 가지만, 알이 떨리면 조금 빗나갈 수 있어요.';
@@ -12038,6 +12045,8 @@ ${subjectLine}
         let _chessPrevCells = null;
         let _chessSeenMoveKey = '';
         let _boardGameVacating = false;
+        let _boardGameCreating = false; // 「방 만들기」를 처리하는 동안 또 눌러도 방이 하나만 생기게 막아요
+        let _boardGameDeleting = false;
         let _gomokuLastVp = { w: 0, h: 0 };
         const _gomokuView = { scale: 1, min: 1, max: 4.8, x: 0, y: 0 };
 
@@ -12075,12 +12084,15 @@ ${subjectLine}
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
-            const mineActive = rows.find((r) => isRoomMember(r, me) && (r.status === 'waiting' || r.status === 'playing' || r.status === 'finished'));
+            // 두는 중 > 대기 > 결과 순서로 내 방을 골라요. 끝난 옛 방 때문에 방금 만든 방이 닫히지 않게 해요.
+            const mineActive = pickMyActiveBoardRoom(rows, me);
             if (mineActive) void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
-            if (minePlaying && !_alkLeftRooms.has(minePlaying.id) && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
-                enterBoardGameTable(minePlaying.id);
+            // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.
+            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')));
+            if (mineEnter && !_alkLeftRooms.has(boardRoomInstanceKey(mineEnter)) && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
+                enterBoardGameTable(mineEnter.id);
             }
             if (!_alkResumeTried) {
                 _alkResumeTried = true;
@@ -12115,7 +12127,9 @@ ${subjectLine}
 
         function showBoardGameView(view) {
             const nextView = view === 'chess-play' ? 'play' : view;
-            if (nextView !== 'play' || activeBoardPlayKind() !== 'alkkagi') closeAlkkagiDialogs();
+            // 다른 화면으로 가면 알까기 창을 닫아요. 방 목록을 다시 그릴 때는 방 목록 창(방 지우기 확인)을 그대로 둬요.
+            const keepDialogs = nextView === 'lobby' ? 'lobby' : (nextView === 'play' && activeBoardPlayKind() === 'alkkagi' ? 'play' : '');
+            closeAlkkagiDialogs(keepDialogs);
             _boardGameView = nextView;
             const home = document.getElementById('boardgameHomeView');
             const lobby = document.getElementById('boardgameLobbyView');
@@ -12333,10 +12347,11 @@ ${subjectLine}
             _boardGameVacating = true;
             try {
                 for (const id of closeHostIds) {
+                    // 정리는 조용히 해요. 실패해도 알림 창을 띄우지 않아요(알림을 기다리는 동안 정리가 멈추던 문제).
                     const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => closeBoardRoom(cur, {
                         actorId: me,
                         now: Date.now(),
-                    })));
+                    }), { silent: true }));
                     if (closed) {
                         try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 목록 필터로도 빠집니다 */ }
                     }
@@ -12345,7 +12360,7 @@ ${subjectLine}
                     await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => cancelJoinBoardRoom(cur, {
                         studentId: me,
                         now: Date.now(),
-                    })));
+                    }), { silent: true }));
                 }
             } finally {
                 _boardGameVacating = false;
@@ -12373,7 +12388,10 @@ ${subjectLine}
             }
             if (_boardGameView === 'play') {
                 const room = currentBoardGameRoom();
-                if (!room || room.status === 'closed') {
+                // 알까기 방이 새 대기 방으로 바뀌었거나 내가 더는 그 방 사람이 아니면 방 목록으로 돌아가요.
+                const alkGone = room && room.gameType === 'alkkagi'
+                    && (room.status === 'waiting' || !isRoomMember(room, boardGameSelfId()));
+                if (!room || room.status === 'closed' || alkGone) {
                     _boardGameActiveId = '';
                     showBoardGameView('lobby');
                     renderBoardGameLobby();
@@ -12435,10 +12453,7 @@ ${subjectLine}
             if (!box) return;
             const me = boardGameSelfId();
             const now = Date.now();
-            const rooms = listVisibleBoardRooms(
-                _boardGameRooms.filter((r) => r.gameType === _boardGameType),
-                now
-            );
+            const rooms = listLobbyBoardRooms(_boardGameRooms, { gameType: _boardGameType, now });
             if (!rooms.length) {
                 box.innerHTML = _boardGameType === 'alkkagi'
                     ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>'
@@ -12456,6 +12471,9 @@ ${subjectLine}
                 let action = '';
                 if (mine && (room.status === 'playing' || room.status === 'finished')) {
                     action = `<button type="button" class="boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
+                } else if (host && room.status === 'waiting' && room.gameType === 'alkkagi') {
+                    // 내가 만든 알까기 대기 방은 여기서 바로 지울 수 있어요.
+                    action = `<div class="boardgame-room-actions"><span class="boardgame-room-meta">방장</span><button type="button" class="boardgame-mini-btn boardgame-room-delete" data-delete-room="${escapeBoardGameText(room.id)}">방 지우기</button></div>`;
                 } else if (host && room.status === 'waiting') {
                     action = `<span class="boardgame-room-meta">방장</span>`;
                 } else if (pending) {
@@ -12475,7 +12493,7 @@ ${subjectLine}
                             <button type="button" class="boardgame-mini-btn" data-reject="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">거절</button>
                         </div>`).join('')
                     : '';
-                return `<article class="boardgame-room-card">
+                return `<article class="boardgame-room-card" data-room-id="${escapeBoardGameText(room.id)}">
                     <div>
                         <p class="boardgame-room-title">${escapeBoardGameText(room.hostName)}의 방</p>
                         <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left} · 방장 ${escapeBoardGameText(boardGameRecordText(lookupBoardGameRecords(room.hostId), room.gameType))}</p>
@@ -12497,6 +12515,23 @@ ${subjectLine}
             box.querySelectorAll('[data-reject]').forEach((btn) => {
                 btn.addEventListener('click', () => { void window.rejectBoardGameJoin(btn.getAttribute('data-reject'), btn.getAttribute('data-sid')); });
             });
+            box.querySelectorAll('[data-delete-room]').forEach((btn) => {
+                btn.disabled = _boardGameDeleting;
+                btn.addEventListener('click', () => { void window.deleteMyBoardGameRoom(btn.getAttribute('data-delete-room')); });
+            });
+        }
+
+        /** 방 목록에서 내 방 카드를 잠깐 반짝여 어디 있는지 알려 줘요. */
+        function flashBoardGameRoomCard(roomId) {
+            const box = document.getElementById('boardgameRoomList');
+            if (!box) return;
+            const card = Array.from(box.querySelectorAll('[data-room-id]')).find((el) => el.getAttribute('data-room-id') === roomId);
+            if (!card) return;
+            card.classList.remove('is-flash');
+            void card.offsetWidth;
+            card.classList.add('is-flash');
+            try { card.scrollIntoView({ block: 'nearest' }); } catch (_) { /* 무시 */ }
+            setTimeout(() => card.classList.remove('is-flash'), 1800);
         }
 
         function memberNameBySeat(room, seat) {
@@ -12933,11 +12968,12 @@ ${subjectLine}
             return _boardGameWriteChain;
         }
 
-        async function mutateBoardRoom(roomId, mutator) {
+        async function mutateBoardRoom(roomId, mutator, opts = {}) {
             if (!db) return null;
+            const silent = !!(opts && opts.silent);
             const authOk = await ensureAnonAuthReady();
             if (!authOk) {
-                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                if (!silent) await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return null;
             }
             const ref = boardGameRoomRef(roomId);
@@ -12953,6 +12989,10 @@ ${subjectLine}
                 });
             } catch (e) {
                 const code = e && e.message;
+                if (silent) {
+                    console.warn('mutateBoardRoom', roomId, code);
+                    return null;
+                }
                 const roomLabel = boardRoomErrorText(code);
                 const moveLabel = gomokuErrorText(code);
                 const chessLabel = chessErrorText(code);
@@ -13333,7 +13373,24 @@ ${subjectLine}
             renderBoardGameLobby();
         };
 
+        /** 방장이 알까기 방 목록을 떠나면, 아무도 받지 않은 내 대기 방을 닫아요(목록에 빈 방이 남지 않게). */
+        async function closeMyWaitingAlkkagiRooms() {
+            const me = boardGameSelfId();
+            if (!me || !db) return;
+            const mine = _boardGameRooms.filter((r) => r.gameType === 'alkkagi' && r.status === 'waiting' && isRoomHost(r, me));
+            for (const room of mine) {
+                const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => deleteWaitingBoardRoom(cur, {
+                    actorId: me,
+                    now: Date.now(),
+                }), { silent: true }));
+                if (closed) {
+                    try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 닫힌 방은 목록에서 빠져요 */ }
+                }
+            }
+        }
+
         window.backBoardGameHome = function () {
+            if (_boardGameView === 'lobby' && _boardGameType === 'alkkagi') void closeMyWaitingAlkkagiRooms();
             clearGomokuAiSession();
             clearChessAiSession();
             clearAlkkagiLocal();
@@ -13472,30 +13529,122 @@ ${subjectLine}
             }));
         }
 
+        function setBoardGameCreateBusy(busy) {
+            const btn = document.getElementById('boardgameCreateBtn');
+            if (!btn) return;
+            btn.disabled = !!busy;
+            btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+            btn.textContent = busy ? '만드는 중…' : '방 만들기';
+        }
+
+        /** 알까기: 방장마다 정해진 id 하나에 트랜잭션으로 써서, 여러 번 눌러도·창이 여러 개여도 방이 하나만 생겨요. */
+        async function createHostBoardRoomOnce(def, me, roomId) {
+            const ref = boardGameRoomRef(roomId);
+            return runTransaction(db, async (tx) => {
+                const snap = await tx.get(ref);
+                const now = Date.now();
+                const existing = snap.exists() ? sanitizeBoardRoom({ id: snap.id, ...snap.data() }, now) : null;
+                const decision = decideBoardRoomCreate(existing, { hostId: me, now });
+                if (decision.action === 'create') {
+                    const made = createBoardRoom({ gameType: def.id, hostId: me, hostName: boardGameSelfName(), now, id: roomId });
+                    if (!made.ok) return { action: 'error', error: made.error };
+                    tx.set(ref, boardRoomToDoc(made.room));
+                } else if (decision.action === 'reuse') {
+                    // 이미 있는 내 방은 방금 쓴 것으로 표시해, 곧바로 10분 정리에 걸리지 않게 해요.
+                    tx.set(ref, boardRoomToDoc({ ...existing, lastActivityAt: now, updatedAt: now }));
+                }
+                return decision;
+            });
+        }
+
         window.createBoardGameRoom = async function (gameType) {
             if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
             const me = boardGameSelfId();
             if (!me) return window.customAlert('로그인한 학생만 방을 만들 수 있습니다.');
             const def = getBoardGameDef(gameType || _boardGameType);
             if (!def || !db) return;
-            await vacateOtherBoardRooms('');
-            const made = createBoardRoom({
-                gameType: def.id,
-                hostId: me,
-                hostName: boardGameSelfName(),
-                now: Date.now(),
-            });
-            if (!made.ok) return window.customAlert(boardRoomErrorText(made.error));
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            // 만드는 중에 다시 누르면(더블클릭·연타) 아무것도 하지 않아요.
+            if (_boardGameCreating) return;
+            _boardGameCreating = true;
+            setBoardGameCreateBusy(true);
+            let outcome = null;
             try {
-                await setDoc(boardGameRoomRef(made.room.id), boardRoomToDoc(made.room));
-                _boardGameActiveId = made.room.id;
-                showBoardGameView('lobby');
+                const fixedId = hostBoardRoomId(def.id, me);
+                await vacateOtherBoardRooms(fixedId);
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) {
+                    outcome = { action: 'alert', text: '인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.' };
+                } else if (fixedId) {
+                    const decision = await createHostBoardRoomOnce(def, me, fixedId);
+                    outcome = decision.action === 'error'
+                        ? { action: 'alert', text: boardRoomErrorText(decision.error) }
+                        : { ...decision, roomId: fixedId };
+                } else {
+                    const made = createBoardRoom({
+                        gameType: def.id,
+                        hostId: me,
+                        hostName: boardGameSelfName(),
+                        now: Date.now(),
+                    });
+                    if (!made.ok) {
+                        outcome = { action: 'alert', text: boardRoomErrorText(made.error) };
+                    } else {
+                        await setDoc(boardGameRoomRef(made.room.id), boardRoomToDoc(made.room));
+                        outcome = { action: 'create', roomId: made.room.id };
+                    }
+                }
             } catch (e) {
                 console.error('createBoardGameRoom', e);
-                await window.customAlert('방을 만들지 못했습니다.');
+                outcome = { action: 'alert', text: '방을 만들지 못했습니다.' };
+            } finally {
+                _boardGameCreating = false;
+                setBoardGameCreateBusy(false);
             }
+            if (!outcome) return;
+            if (outcome.action === 'alert') {
+                await window.customAlert(outcome.text);
+                return;
+            }
+            if (outcome.action === 'enter') {
+                enterBoardGameTable(outcome.roomId);
+                return;
+            }
+            _boardGameActiveId = outcome.roomId;
+            showBoardGameView('lobby');
+            if (outcome.action === 'reuse') {
+                renderBoardGameLobby();
+                flashBoardGameRoomCard(outcome.roomId);
+                await alkkagiDialog('이미 만든 방이 있어요.<br>새로 만들지 않고 그 방에서 친구를 기다려요.', [
+                    { label: '알겠어요', value: true, main: true },
+                ], '', { scope: 'lobby' });
+            }
+        };
+
+        window.deleteMyBoardGameRoom = async function (roomId) {
+            const id = String(roomId || '');
+            const me = boardGameSelfId();
+            const room = _boardGameRooms.find((r) => r.id === id);
+            if (!id || !me || !room || !isRoomHost(room, me) || _boardGameDeleting) return;
+            const ok = await alkkagiDialog('내 방을 지울까요?<br>친구가 보낸 참가 신청도 함께 사라져요.', [
+                { label: '그대로 둘래요', value: false, main: true, cancel: true },
+                { label: '지울게요', value: true, danger: true },
+            ], '', { scope: 'lobby' });
+            if (!ok) return;
+            _boardGameDeleting = true;
+            try {
+                const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => deleteWaitingBoardRoom(cur, {
+                    actorId: me,
+                    now: Date.now(),
+                })));
+                if (closed) {
+                    try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 닫힌 방은 목록에서 빠져요 */ }
+                    if (_boardGameActiveId === id) _boardGameActiveId = '';
+                    _boardGameRooms = _boardGameRooms.filter((r) => r.id !== id);
+                }
+            } finally {
+                _boardGameDeleting = false;
+            }
+            if (_boardGameView === 'lobby') renderBoardGameLobby();
         };
 
         window.requestJoinBoardGameRoom = async function (roomId) {
@@ -13707,7 +13856,7 @@ ${subjectLine}
             if (saved.kind === 'room') {
                 const room = (rows || []).find((r) => r.id === saved.id);
                 const me = boardGameSelfId();
-                if (!room || room.gameType !== 'alkkagi' || room.status !== 'playing' || !isRoomMember(room, me) || _alkLeftRooms.has(room.id)) {
+                if (!room || room.gameType !== 'alkkagi' || room.status !== 'playing' || !isRoomMember(room, me) || _alkLeftRooms.has(boardRoomInstanceKey(room))) {
                     saveAlkkagiResume('');
                     return;
                 }
@@ -14118,18 +14267,20 @@ ${subjectLine}
          *  cancel: Esc·바깥으로 닫을 때 돌려줄 버튼(처음 초점도 여기), danger: 지는 쪽 버튼(옅은 색). */
         // 열린 알까기 확인 창 목록이에요. 화면을 떠나거나 전체 화면을 닫으면 모두 '취소'로 닫아요.
         const _alkDialogs = new Set();
-        function closeAlkkagiDialogs() {
-            Array.from(_alkDialogs).forEach((close) => close());
-            document.querySelectorAll('#boardgameAlkkagiPlayView .alk-modal').forEach((el) => el.remove());
+        function closeAlkkagiDialogs(keepScope = '') {
+            Array.from(_alkDialogs).forEach((close) => { if (!keepScope || close.scope !== keepScope) close(); });
+            if (keepScope !== 'play') document.querySelectorAll('#boardgameAlkkagiPlayView .alk-modal').forEach((el) => el.remove());
         }
 
-        function alkkagiDialog(message, buttons = [{ label: '알겠어요', value: true, main: true }], title = '') {
+        function alkkagiDialog(message, buttons = [{ label: '알겠어요', value: true, main: true }], title = '', opts = {}) {
             return new Promise((resolve) => {
-                const host = document.getElementById('boardgameAlkkagiPlayView') || document.body;
+                // scope 'lobby'는 방 목록 위에 띄우는 창이에요(방 지우기·이미 만든 방 안내).
+                const scope = opts && opts.scope === 'lobby' ? 'lobby' : 'play';
+                const host = (scope === 'lobby' ? document.getElementById('boardgameLobbyView') : document.getElementById('boardgameAlkkagiPlayView')) || document.body;
                 const cancelBtn = buttons.find((b) => b.cancel) || buttons.find((b) => !b.main && !b.danger) || buttons[buttons.length - 1];
                 const cancelValue = cancelBtn ? cancelBtn.value : false;
                 const wrap = document.createElement('div');
-                wrap.className = 'alk-modal';
+                wrap.className = scope === 'lobby' ? 'alk-modal is-lobby' : 'alk-modal';
                 wrap.setAttribute('role', 'dialog');
                 wrap.setAttribute('aria-modal', 'true');
                 wrap.innerHTML = `<div class="alk-modal-card alk-hanji">
@@ -14176,6 +14327,7 @@ ${subjectLine}
                     resolve(v);
                 };
                 const cancel = () => finish(cancelValue);
+                cancel.scope = scope;
                 _alkDialogs.add(cancel);
                 window.addEventListener('keydown', onKey, true);
                 wrap.querySelectorAll('[data-i]').forEach((btn) => {
@@ -14386,7 +14538,7 @@ ${subjectLine}
                     if (!ok) return;
                     await forfeitAlkkagiNow();
                     // 나간 사람은 결과 카드 대신 방 목록으로 가요. 이 방으로는 저절로 다시 들어가지 않아요.
-                    _alkLeftRooms.add(alkRoom.id);
+                    _alkLeftRooms.add(boardRoomInstanceKey(alkRoom));
                     _boardGameActiveId = '';
                     saveAlkkagiResume('');
                     showBoardGameView('lobby');
@@ -21742,6 +21894,11 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
+            // 카드 이름표의 쨈 제목 글꼴: 알까기와 같은 글꼴 CSS를 한 번만 불러옵니다(이미 불러왔으면 건너뜀).
+            if (!_alkFontsLoaded) {
+                _alkFontsLoaded = true;
+                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+            }
 
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
@@ -21778,6 +21935,9 @@ ${subjectLine}
                 const aura = applyEquippedAura(displayData, lv.info.borderColor, 'shadow-md');
                 let border = aura.border;
                 let glow = aura.glow;
+                // 등급별 보석 채움. 오라 스킨을 끼면 plaza-tier-aura로 표시해 오라 테두리·빛을 덮지 않습니다.
+                const hasAuraSkin = border !== lv.info.borderColor || glow !== 'shadow-md';
+                const tierClass = ` plaza-tier plaza-tier-${lv.info.ring}${hasAuraSkin ? ' plaza-tier-aura' : ''}`;
                 const face = buildCharacterAvatarHtml({
                     studentId: targetId,
                     data: displayData,
@@ -21882,7 +22042,7 @@ ${subjectLine}
                 </div>${dislikeReasonHtml}`;
 
                 return `
-                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
+                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${tierClass}${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
                     <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">

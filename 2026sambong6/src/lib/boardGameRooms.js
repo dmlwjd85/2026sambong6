@@ -73,6 +73,18 @@ export function createBoardRoomId() {
     return `bg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * 한 사람이 방을 하나만 갖는 게임(지금은 알까기)의 방 문서 id예요.
+ * 방장마다 id가 하나로 정해져 있어서, 버튼을 여러 번 눌러도 문서가 하나만 생겨요.
+ * 다른 게임은 빈 문자열을 돌려줘요(예전처럼 새 id를 써요).
+ */
+export function hostBoardRoomId(gameType, hostId) {
+    const def = getBoardGameDef(gameType);
+    const hid = String(hostId || '').trim().slice(0, 20).replace(/[^A-Za-z0-9_-]/g, '_');
+    if (!def || !hid || def.id !== 'alkkagi') return '';
+    return `alk_${hid}`;
+}
+
 function cleanId(raw) {
     return String(raw || '').trim().slice(0, 20);
 }
@@ -216,13 +228,13 @@ function touchRoom(room, now, extra = {}) {
     };
 }
 
-export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled = false } = {}) {
+export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled = false, id = '' } = {}) {
     const def = getBoardGameDef(gameType);
     const hid = cleanId(hostId);
     if (!def || !hid) return { ok: false, error: 'bad_create', room: null };
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     const room = emptyBoardRoom(def.id, t);
-    room.id = createBoardRoomId();
+    room.id = String(id || '').trim().slice(0, 40) || createBoardRoomId();
     room.hostId = hid;
     room.hostName = cleanName(hostName) || hid;
     room.timerEnabled = timerEnabled === true;
@@ -276,6 +288,45 @@ export function listVisibleBoardRooms(rooms, now) {
         .map((raw) => sanitizeBoardRoom(raw, t))
         .filter((room) => room.id && room.status !== 'closed' && !isRoomIdleExpired(room, t))
         .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * 방 목록에 보여 줄 방이에요. 알까기는 끝난 판(결과)을 목록에서 빼요.
+ * 끝난 방은 같이 둔 사람만 판 화면에서 결과를 보고, 다른 사람에게는 보이지 않아요.
+ */
+export function listLobbyBoardRooms(rooms, { gameType, now } = {}) {
+    const type = String(gameType || '');
+    return listVisibleBoardRooms(rooms, now)
+        .filter((room) => !type || room.gameType === type)
+        .filter((room) => room.gameType !== 'alkkagi' || room.status !== 'finished');
+}
+
+/**
+ * 「방 만들기」를 눌렀을 때 할 일을 정해요. existing은 같은 id로 이미 있는 방(없으면 null)이에요.
+ * - create: 새 방을 만들어요(없거나, 닫혔거나, 끝났거나, 오래 비어 있던 방).
+ * - reuse: 내가 만든 대기 방이 이미 있어요. 새로 만들지 않고 그 방으로 안내해요.
+ * - enter: 내가 두고 있는 판이 있어요. 그 판으로 들어가요.
+ */
+export function decideBoardRoomCreate(existing, { hostId, now } = {}) {
+    const hid = cleanId(hostId);
+    if (!hid) return { action: 'error', error: 'bad_create' };
+    if (!existing) return { action: 'create', error: '' };
+    const t = Math.max(0, Math.floor(Number(now) || Date.now()));
+    const r = sanitizeBoardRoom(existing, t);
+    if (r.status === 'closed' || r.status === 'finished' || isRoomIdleExpired(r, t)) return { action: 'create', error: '' };
+    if (r.status === 'waiting' && isRoomHost(r, hid)) return { action: 'reuse', error: '' };
+    if (r.status === 'playing' && isRoomMember(r, hid)) return { action: 'enter', error: '' };
+    return { action: 'create', error: '' };
+}
+
+/** 방장이 아직 아무도 들어오지 않은(대기) 방을 지워요. 판이 시작된 방은 기권·나가기로 끝내요. */
+export function deleteWaitingBoardRoom(room, { actorId, now } = {}) {
+    const r = sanitizeBoardRoom(room, now);
+    const t = Math.max(0, Math.floor(Number(now) || Date.now()));
+    if (!isRoomHost(r, actorId)) return { ok: false, error: 'host_only', room: r };
+    if (r.status === 'closed') return { ok: true, error: '', room: r };
+    if (r.status !== 'waiting') return { ok: false, error: 'delete_waiting_only', room: r };
+    return { ok: true, error: '', room: touchRoom(r, t, { status: 'closed' }) };
 }
 
 export function closeBoardRoom(room, { actorId, now, force = false } = {}) {
@@ -363,6 +414,27 @@ export function cancelJoinBoardRoom(room, { studentId, now } = {}) {
     }
     const joinRequests = r.joinRequests.filter((row) => !(row.id === id && row.status === 'pending'));
     return { ok: true, error: '', room: touchRoom(r, t, { joinRequests }) };
+}
+
+/**
+ * 내가 들어 있는 방 가운데 지금 붙잡을 방을 골라요. 두는 중 > 대기 > 결과 순서이고, 같으면 최근 방이에요.
+ * (예전에는 문서 순서대로 첫 방을 골라, 끝난 옛 방 때문에 방금 만든 대기 방이 닫힐 수 있었어요.)
+ */
+export function pickMyActiveBoardRoom(rooms, studentId) {
+    const id = cleanId(studentId);
+    if (!id) return null;
+    const rank = { playing: 0, waiting: 1, finished: 2 };
+    const mine = (Array.isArray(rooms) ? rooms : [])
+        .map((raw) => sanitizeBoardRoom(raw))
+        .filter((r) => r.id && r.status in rank && r.members.some((m) => m.id === id));
+    mine.sort((a, b) => (rank[a.status] - rank[b.status]) || (b.updatedAt - a.updatedAt));
+    return mine[0] || null;
+}
+
+/** 같은 id를 다시 쓰는 방(알까기)도 판마다 구별되게, id와 만든 시각을 함께 써요. */
+export function boardRoomInstanceKey(room) {
+    const r = sanitizeBoardRoom(room);
+    return r.id ? `${r.id}:${r.createdAt}` : '';
 }
 
 /**
@@ -505,6 +577,7 @@ export const BOARD_ROOM_ERROR_LABEL = Object.freeze({
     member_only: '이 방 사람만 할 수 있습니다.',
     not_allowed: '권한이 없습니다.',
     not_idle: '아직 방치된 방이 아닙니다.',
+    delete_waiting_only: '벌써 판이 시작돼서 지울 수 없어요. 판에서 「나가기」를 눌러 주세요.',
 });
 
 export function boardRoomErrorText(code) {

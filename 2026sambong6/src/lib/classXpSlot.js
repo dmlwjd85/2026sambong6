@@ -102,8 +102,9 @@ export function classXpGrantDecision(xp, lastSlot, slotKey) {
  * 마스터 계정, 빈 id(예: 'student_' 문서), 이미 이번 슬롯을 받은 학생은 읽지 않습니다.
  * 화면 데이터에서 xp가 숫자가 아닌 학생은 invalidXp로 따로 돌려줍니다.
  * skip(학생 → true)으로 신용 불량처럼 대상이 아닌 학생을 뺍니다.
+ * settled(id → true)는 이 기기가 이번 슬롯에 이미 처리했거나 잠시 쉬는 학생이에요(화면 데이터가 늦게 와도 다시 읽지 않아요).
  */
-export function classXpTargets(students, slotKey, skip = () => false) {
+export function classXpTargets(students, slotKey, skip = () => false, settled = () => false) {
     const pending = [];
     const invalidXp = [];
     for (const stu of Array.isArray(students) ? students : []) {
@@ -114,9 +115,33 @@ export function classXpTargets(students, slotKey, skip = () => false) {
         const decision = classXpGrantDecision(stu.xp, stu.lastClassXpSlot, slotKey);
         if (decision === 'already') continue;
         if (decision === 'invalid-xp') invalidXp.push(id);
+        else if (settled(id)) continue;
         else pending.push(id);
     }
     return { pending, invalidXp };
+}
+
+/** 사용량 초과·거절 뒤 다시 시도하지 않고 쉬는 시간(15분). */
+export const CLASS_XP_PAUSE_MS = 15 * 60 * 1000;
+
+/** 쉬기 기록. 새로고침해도 이어지도록 저장소에 JSON으로 넣어요. */
+export function classXpPauseRecord(nowMs, kind, ms = CLASS_XP_PAUSE_MS) {
+    return { at: nowMs, until: nowMs + ms, kind: String(kind || '') };
+}
+
+/**
+ * 저장된 쉬기 기록에서 아직 유효한 끝 시각(ms)을 돌려줘요. 쉬지 않으면 0이에요.
+ * 끝 시각이 지났거나, 형식이 틀렸거나, 끝 시각이 지금+쉬는 시간보다 멀면(기기 시계를 되돌린 경우) 0이에요.
+ */
+export function classXpPauseUntil(raw, nowMs, ms = CLASS_XP_PAUSE_MS) {
+    let rec = raw;
+    if (typeof raw === 'string') {
+        try { rec = JSON.parse(raw); } catch (_) { return 0; }
+    }
+    const until = Number(rec && rec.until);
+    if (!Number.isFinite(until) || !Number.isFinite(nowMs)) return 0;
+    if (until <= nowMs || until > nowMs + ms) return 0;
+    return until;
 }
 
 /** 저장 실패를 거절(denied), 사용량 초과(quota), 그 밖(other)으로 나눕니다. */
@@ -144,7 +169,7 @@ export function classXpIssueMessage(kind, timeStr, labels = []) {
         return `⏰ ${when}수업 종료 경험치를 아직 못 줬어요. 오늘 서버 사용량이 다 차서 저장이 막혔어요. 풀리면 자동으로 다시 줄게요.`;
     }
     if (kind === 'denied') {
-        return `⏰ ${when}수업 종료 경험치를 저장하지 못했어요. 이 기기 시계를 한국 시간(서울)으로 자동 설정한 뒤 다시 열어 주세요.`;
+        return `⏰ ${when}수업 종료 경험치를 저장하지 못했어요. 이 기기 시계를 한국 시간(서울)으로 자동 설정해 주세요. 15분 뒤 자동으로 다시 시도해요.`;
     }
     if (!who) return '';
     if (kind === 'xp') {

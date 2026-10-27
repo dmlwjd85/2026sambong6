@@ -540,7 +540,7 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { classXpCatchupSlot, classXpErrorKind, classXpGrantDecision, classXpIssueMessage, classXpTargets, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { CLASS_XP_PAUSE_MS, classXpCatchupSlot, classXpErrorKind, classXpGrantDecision, classXpIssueMessage, classXpPauseRecord, classXpPauseUntil, classXpTargets, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
@@ -30696,10 +30696,38 @@ ${subjectLine}
         }
 
         /** 수업 종료 XP 알림은 큰 창 대신 토스트로, 이 기기에서 하루 한 번만 띄워요. */
-        const CLASS_XP_PAUSE_MS = 15 * 60 * 1000;
         let _classXpRunning = false;
         let _classXpPauseUntil = 0;
         let _classXpLastIssue = '';
+        /** 이 기기가 이번 슬롯에 처리한 학생: id → 다시 읽어도 되는 시각(ms). 화면 데이터가 늦게 와도 다시 읽지 않아요. */
+        let _classXpSettledSlot = '';
+        const _classXpSettled = new Map();
+
+        function classXpPauseStorageKey() {
+            return `sambong_classxp_pause_${appId}`;
+        }
+
+        /** 사용량 초과·거절 뒤 쉬는 중인지. 새로고침해도 저장소 기록으로 이어지고, 실제 시각이 지나면 풀려요. */
+        function classXpPausedNow(nowMs) {
+            if (nowMs < _classXpPauseUntil && _classXpPauseUntil <= nowMs + CLASS_XP_PAUSE_MS) return true;
+            _classXpPauseUntil = 0;
+            try {
+                const until = classXpPauseUntil(localStorage.getItem(classXpPauseStorageKey()), nowMs);
+                if (until) {
+                    _classXpPauseUntil = until;
+                    return true;
+                }
+            } catch (_) { /* 저장소를 못 쓰면 메모리 값만 써요 */ }
+            return false;
+        }
+
+        function startClassXpPause(kind) {
+            const rec = classXpPauseRecord(Date.now(), kind);
+            _classXpPauseUntil = rec.until;
+            try {
+                localStorage.setItem(classXpPauseStorageKey(), JSON.stringify(rec));
+            } catch (_) { /* 메모리 값으로 이 화면에서는 쉬어요 */ }
+        }
 
         function classXpNoticeStorageKey() {
             return `sambong_classxp_notice_${appId}`;
@@ -30723,14 +30751,20 @@ ${subjectLine}
         /** 평일 KST. 오늘 가장 최근 종을 학생마다 따로 지급합니다. 중복은 lastClassXpSlot으로 판단합니다. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
-            if (_classXpRunning || Date.now() < _classXpPauseUntil) return;
+            if (_classXpRunning || classXpPausedNow(Date.now())) return;
             const now = new Date();
             const slot = classXpCatchupSlot(now);
             if (!slot) return;
             if (isVacationAutomationPaused('classXp', slot.ymd)) return;
 
             const { key: todayKey, slotMs, timeStr, ymd } = slot;
-            const { pending, invalidXp } = classXpTargets(window.allStudentsData, todayKey, studentIsCreditDefault);
+            if (_classXpSettledSlot !== todayKey) {
+                _classXpSettledSlot = todayKey;
+                _classXpSettled.clear();
+            }
+            const nowMs = Date.now();
+            const settled = (sid) => (_classXpSettled.get(sid) || 0) > nowMs;
+            const { pending, invalidXp } = classXpTargets(window.allStudentsData, todayKey, studentIsCreditDefault, settled);
             const xpSkipped = [...invalidXp];
             const failed = { quota: 0, denied: [], other: [] };
             let grantedCount = 0;
@@ -30756,8 +30790,10 @@ ${subjectLine}
                             });
                             if (result === 'granted') grantedCount += 1;
                             else if (result === 'invalid-xp') xpSkipped.push(sid);
+                            _classXpSettled.set(sid, Infinity);
                         } catch (e) {
                             const kind = classXpErrorKind(e);
+                            if (kind !== 'quota') _classXpSettled.set(sid, Date.now() + CLASS_XP_PAUSE_MS);
                             if (kind === 'quota') failed.quota += 1;
                             else if (kind === 'denied') failed.denied.push(sid);
                             else failed.other.push(sid);
@@ -30771,10 +30807,10 @@ ${subjectLine}
 
             const labelsOf = (ids) => ids.slice().sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })).map((sid) => getStudentDisplayLabel(sid));
             if (failed.quota) {
-                _classXpPauseUntil = Date.now() + CLASS_XP_PAUSE_MS;
+                startClassXpPause('quota');
                 noteClassXpIssue(ymd, todayKey, 'quota', classXpIssueMessage('quota', timeStr));
             } else if (failed.denied.length && !grantedCount && !failed.other.length) {
-                _classXpPauseUntil = Date.now() + CLASS_XP_PAUSE_MS;
+                startClassXpPause('denied');
                 noteClassXpIssue(ymd, todayKey, 'denied', classXpIssueMessage('denied', timeStr));
             } else if (failed.denied.length || failed.other.length) {
                 noteClassXpIssue(ymd, todayKey, 'other', classXpIssueMessage('other', timeStr, labelsOf([...failed.denied, ...failed.other])));

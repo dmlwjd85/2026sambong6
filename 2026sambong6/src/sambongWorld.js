@@ -21,6 +21,10 @@ import {
     query,
     where,
     limit,
+    orderBy,
+    documentId,
+    startAt,
+    endBefore,
 } from 'firebase/firestore';
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
@@ -228,6 +232,8 @@ import {
 } from './lib/chessGame.js';
 import {
     BOARD_LOBBY_QUERY_LIMIT,
+    BOARD_MINE_ID_SPLIT,
+    BOARD_MINE_OTHER_QUERY_LIMIT,
     BOARD_MINE_QUERY_LIMIT,
     applyBoardRoomGame,
     approveJoinBoardRoom,
@@ -258,6 +264,7 @@ import {
     pickMyActiveBoardRoom,
     rejectJoinBoardRoom,
     remainingSeats,
+    shouldAutoEnterBoardRoom,
     requestJoinBoardRoom,
     roomMemberSeat,
     sanitizeBoardRoom,
@@ -12097,15 +12104,19 @@ ${subjectLine}
         }
 
         // ── 방 구독 범위: 전체 방 컬렉션 대신 지금 화면에 필요한 방만 받아요(읽기 비용 절약) ──
-        // lobby: 보고 있는 게임의 방 목록 / mine: 내가 참가·신청한 방 / room: 대전 중인 내 방 문서 하나
-        const _boardRoomSources = { lobby: new Map(), mine: new Map(), room: new Map() };
-        const _boardRoomUnsubs = { lobby: null, mine: null, room: null };
+        // lobby: 보고 있는 게임의 방 목록 / mine: 내가 참가·신청한 오목·체스 방(bg_) / mineOther: 내가 참가·신청한 알까기 방(alk_) / room: 대전 중인 내 방 문서 하나
+        const _boardRoomSources = { lobby: new Map(), mine: new Map(), mineOther: new Map(), room: new Map() };
+        const _boardRoomUnsubs = { lobby: null, mine: null, mineOther: null, room: null };
+        // 이 화면을 연 시각과, 이 화면에서 기다리거나 두는 모습을 본 판(boardRoomInstanceKey).
+        // 새 탭·다른 기기에서 예전에 끝난 판 결과로 저절로 끌려가지 않게 해요(shouldAutoEnterBoardRoom).
+        const _boardScreenStartedAt = Date.now();
+        const _boardSeenLiveRooms = new Set();
         let _boardRoomScopeKey = '';
         let _boardRoomScopeTimer = null;
 
         function mergedBoardRoomRows() {
             const byId = new Map();
-            ['lobby', 'mine', 'room'].forEach((k) => {
+            ['lobby', 'mine', 'mineOther', 'room'].forEach((k) => {
                 _boardRoomSources[k].forEach((row, id) => byId.set(id, row));
             });
             return Array.from(byId.values());
@@ -12168,7 +12179,7 @@ ${subjectLine}
             const roomsCol = collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms');
             // 대전으로 넘어가는 순간에도 내 방이 잠깐 비지 않게, 목록에서 받아 둔 내 방을 room 쪽으로 옮겨 둬요.
             if (scope.roomId && !_boardRoomSources.room.has(scope.roomId)) {
-                const carry = _boardRoomSources.lobby.get(scope.roomId) || _boardRoomSources.mine.get(scope.roomId);
+                const carry = _boardRoomSources.lobby.get(scope.roomId) || _boardRoomSources.mine.get(scope.roomId) || _boardRoomSources.mineOther.get(scope.roomId);
                 if (carry) _boardRoomSources.room.set(scope.roomId, carry);
             }
             if (prev[0] !== scope.lobbyGameType) {
@@ -12182,9 +12193,16 @@ ${subjectLine}
             }
             if (prev[1] !== scope.mineId) {
                 stopBoardRoomSource('mine');
+                stopBoardRoomSource('mineOther');
                 if (scope.mineId) {
+                    // 문서 id로 둘로 나눠 받아요. 알까기 방(alk_)은 id가 bg_보다 앞이라, 한 질의로 받으면 끝난 알까기 방이
+                    // 칸을 다 채워 새 오목·체스 방이 안 와요. id 범위만 쓰니 복합 색인은 필요 없어요.
+                    const mineIs = where('participantIds', 'array-contains', scope.mineId);
                     listenBoardRoomQuery('mine',
-                        query(roomsCol, where('participantIds', 'array-contains', scope.mineId), limit(BOARD_MINE_QUERY_LIMIT)),
+                        query(roomsCol, mineIs, orderBy(documentId()), startAt(BOARD_MINE_ID_SPLIT), limit(BOARD_MINE_QUERY_LIMIT)),
+                        query(roomsCol, mineIs, limit(BOARD_MINE_QUERY_LIMIT)));
+                    listenBoardRoomQuery('mineOther',
+                        query(roomsCol, mineIs, orderBy(documentId()), endBefore(BOARD_MINE_ID_SPLIT), limit(BOARD_MINE_OTHER_QUERY_LIMIT)),
                         null);
                 }
             }
@@ -12260,7 +12278,16 @@ ${subjectLine}
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
             // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.
             // 결과를 보고 스스로 나온 방은 건너뛰어요(내 방 구독이 목록을 열 때마다 바로 와서, 끝난 방으로 다시 끌려가지 않게).
-            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')) && !_alkLeftRooms.has(boardRoomInstanceKey(r)));
+            // 새 탭·다른 기기에서 처음 연 목록에서는 끝난 옛 판으로 들어가지 않아요(이 화면에서 두는 걸 봤거나, 연 뒤에 끝난 판만).
+            const mineEnter = rows.find((r) => shouldAutoEnterBoardRoom(r, {
+                selfId: me,
+                leftKeys: _alkLeftRooms,
+                seenLiveKeys: _boardSeenLiveRooms,
+                sinceMs: _boardScreenStartedAt,
+            }));
+            rows.forEach((r) => {
+                if ((r.status === 'waiting' || r.status === 'playing') && isRoomMember(r, me)) _boardSeenLiveRooms.add(boardRoomInstanceKey(r));
+            });
             if (mineEnter && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
                 enterBoardGameTable(mineEnter.id);
             }

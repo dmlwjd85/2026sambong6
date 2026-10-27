@@ -5921,6 +5921,31 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             gap: 0.35rem;
             grid-column: 1 / -1;
         }
+        /* 내 알까기 대기 방: '방장' 표시 아래 '방 지우기'. 되돌릴 수 없는 버튼이라 옅은 붉은 색으로 덜 눈에 띄게 해요. */
+        .boardgame-room-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.35rem;
+        }
+        .boardgame-room-delete {
+            background: rgba(41, 37, 36, 0.6);
+            color: #f3b8a6;
+            border-color: rgba(248, 113, 113, 0.35);
+        }
+        .boardgame-room-delete:disabled,
+        #boardgameCreateBtn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+        .boardgame-room-card.is-flash {
+            border-color: #fde68a;
+            box-shadow: 0 0 0 3px rgba(253, 230, 138, 0.45);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .boardgame-room-card.is-flash { transition: none; }
+        }
         .boardgame-play {
             height: 100%;
         }

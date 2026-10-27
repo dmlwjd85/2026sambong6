@@ -545,7 +545,8 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { CLASS_XP_FIRE_DELAY_MS, classXpCatchupSlot, classXpChunks, classXpErrorKind, classXpGivenOnDevice, classXpIssueMessage, classXpNextFireMs, classXpTargets, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpGivenOnDevice, classXpIssueMessage, classXpNextFireMs, classXpNoticeFirstToday, classXpStudentLabel, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpSkewFromDateHeader, classXpStoredSkew, runClassXpGrant } from './lib/classXpGrant.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
@@ -5085,7 +5086,8 @@ function redrawPlazaGrantsUi() {
         };
 
         /** 짧은 토스트 (복사 성공 등) */
-        window.showToast = function(message, ms = 2200) {
+        /** opts.tone: 'warn'이면 실패 안내용 주황 계열로 띄워요. 기본은 예전 그대로 초록이에요. */
+        window.showToast = function(message, ms = 2200, opts = {}) {
             let el = document.getElementById('appToast');
             if (!el) {
                 el = document.createElement('div');
@@ -5093,6 +5095,12 @@ function redrawPlazaGrantsUi() {
                 el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
                 document.body.appendChild(el);
             }
+            const warn = !!(opts && opts.tone === 'warn');
+            el.classList.toggle('bg-emerald-700', !warn);
+            el.classList.toggle('bg-orange-700', warn);
+            el.classList.toggle('ring-2', warn);
+            el.classList.toggle('ring-orange-200', warn);
+            el.setAttribute('role', warn ? 'alert' : 'status');
             el.textContent = message || '';
             el.classList.remove('opacity-0');
             el.classList.add('opacity-100');
@@ -30855,18 +30863,62 @@ ${subjectLine}
 
         /**
          * 수업 종료 XP는 단순하게 줘요.
-         * 마스터 J 화면이 다음 종 시각(+20초)에 타이머를 한 번 걸고, 종이 치면 학급 학생을 한 번에 묶어 저장해요.
-         * 서버를 미리 읽지 않고, 실패해도 다시 시도하지 않아요(그 종은 건너뛰어요).
-         * 이 기기가 준 종은 저장소에 남겨서 같은 기기에서는 두 번 주지 않아요.
-         * 알림은 큰 창 대신 토스트로, 실패했을 때만 이 기기에서 하루 한 번 띄워요.
+         * 마스터 J 화면이 다음 종 시각(+20초)에 타이머를 한 번 걸고, 종이 치면 학급 학생과 autoXp 공지를 한 번에 묶어 저장해요.
+         * 서버를 미리 읽지 않아요. 순서·재시도 규칙은 lib/classXpGrant.js에 있어요.
+         * - '이 기기에서 줬음' 표시는 저장이 끝난 뒤에 남겨요(그 사이 새로고침되면 다시 열 때 이어서 줘요).
+         * - 같은 종을 두 번 쓰면 autoXp 규칙이 통째로 거절해서 기기 여러 대가 동시에 줘도 한 번만 들어가요.
+         * - 409는 잠깐 뒤 최대 2번, 403은 서버 시각을 확인해 한 번만 다시 보내요. 429는 더 보내지 않아요.
+         * 알림은 실패했을 때만 토스트로, 이유별로 이 기기에서 하루 한 번 띄워요.
          */
         let _classXpTimer = 0;
         let _classXpArmed = false;
         let _classXpGivenMemo = '';
         let _classXpLastIssue = '';
+        let _classXpBusy = false;
+        let _classXpSkewMs = null;
 
         function classXpGivenStorageKey() {
             return `sambong_classxp_given_${appId}`;
+        }
+
+        function classXpSkewStorageKey() {
+            return `sambong_classxp_skew_${appId}`;
+        }
+
+        /** 기기 시계가 서버보다 빠른 만큼(ms). 403 뒤에 한 번 재서 저장소에 12시간 남겨요. */
+        function classXpSkewMs() {
+            if (_classXpSkewMs == null) {
+                try {
+                    _classXpSkewMs = classXpStoredSkew(localStorage.getItem(classXpSkewStorageKey()), Date.now());
+                } catch (_) {
+                    _classXpSkewMs = 0;
+                }
+            }
+            return _classXpSkewMs || 0;
+        }
+
+        function setClassXpSkew(skew) {
+            _classXpSkewMs = Number.isFinite(skew) ? skew : 0;
+            try {
+                localStorage.setItem(classXpSkewStorageKey(), JSON.stringify({ skew: _classXpSkewMs, at: Date.now() }));
+            } catch (_) { /* 저장소를 못 쓰면 이 화면에서만 기억해요 */ }
+        }
+
+        /** 서버 기준으로 고친 지금 시각 */
+        function classXpNowMs() {
+            return Date.now() - classXpSkewMs();
+        }
+
+        /** 이 페이지 주소의 HTTP Date 헤더로 서버 시각을 봐요. Firestore 읽기가 아니에요. 모르면 null이에요. */
+        async function measureClassXpSkew() {
+            try {
+                const sent = Date.now();
+                const res = await fetch(`${location.pathname}?classxp-clock=${sent}`, { method: 'HEAD', cache: 'no-store' });
+                const received = Date.now();
+                return classXpSkewFromDateHeader(res.headers.get('date'), sent, received);
+            } catch (_) {
+                return null;
+            }
         }
 
         function classXpGivenHere(slotKey) {
@@ -30887,7 +30939,7 @@ ${subjectLine}
 
         function scheduleClassXpBell() {
             clearTimeout(_classXpTimer);
-            const nowMs = Date.now();
+            const nowMs = classXpNowMs();
             _classXpTimer = setTimeout(() => {
                 void window.checkAndDistributeClassXP();
                 scheduleClassXpBell();
@@ -30904,10 +30956,6 @@ ${subjectLine}
             scheduleClassXpBell();
         }
 
-        function classXpNoticeStorageKey() {
-            return `sambong_classxp_notice_${appId}`;
-        }
-
         function noteClassXpIssue(ymd, slotKey, kind, message) {
             const issueKey = `${slotKey}|${kind}|${message}`;
             if (!message || _classXpLastIssue === issueKey) return;
@@ -30915,67 +30963,73 @@ ${subjectLine}
             console.warn('checkAndDistributeClassXP', slotKey, kind, message);
             try {
                 localStorage.setItem(`sambong_classxp_last_issue_${appId}`, JSON.stringify({ at: Date.now(), slot: slotKey, kind, message }));
-                if (localStorage.getItem(classXpNoticeStorageKey()) === ymd) return;
-                localStorage.setItem(classXpNoticeStorageKey(), ymd);
-            } catch (_) {
-                return;
-            }
-            if (typeof window.showToast === 'function') window.showToast(message, 8000);
+            } catch (_) { /* 기록을 못 남겨도 알림은 계속 봐요 */ }
+            if (!classXpNoticeFirstToday(localStorage, appId, kind, ymd)) return;
+            if (typeof window.showToast === 'function') window.showToast(message, 8000, { tone: 'warn' });
+        }
+
+        function classXpLabelOf(sid) {
+            const s = String(sid);
+            const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
+            const roster = window.classMeta?.roster || fallback;
+            const entry = roster.find((r) => String(r.id) === s);
+            const name = String((entry ? entry.name : STUDENT_NAMES[s]) || '').trim();
+            return classXpStudentLabel(s, name ? getStudentDisplayLabel(s) : '');
+        }
+
+        /** 묶음 저장 1번: 학생마다 +5와 이번 종 키, 첫 묶음에는 autoXp 공지까지. 읽기 없이 한 번만 보내요(maxAttempts 1). */
+        async function commitClassXpChunk(slot, ids, withAutoXp) {
+            const xpById = new Map(window.allStudentsData.map((stu) => [String(stu && stu.id), stu && stu.xp]));
+            await runTransaction(db, async (transaction) => {
+                for (const sid of ids) {
+                    const beforeXp = xpById.get(sid);
+                    transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), {
+                        xp: increment(5),
+                        lastClassXpSlot: slot.key,
+                        xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${slot.timeStr})`, beforeXp, beforeXp + 5, { source: 'class-end-auto' })),
+                    });
+                }
+                // 같은 종을 두 번 쓰면 autoXp 규칙(40분 간격)이 이 저장 전체를 거절해요. 기기 여러 대가 겹쳐도 한 번만 들어가요.
+                if (withAutoXp) transaction.set(getAutoXpDocRef(), { lastAutoXpTime: slot.key, slotMs: slot.slotMs });
+            }, { maxAttempts: 1 });
         }
 
         /** 평일 KST. 오늘 가장 최근 종을 이 기기에서 한 번만, 읽기 없이 한 번에 저장해요. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState || !window.playerState.isGM || typeof db === 'undefined' || !db) return;
             if (!window.allStudentsData || window.allStudentsData.length === 0) return;
-            const nowMs = Date.now();
-            const slot = classXpCatchupSlot(new Date(nowMs));
-            // 종이 친 직후 20초는 타이머가 맡아요(기기 시계가 조금 빨라도 서버가 같은 종으로 보게요).
-            if (!slot || nowMs - slot.slotMs < CLASS_XP_FIRE_DELAY_MS) return;
-            if (isVacationAutomationPaused('classXp', slot.ymd)) return;
-            if (classXpGivenHere(slot.key)) return;
-            // 먼저 남겨요. 저장이 실패해도 이 종은 다시 시도하지 않아요.
-            markClassXpGivenHere(slot.key);
-
-            const { key: slotKey, slotMs, timeStr, ymd } = slot;
-            const { pending, invalidXp } = classXpTargets(window.allStudentsData, slotKey, studentIsCreditDefault);
-            const xpById = new Map(window.allStudentsData.map((stu) => [String(stu && stu.id), stu && stu.xp]));
-            let grantedCount = 0;
-            let failKind = '';
-            for (const ids of classXpChunks(pending)) {
-                try {
-                    // 읽기 없는 한 번짜리 저장(commit 1번)이에요. 실패해도 SDK가 다시 시도하지 않게 maxAttempts는 1이에요.
-                    await runTransaction(db, async (transaction) => {
-                        for (const sid of ids) {
-                            const beforeXp = xpById.get(sid);
-                            transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), {
-                                xp: increment(5),
-                                lastClassXpSlot: slotKey,
-                                xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, beforeXp, beforeXp + 5, { source: 'class-end-auto' })),
-                            });
-                        }
-                    }, { maxAttempts: 1 });
-                    grantedCount += ids.length;
-                } catch (e) {
-                    failKind = classXpErrorKind(e);
-                    console.warn('checkAndDistributeClassXP', slotKey, e);
-                    break;
-                }
+            if (_classXpBusy) return;
+            _classXpBusy = true;
+            const skewBefore = classXpSkewMs();
+            let outcome = null;
+            try {
+                outcome = await runClassXpGrant({
+                    now: classXpNowMs,
+                    students: () => window.allStudentsData || [],
+                    lastAutoXpKey: () => (window.globalSettings && window.globalSettings.lastAutoXpTime) || '',
+                    isGiven: classXpGivenHere,
+                    markGiven: markClassXpGivenHere,
+                    isPaused: (ymd) => isVacationAutomationPaused('classXp', ymd),
+                    skipStudent: studentIsCreditDefault,
+                    commit: commitClassXpChunk,
+                    measureSkew: measureClassXpSkew,
+                    setSkew: setClassXpSkew,
+                    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+                    notify: (kind, slot, invalidIds) => {
+                        const labels = (invalidIds || []).slice().sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })).map(classXpLabelOf);
+                        noteClassXpIssue(slot.ymd, slot.key, kind, classXpIssueMessage(kind, slot.timeStr, labels));
+                    },
+                });
+            } catch (e) {
+                console.warn('checkAndDistributeClassXP', e);
+            } finally {
+                _classXpBusy = false;
             }
-
-            const labelsOf = (ids) => ids.slice().sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })).map((sid) => getStudentDisplayLabel(sid));
-            if (failKind) noteClassXpIssue(ymd, slotKey, failKind, classXpIssueMessage(failKind, timeStr));
-            else if (invalidXp.length) noteClassXpIssue(ymd, slotKey, 'xp', classXpIssueMessage('xp', timeStr, labelsOf(invalidXp)));
-
-            if (!grantedCount) return;
-
-            if (!window.globalSettings || window.globalSettings.lastAutoXpTime !== slotKey) {
-                try {
-                    await setDoc(getAutoXpDocRef(), { lastAutoXpTime: slotKey, slotMs });
-                } catch (e) {
-                    console.warn('autoXp advisory', e);
-                }
-            }
-            const announcement = classEndAutoXpAnnouncement(timeStr);
+            // 시계 차이를 새로 알았으면 다음 종 타이머도 서버 기준으로 다시 걸어요.
+            if (_classXpArmed && classXpSkewMs() !== skewBefore) scheduleClassXpBell();
+            if (!outcome || !outcome.granted) return;
+            const slotKey = outcome.slotKey;
+            const announcement = classEndAutoXpAnnouncement(slotKey.slice(-5));
             if (!window.globalSettings) window.globalSettings = {};
             window.globalSettings.autoXpAnnouncement = announcement;
             window.globalSettings.lastAutoXpTime = slotKey;

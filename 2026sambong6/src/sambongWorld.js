@@ -30696,9 +30696,9 @@ ${subjectLine}
         }
 
         /** 수업 종료 XP 알림은 큰 창 대신 토스트로, 이 기기에서 하루 한 번만 띄워요. */
-        const CLASS_XP_QUOTA_BACKOFF_MS = 15 * 60 * 1000;
+        const CLASS_XP_PAUSE_MS = 15 * 60 * 1000;
         let _classXpRunning = false;
-        let _classXpQuotaUntil = 0;
+        let _classXpPauseUntil = 0;
         let _classXpLastIssue = '';
 
         function classXpNoticeStorageKey() {
@@ -30723,7 +30723,7 @@ ${subjectLine}
         /** 평일 KST. 오늘 가장 최근 종을 학생마다 따로 지급합니다. 중복은 lastClassXpSlot으로 판단합니다. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
-            if (_classXpRunning || Date.now() < _classXpQuotaUntil) return;
+            if (_classXpRunning || Date.now() < _classXpPauseUntil) return;
             const now = new Date();
             const slot = classXpCatchupSlot(now);
             if (!slot) return;
@@ -30771,9 +30771,10 @@ ${subjectLine}
 
             const labelsOf = (ids) => ids.slice().sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })).map((sid) => getStudentDisplayLabel(sid));
             if (failed.quota) {
-                _classXpQuotaUntil = Date.now() + CLASS_XP_QUOTA_BACKOFF_MS;
+                _classXpPauseUntil = Date.now() + CLASS_XP_PAUSE_MS;
                 noteClassXpIssue(ymd, todayKey, 'quota', classXpIssueMessage('quota', timeStr));
             } else if (failed.denied.length && !grantedCount && !failed.other.length) {
+                _classXpPauseUntil = Date.now() + CLASS_XP_PAUSE_MS;
                 noteClassXpIssue(ymd, todayKey, 'denied', classXpIssueMessage('denied', timeStr));
             } else if (failed.denied.length || failed.other.length) {
                 noteClassXpIssue(ymd, todayKey, 'other', classXpIssueMessage('other', timeStr, labelsOf([...failed.denied, ...failed.other])));

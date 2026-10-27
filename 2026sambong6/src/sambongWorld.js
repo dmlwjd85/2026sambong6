@@ -10252,6 +10252,8 @@ ${subjectLine}
             
             const activeSec = document.getElementById(tabId + 'Section');
             if(activeSec) activeSec.classList.remove('hidden');
+            // 광장을 열 때 카드 이름표 글꼴을 그때 불러와요(앱 시작 때는 받지 않아요).
+            if (tabId === 'plaza') loadAlkkagiFontsOnce();
             
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
@@ -12022,7 +12024,13 @@ ${subjectLine}
         let _alkSeen = { roomId: '', moveCount: -1 };
         let _alkWriting = false;
         let _alkBusy = false;
-        let _alkFontsLoaded = false;
+        // 쨈 글꼴 CSS(제목 약 443KB 포함)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요.
+        // 앱을 켤 때 바로 받지 않게 해서 첫 화면이 가벼워요. (함수 선언이라 위쪽 switchTab에서 불러도 안전해요)
+        function loadAlkkagiFontsOnce() {
+            if (loadAlkkagiFontsOnce.started) return;
+            loadAlkkagiFontsOnce.started = true;
+            import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+        }
         let _boardGameActiveId = '';
         let _boardGameWriteChain = Promise.resolve();
         let _boardGameIdleTimer = 0;
@@ -13997,10 +14005,7 @@ ${subjectLine}
             if (_alkBoard) return _alkBoard;
             const canvas = document.getElementById('alkkagiCanvas');
             if (!canvas) return null;
-            if (!_alkFontsLoaded) {
-                _alkFontsLoaded = true;
-                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
-            }
+            loadAlkkagiFontsOnce();
             _alkBoard = createAlkkagiBoard(canvas, {
                 onShot: (shot) => {
                     markAlkkagiGuideSeen();
@@ -21894,11 +21899,10 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
-            // 카드 이름표의 쨈 제목 글꼴: 알까기와 같은 글꼴 CSS를 한 번만 불러옵니다(이미 불러왔으면 건너뜀).
-            if (!_alkFontsLoaded) {
-                _alkFontsLoaded = true;
-                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
-            }
+            // 카드 이름표의 쨈 제목 글꼴: 광장이 화면에 보일 때만 불러와요(숨은 채 그릴 때는 받지 않아요).
+            // 글꼴이 오기 전에는 Noto Sans KR로 보이고, 이름표 판 크기는 그대로라 화면이 밀리지 않아요.
+            const plazaSectionEl = document.getElementById('plazaSection');
+            if (plazaSectionEl && !plazaSectionEl.classList.contains('hidden')) loadAlkkagiFontsOnce();
 
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();

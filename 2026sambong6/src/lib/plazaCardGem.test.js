@@ -91,9 +91,25 @@ describe('광장 카드 보석 등급(시안 A)', () => {
 
     it('renderPlaza 학생 카드에 등급 클래스가 붙고 쨈 글꼴은 한 번만 불러와요', () => {
         assert.match(src, /class="plaza-card [^"]*relative\$\{tierClass\}/);
-        const body = sliceBetween(src, 'const container = document.getElementById(\'plazaContainer\');\n            if(!container) return;', 'const createCard');
-        assert.match(body, /if \(!_alkFontsLoaded\) \{\s*_alkFontsLoaded = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        // 글꼴 CSS 는 한 함수에서만, 한 번만 불러와요
+        const loader = sliceBetween(src, 'function loadAlkkagiFontsOnce() {', '\n        }');
+        assert.match(loader, /if \(loadAlkkagiFontsOnce\.started\) return;\s*loadAlkkagiFontsOnce\.started = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        assert.equal(src.split("import('./alkkagiFonts.css')").length - 1, 1, '글꼴 CSS import 는 한 곳에만 있어야 해요');
         assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Title'/);
+    });
+
+    it('B-1: 쨈 제목 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
+        // renderPlaza 는 광장이 숨어 있어도 앱 시작 때 불리므로, 광장 칸이 보일 때만 글꼴을 불러요
+        const body = sliceBetween(src, 'const container = document.getElementById(\'plazaContainer\');\n            if(!container) return;', 'const createCard');
+        assert.match(body, /const plazaSectionEl = document\.getElementById\('plazaSection'\);\s*if \(plazaSectionEl && !plazaSectionEl\.classList\.contains\('hidden'\)\) loadAlkkagiFontsOnce\(\);/);
+        assert.doesNotMatch(body, /import\('\.\/alkkagiFonts\.css'\)/);
+        // 광장 탭으로 바꿀 때 불러요
+        const sw = sliceBetween(src, 'window.switchTab = function(tabId, subOrOpts) {', "if(activeSec) activeSec.classList.remove('hidden');");
+        assert.ok(sw.length > 0);
+        const afterShow = src.slice(src.indexOf("if(activeSec) activeSec.classList.remove('hidden');", src.indexOf('window.switchTab = function(tabId, subOrOpts) {')), src.indexOf("const activeBtn = document.getElementById('tab-' + tabId);"));
+        assert.match(afterShow, /if \(tabId === 'plaza'\) loadAlkkagiFontsOnce\(\);/);
+        // 알까기 판도 같은 함수로 불러요
+        assert.match(sliceBetween(src, 'function ensureAlkkagiBoard() {', '_alkBoard = createAlkkagiBoard('), /loadAlkkagiFontsOnce\(\);/);
     });
 
     it('숨쉬기 움직임은 수호자·전설만, 움직임 줄이기에서는 멈춰요', () => {

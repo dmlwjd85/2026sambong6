@@ -6685,11 +6685,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 radial-gradient(120% 72% at 50% 24%, var(--pt-g1) 0%, var(--pt-g2) 50%, var(--pt-g3) 100%);
         }
         .plaza-card.plaza-tier:not(.plaza-tier-aura) { border-color: var(--pt-edge); }
+        /* --pt-rim-sh: 고수·수호자·전설의 안쪽 금선(아래 등급 묶음에서 정해요). 없으면 빈 그림자예요. */
         .plaza-card.plaza-tier:not(.plaza-tier-aura):not(.is-credit-default) {
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 0 var(--pt-deep), 0 4px 8px -2px rgba(2, 6, 23, 0.45);
+            box-shadow: var(--pt-rim-sh, 0 0 0 0 transparent), inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 0 var(--pt-deep), 0 4px 8px -2px rgba(2, 6, 23, 0.45);
         }
         .plaza-card.plaza-tier:not(.plaza-tier-aura):not(.is-credit-default):active {
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 var(--pt-deep), 0 1px 3px rgba(2, 6, 23, 0.4);
+            box-shadow: var(--pt-rim-sh, 0 0 0 0 transparent), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 var(--pt-deep), 0 1px 3px rgba(2, 6, 23, 0.4);
         }
         .plaza-card.plaza-tier::before,
         .plaza-card.plaza-tier::after {
@@ -6739,14 +6740,19 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             background-color: var(--pt-plate);
             border-color: rgba(255, 255, 255, 0.1);
         }
-        .plaza-card.plaza-tier-gosu:not(.plaza-tier-aura),
-        .plaza-card.plaza-tier-guardian:not(.plaza-tier-aura),
-        .plaza-card.plaza-tier-legend:not(.plaza-tier-aura) {
+        /* 안쪽 금선(고수·수호자·전설): outline 대신 안쪽 그림자 두 겹(짙은 틈 1px + 금선 1px)으로 그려요.
+           outline 은 내용 위에 그려져 움직이는 캐릭터와 겹치면 카드마다 그림 층이 더 생겨, CPU 4배 느린 폰에서
+           광장을 열 때 그리기(래스터)가 크게 늘었어요(C-2). 안쪽 그림자는 배경과 같이 한 번에 그려져요.
+           금선 그림자(--pt-rim-sh)는 아래 고수·수호자·전설 색 묶음에 있어요.
+           신용불량 카드는 그림자를 따로 쓰므로 예전처럼 outline 을 써요. */
+        .plaza-card.plaza-tier-gosu.is-credit-default:not(.plaza-tier-aura),
+        .plaza-card.plaza-tier-guardian.is-credit-default:not(.plaza-tier-aura),
+        .plaza-card.plaza-tier-legend.is-credit-default:not(.plaza-tier-aura) {
             outline: 1px solid var(--pt-rim);
             outline-offset: -3px;
         }
         .plaza-card.plaza-tier-legend:not(.plaza-tier-aura):not(.is-credit-default):not(:active) {
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 4px rgba(252, 211, 77, 0.12), 0 2px 0 var(--pt-deep), 0 4px 10px -2px rgba(244, 63, 94, 0.45);
+            box-shadow: var(--pt-rim-sh), inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 4px rgba(252, 211, 77, 0.12), 0 2px 0 var(--pt-deep), 0 4px 10px -2px rgba(244, 63, 94, 0.45);
         }
         /* 1 새내기 — 회색 원석: 면이 크고 성기며 반짝임 없음 */
         .plaza-tier-saenaegi {
@@ -6782,6 +6788,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         /* 4 고수 — 토파즈 금 + 안쪽 금선 */
         .plaza-tier-gosu {
+            --pt-rim-sh: inset 0 0 0 1px rgba(2, 6, 23, 0.35), inset 0 0 0 2px var(--pt-rim);
             --pt-g1: #e6b040; --pt-g2: #9a6510; --pt-g3: #4a2b04;
             --pt-edge: #fde68a; --pt-deep: #2c1902; --pt-ink: #fde68a; --pt-rim: rgba(253, 230, 138, 0.55);
             --pt-plate: #1f1405; --pt-plate-edge: rgba(253, 224, 71, 0.4);
@@ -6797,6 +6804,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         /* 5 수호자 — 자수정 + 라일락 안쪽선 */
         .plaza-tier-guardian {
+            --pt-rim-sh: inset 0 0 0 1px rgba(2, 6, 23, 0.35), inset 0 0 0 2px var(--pt-rim);
             --pt-g1: #b46ae6; --pt-g2: #6c22a3; --pt-g3: #2a0a47;
             --pt-edge: #f0c4ff; --pt-deep: #1c0632; --pt-ink: #f5d0fe; --pt-rim: rgba(240, 171, 252, 0.6);
             --pt-plate: #1a0a2c; --pt-plate-edge: rgba(240, 171, 252, 0.42);
@@ -6814,6 +6822,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         /* 6 전설 — 루비 + 금빛 빛살 + 두 겹 금선 */
         .plaza-tier-legend {
+            --pt-rim-sh: inset 0 0 0 1px rgba(2, 6, 23, 0.35), inset 0 0 0 2px var(--pt-rim);
             --pt-g1: #f0506c; --pt-g2: #a3123a; --pt-g3: #3e0313;
             --pt-edge: #fcd34d; --pt-deep: #2a020c; --pt-ink: #fde68a; --pt-rim: rgba(252, 211, 77, 0.85);
             --pt-plate: #24050f; --pt-plate-edge: rgba(252, 211, 77, 0.55);
@@ -6831,10 +6840,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 radial-gradient(0.7px 2.6px at 80% 48%, #fff 99%, transparent),
                 radial-gradient(1.4px 1.4px at 50% 8%, #fff 99%, transparent);
         }
-        /* 수호자·전설만 빛살이 천천히 숨쉽니다(opacity만 바꿔 가볍게). 움직임 줄이기 설정이면 멈춥니다. */
+        /* 수호자·전설만 빛살이 천천히 숨쉽니다(opacity만 바꿔 가볍게). 움직임 줄이기 설정이면 멈춥니다.
+           will-change: opacity 로 빛살 층을 따로 떼어, 숨쉴 때마다 빛살·가림막(mask)을 다시 그리지 않고
+           합성만 해요(C-2: CPU 4배 느린 폰에서 프레임이 덜 끊겨요). 숨쉬는 카드에만 붙여 메모리는 조금만 써요. */
         @media (prefers-reduced-motion: no-preference) {
             .plaza-card.plaza-tier-guardian::before,
-            .plaza-card.plaza-tier-legend::before { animation: plaza-gem-breathe 3.2s ease-in-out infinite; }
+            .plaza-card.plaza-tier-legend::before { animation: plaza-gem-breathe 3.2s ease-in-out infinite; will-change: opacity; }
         }
         @keyframes plaza-gem-breathe {
             0%, 100% { opacity: 0.78; }

@@ -121,6 +121,30 @@ describe('광장 카드 보석 등급(시안 A)', () => {
         const block = sliceBetween(css, '@media (prefers-reduced-motion: no-preference) {\n            .plaza-card.plaza-tier-guardian::before', '}\n        }');
         assert.match(block, /plaza-tier-guardian::before,\s*\.plaza-card\.plaza-tier-legend::before \{ animation: plaza-gem-breathe/);
         assert.doesNotMatch(block, /saenaegi|chobo|jungsu|gosu/);
+        // C-2: 숨쉬는 빛살만 따로 합성해서 매 프레임 다시 그리지 않아요
+        assert.match(block, /animation: plaza-gem-breathe 3\.2s ease-in-out infinite; will-change: opacity; \}/);
+        assert.equal(css.split('will-change: opacity; }').length - 1, 1, '숨쉬는 빛살 말고 다른 등급에는 will-change 를 붙이지 않아요');
+    });
+
+    it('C-2: 고수·수호자·전설 안쪽 금선은 outline 대신 안쪽 그림자로 그려요(눌렀을 때도 유지)', () => {
+        for (const ring of ['gosu', 'guardian', 'legend']) {
+            const m = css.match(new RegExp(`\\.plaza-tier-${ring}\\s*\\{([^}]*)\\}`));
+            assert.match(m[1], /--pt-rim-sh: inset 0 0 0 1px rgba\(2, 6, 23, 0\.35\), inset 0 0 0 2px var\(--pt-rim\);/, `${ring} 금선`);
+        }
+        for (const ring of ['saenaegi', 'chobo', 'jungsu']) {
+            const m = css.match(new RegExp(`\\.plaza-tier-${ring}\\s*\\{([^}]*)\\}`));
+            assert.doesNotMatch(m[1], /--pt-rim-sh/, `${ring} 는 금선 없어요`);
+        }
+        // 일반·눌림·전설 그림자 모두 금선 변수를 맨 앞에 둬요
+        assert.match(css, /:not\(\.is-credit-default\) \{\s*box-shadow: var\(--pt-rim-sh, 0 0 0 0 transparent\), inset 0 1px 0 rgba\(255, 255, 255, 0\.22\)/);
+        assert.match(css, /:not\(\.is-credit-default\):active \{\s*box-shadow: var\(--pt-rim-sh, 0 0 0 0 transparent\), inset 0 1px 0 rgba\(255, 255, 255, 0\.12\)/);
+        assert.match(css, /plaza-tier-legend:not\(\.plaza-tier-aura\):not\(\.is-credit-default\):not\(:active\) \{\s*box-shadow: var\(--pt-rim-sh\), /);
+        // outline 금선은 그림자를 따로 쓰는 신용불량 카드에만 남아요
+        assert.doesNotMatch(css, /\.plaza-card\.plaza-tier-(gosu|guardian|legend):not\(\.plaza-tier-aura\)(,|\s*\{)/);
+        const ol = css.match(/((?:\.plaza-card\.plaza-tier-\w+[^,{]*,?\s*)+)\{\s*outline: 1px solid var\(--pt-rim\);/);
+        assert.ok(ol, 'outline 금선 규칙이 있어요');
+        assert.equal(ol[1].split(',').filter(x => x.trim()).length, 3);
+        for (const sel of ol[1].split(',').filter(x => x.trim())) assert.match(sel, /\.is-credit-default:not\(\.plaza-tier-aura\)/);
     });
 });
 

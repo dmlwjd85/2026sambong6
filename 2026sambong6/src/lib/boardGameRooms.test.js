@@ -543,3 +543,58 @@ describe('나온 끝난 방 기억(sessionStorage)', () => {
         assert.deepEqual(rememberBoardLeftRoom(['x:1', 'y:1'], 'x:1'), ['y:1', 'x:1']);
     });
 });
+
+describe('방 규칙 강화에 맞춘 클라이언트(uid·memberUids·활동 시각)', () => {
+    const {
+        createBoardRoom: mk, requestJoinBoardRoom: join, approveJoinBoardRoom: approve, boardRoomToDoc: toDoc,
+        sanitizeBoardRoom: clean, boardRoomCleanupDelayMs, claimBoardRoomHostUid, BOARD_ROOM_CLEANUP_SPREAD_MS,
+    } = roomLib;
+
+    it('참가 신청의 uid가 승인 때 자리로 옮겨지고, 문서에 memberUids로 들어가요', () => {
+        const made = mk({ gameType: 'gomoku', hostId: '1', hostName: '민준', now: 1000, hostUid: 'uid-h', id: 'bg_a' });
+        assert.equal(made.room.members[0].uid, 'uid-h');
+        const j = join(made.room, { studentId: '2', studentName: '서연', now: 2000, uid: 'uid-p' });
+        assert.equal(j.room.joinRequests[0].uid, 'uid-p');
+        const a = approve(j.room, { hostId: '1', studentId: '2', now: 3000 });
+        assert.equal(a.ok, true);
+        assert.deepEqual(toDoc(a.room).memberUids, ['uid-h', 'uid-p']);
+    });
+
+    it('uid가 없는 옛 자리는 그대로 둬요(빈 uid 칸을 새로 넣지 않아요)', () => {
+        const r = clean({ id: 'bg_b', gameType: 'gomoku', hostId: '1', members: [{ id: '1', name: '민준', role: 'host', seat: 'black' }] }, 1000);
+        assert.equal('uid' in r.members[0], false);
+        assert.deepEqual(toDoc(r).memberUids, []);
+        // 문서를 다시 읽어 다시 써도 자리 칸이 바뀌지 않아요(규칙의 members 비교가 흔들리지 않게)
+        const again = clean(toDoc(r), 2000);
+        assert.deepEqual(again.members, r.members);
+    });
+
+    it('마지막 활동 시각은 기기 시계가 늦어도 줄지 않아요', () => {
+        const made = mk({ gameType: 'gomoku', hostId: '1', hostName: '민준', now: 10_000, hostUid: 'uid-h', id: 'bg_c' });
+        const j = join(made.room, { studentId: '2', studentName: '서연', now: 5_000, uid: 'uid-p' });
+        assert.equal(j.room.lastActivityAt, 10_000);
+        const k = join(made.room, { studentId: '3', studentName: '지우', now: 20_000, uid: 'uid-q' });
+        assert.equal(k.room.lastActivityAt, 20_000);
+    });
+
+    it('정리 대기 시간: 내 방은 바로, 남의 방은 기기마다 다른 0~9초', () => {
+        const room = { id: 'bg_d', createdAt: 1, hostUid: 'uid-h' };
+        assert.equal(boardRoomCleanupDelayMs(room, 'uid-h'), 0);
+        const waits = ['uid-1', 'uid-2', 'uid-3', 'uid-4', 'uid-5'].map((u) => boardRoomCleanupDelayMs(room, u));
+        waits.forEach((w) => assert.ok(w >= 0 && w < BOARD_ROOM_CLEANUP_SPREAD_MS));
+        assert.ok(new Set(waits).size >= 4, `기기마다 달라야 해요: ${waits}`);
+        assert.equal(boardRoomCleanupDelayMs(room, 'uid-1'), waits[0]);
+    });
+
+    it('hostUid가 지워진 내 방은 방장이 다시 쓸 때 내 uid를 되찾고, 남의 방은 건드리지 않아요', () => {
+        const wiped = clean({ id: 'alk_1', gameType: 'alkkagi', hostId: '1', members: [{ id: '1', role: 'host' }, { id: '2', uid: 'uid-p' }] }, 1000);
+        assert.equal(wiped.hostUid, '');
+        const mine = claimBoardRoomHostUid(wiped, { hostId: '1', uid: 'uid-h' });
+        assert.equal(mine.hostUid, 'uid-h');
+        assert.equal(mine.members[0].uid, 'uid-h');
+        assert.equal(mine.members[1].uid, 'uid-p');
+        assert.equal(claimBoardRoomHostUid(wiped, { hostId: '2', uid: 'uid-p' }), wiped);
+        const owned = { ...wiped, hostUid: 'uid-x' };
+        assert.equal(claimBoardRoomHostUid(owned, { hostId: '1', uid: 'uid-h' }), owned);
+    });
+});

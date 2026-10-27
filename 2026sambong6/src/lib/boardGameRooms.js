@@ -145,11 +145,14 @@ function sanitizeMember(raw) {
     if (!id) return null;
     const role = raw.role === 'host' ? 'host' : 'player';
     const seat = raw.seat === 'black' || raw.seat === 'white' ? raw.seat : '';
+    // uid(그 학생 기기의 로그인 uid)는 있을 때만 넣어요. 없던 칸에 빈 값을 넣으면 문서가 바뀌어 규칙이 막아요.
+    const uid = cleanUid(raw.uid);
     return {
         id,
         name: cleanName(raw.name) || id,
         role,
         seat,
+        ...(uid ? { uid } : {}),
     };
 }
 
@@ -158,11 +161,13 @@ function sanitizeJoinRequest(raw) {
     const id = cleanId(raw.id);
     if (!id) return null;
     const status = BOARD_JOIN_STATUSES.includes(String(raw.status)) ? String(raw.status) : 'pending';
+    const uid = cleanUid(raw.uid);
     return {
         id,
         name: cleanName(raw.name) || id,
         status,
         at: sanitizeEpochMs(raw.at),
+        ...(uid ? { uid } : {}),
     };
 }
 
@@ -248,10 +253,12 @@ export function sanitizeBoardRoom(raw, now = 0) {
 
 function touchRoom(room, now, extra = {}) {
     const t = Math.max(0, Math.floor(Number(now) || 0));
+    // 마지막 활동 시각은 줄이지 않아요(규칙이 줄어드는 쓰기를 막아요. 기기 시계가 조금 늦어도 안전).
+    const prev = Math.max(0, Math.floor(Number(room && room.lastActivityAt) || 0));
     return {
         ...room,
         ...extra,
-        lastActivityAt: t,
+        lastActivityAt: Math.max(prev, t),
         updatedAt: t,
     };
 }
@@ -272,6 +279,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
         name: room.hostName,
         role: 'host',
         seat: def.id === 'gomoku' || def.id === 'alkkagi' ? 'black' : (def.id === 'chess' ? 'white' : ''),
+        ...(room.hostUid ? { uid: room.hostUid } : {}),
     }];
     return { ok: true, error: '', room };
 }
@@ -344,6 +352,41 @@ export function boardRoomCleanupDue(room, { now, uid = '' } = {}) {
     if (r.status === 'closed' || !isRoomIdleExpired(r, t)) return false;
     const me = cleanUid(uid);
     return !r.hostUid || (!!me && r.hostUid === me);
+}
+
+/** 여러 기기가 같은 방을 한꺼번에 지우지 않게, 기기(uid)·방마다 다르게 기다리는 최대 시간. */
+export const BOARD_ROOM_CLEANUP_SPREAD_MS = 9000;
+
+/**
+ * 정리 전에 기다릴 시간(ms). 내 방은 바로(0), 남의 방은 uid·방으로 정해지는 0~9초예요.
+ * 기다린 뒤 실시간 목록에 방이 그대로 있을 때만 지우면, 먼저 지운 기기가 있을 때 나머지는 건너뛰어요(읽기·쓰기 추가 없음).
+ */
+export function boardRoomCleanupDelayMs(room, uid = '') {
+    const r = room && typeof room === 'object' ? room : {};
+    const me = cleanUid(uid);
+    if (me && cleanUid(r.hostUid) === me) return 0;
+    const key = `${me}|${boardRoomInstanceKey(r)}`;
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i += 1) {
+        h ^= key.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h % BOARD_ROOM_CLEANUP_SPREAD_MS;
+}
+
+/**
+ * hostUid가 비어 있는 방(옛 방, 또는 옛 화면이 hostUid 없이 덮어쓴 방)에 방장 본인이 쓸 때 내 uid를 다시 적어요.
+ * 남의 방이거나 이미 hostUid가 있으면 그대로 돌려줘요.
+ */
+export function claimBoardRoomHostUid(room, { hostId, uid } = {}) {
+    const me = cleanUid(uid);
+    const hid = cleanId(hostId);
+    if (!room || typeof room !== 'object' || !me || !hid) return room;
+    if (cleanUid(room.hostUid) || cleanId(room.hostId) !== hid) return room;
+    const members = (Array.isArray(room.members) ? room.members : []).map((m) => (
+        m && m.id === hid && !m.uid ? { ...m, uid: me } : m
+    ));
+    return { ...room, hostUid: me, members };
 }
 
 /** 정리한 방을 기기에 기억하는 키. 같은 id를 다시 쓰는 알까기 방도 판마다 따로 기억해요. */
@@ -463,7 +506,7 @@ export function expireIdleBoardRoom(room, now) {
     return closeBoardRoom(r, { now: t, force: true });
 }
 
-export function requestJoinBoardRoom(room, { studentId, studentName, now } = {}) {
+export function requestJoinBoardRoom(room, { studentId, studentName, now, uid = '' } = {}) {
     const r = sanitizeBoardRoom(room, now);
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     const id = cleanId(studentId);
@@ -474,7 +517,8 @@ export function requestJoinBoardRoom(room, { studentId, studentName, now } = {})
     if (remainingSeats(r) <= 0) return { ok: false, error: 'full', room: r };
     const existing = r.joinRequests.find((row) => row.id === id);
     if (existing && existing.status === 'pending') return { ok: false, error: 'already_requested', room: r };
-    const nextReq = { id, name: cleanName(studentName) || id, status: 'pending', at: t };
+    const myUid = cleanUid(uid);
+    const nextReq = { id, name: cleanName(studentName) || id, status: 'pending', at: t, ...(myUid ? { uid: myUid } : {}) };
     const joinRequests = r.joinRequests.filter((row) => row.id !== id).concat(nextReq).slice(-40);
     return {
         ok: true,
@@ -506,7 +550,7 @@ export function approveJoinBoardRoom(room, { hostId, studentId, now } = {}) {
     if (!req) return { ok: false, error: 'no_request', room: r };
     if (remainingSeats(r) <= 0) return { ok: false, error: 'full', room: r };
     const seat = nextSeatForGame(r);
-    const members = r.members.concat([{ id: req.id, name: req.name, role: 'player', seat }]);
+    const members = r.members.concat([{ id: req.id, name: req.name, role: 'player', seat, ...(req.uid ? { uid: req.uid } : {}) }]);
     const joinRequests = r.joinRequests.map((row) => (row.id === id ? { ...row, status: 'approved' } : row));
     let next = touchRoom(r, t, { members, joinRequests });
     if (members.length >= next.minPlayers && members.length >= next.maxPlayers) {
@@ -729,7 +773,18 @@ export function boardRoomToDoc(room) {
     const game = r.gameType === 'gomoku'
         ? gomokuGameToDoc(r.game)
         : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : r.game));
-    return { ...r, game, participantIds: boardRoomParticipantIds(r) };
+    return { ...r, game, participantIds: boardRoomParticipantIds(r), memberUids: boardRoomMemberUids(r) };
+}
+
+/** 참가자 기기 uid 목록. 규칙이 '방장·참가자만' 판을 끝내거나 방을 닫게 할 때 써요. */
+export function boardRoomMemberUids(room) {
+    const r = room && typeof room === 'object' ? room : {};
+    const out = [];
+    (Array.isArray(r.members) ? r.members : []).forEach((m) => {
+        const uid = cleanUid(m && m.uid);
+        if (uid && !out.includes(uid)) out.push(uid);
+    });
+    return out;
 }
 
 /**

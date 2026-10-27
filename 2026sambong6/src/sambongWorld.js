@@ -12361,8 +12361,18 @@ ${subjectLine}
                 if (!live || boardRoomCleanupKey(live) !== key) return;
                 if (!auth.currentUser || auth.currentUser.uid !== myUid) return;
                 if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) return;
+                // 기다림을 한꺼번에 하니 두 기기의 기다림이 비슷하게 끝날 수 있어요. 지우기는 트랜잭션으로 해서
+                // 먼저 지운 기기가 있으면 서버가 뒤 기기의 지우기를 받지 않고, 다시 읽어 없는 방이면 건너뛰어요(중복 지우기 0).
+                const ref = boardGameRoomRef(room.id);
                 try {
-                    await deleteDoc(boardGameRoomRef(room.id));
+                    await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(ref);
+                        if (!snap.exists()) return;
+                        const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                        if (boardRoomCleanupKey(cur) !== key) return;
+                        if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
+                        tx.delete(ref);
+                    });
                 } catch (e) {
                     console.warn('sweepIdleBoardRooms', room.id, e && e.code);
                 }

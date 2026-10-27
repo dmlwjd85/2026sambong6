@@ -12245,8 +12245,9 @@ ${subjectLine}
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
             // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.
-            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')));
-            if (mineEnter && !_alkLeftRooms.has(boardRoomInstanceKey(mineEnter)) && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
+            // 결과를 보고 스스로 나온 방은 건너뛰어요(내 방 구독이 목록을 열 때마다 바로 와서, 끝난 방으로 다시 끌려가지 않게).
+            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')) && !_alkLeftRooms.has(boardRoomInstanceKey(r)));
+            if (mineEnter && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
                 enterBoardGameTable(mineEnter.id);
             }
             if (!_alkResumeTried) {
@@ -14714,6 +14715,8 @@ ${subjectLine}
                 await forfeitCurrentGomoku();
                 return;
             }
+            // 끝난 판에서 나가면 그 방으로는 저절로 다시 들어가지 않아요.
+            if (room && room.status === 'finished') _alkLeftRooms.add(boardRoomInstanceKey(room));
             clearGomokuAiSession();
             clearChessAiSession();
             _boardGameActiveId = '';

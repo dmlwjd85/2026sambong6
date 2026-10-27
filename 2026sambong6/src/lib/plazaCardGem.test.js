@@ -91,15 +91,60 @@ describe('광장 카드 보석 등급(시안 A)', () => {
 
     it('renderPlaza 학생 카드에 등급 클래스가 붙고 쨈 글꼴은 한 번만 불러와요', () => {
         assert.match(src, /class="plaza-card [^"]*relative\$\{tierClass\}/);
-        const body = sliceBetween(src, 'const container = document.getElementById(\'plazaContainer\');\n            if(!container) return;', 'const createCard');
-        assert.match(body, /if \(!_alkFontsLoaded\) \{\s*_alkFontsLoaded = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        // 글꼴 CSS 는 한 함수에서만, 한 번만 불러와요
+        const loader = sliceBetween(src, 'function loadAlkkagiFontsOnce(opts) {', '\n        }');
+        assert.match(loader, /^function loadAlkkagiFontsOnce\(opts\) \{\s*if \(loadAlkkagiFontsOnce\.started\) return;/);
+        assert.match(loader, /loadAlkkagiFontsOnce\.started = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        // 한가할 때 불러오기는 한 번만 예약해요
+        assert.match(loader, /if \(loadAlkkagiFontsOnce\.queued\) return;\s*loadAlkkagiFontsOnce\.queued = true;/);
+        assert.match(loader, /requestIdleCallback\(run, \{ timeout: 2000 \}\)/);
+        assert.equal(src.split("import('./alkkagiFonts.css')").length - 1, 1, '글꼴 CSS import 는 한 곳에만 있어야 해요');
         assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Title'/);
+    });
+
+    it('B-1: 쨈 제목 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
+        // renderPlaza 는 광장이 숨어 있어도 앱 시작 때 불리므로, 여기서는 글꼴을 부르지 않아요
+        const body = sliceBetween(src, 'window.renderPlaza = function(studentsData, gmData, gmaData) {', 'const createCard');
+        assert.ok(body.length > 0);
+        assert.doesNotMatch(body, /loadAlkkagiFontsOnce\(\)/);
+        assert.doesNotMatch(body, /import\('\.\/alkkagiFonts\.css'\)/);
+        // 광장 탭으로 바꿀 때 불러요
+        const sw = sliceBetween(src, 'window.switchTab = function(tabId, subOrOpts) {', "if(activeSec) activeSec.classList.remove('hidden');");
+        assert.ok(sw.length > 0);
+        const afterShow = src.slice(src.indexOf("if(activeSec) activeSec.classList.remove('hidden');", src.indexOf('window.switchTab = function(tabId, subOrOpts) {')), src.indexOf("const activeBtn = document.getElementById('tab-' + tabId);"));
+        assert.match(afterShow, /if \(tabId === 'plaza'\) loadAlkkagiFontsOnce\(\{ idle: true \}\);/);
+        // 알까기 판도 같은 함수로 불러요
+        assert.match(sliceBetween(src, 'function ensureAlkkagiBoard() {', '_alkBoard = createAlkkagiBoard('), /loadAlkkagiFontsOnce\(\);/);
     });
 
     it('숨쉬기 움직임은 수호자·전설만, 움직임 줄이기에서는 멈춰요', () => {
         const block = sliceBetween(css, '@media (prefers-reduced-motion: no-preference) {\n            .plaza-card.plaza-tier-guardian::before', '}\n        }');
         assert.match(block, /plaza-tier-guardian::before,\s*\.plaza-card\.plaza-tier-legend::before \{ animation: plaza-gem-breathe/);
         assert.doesNotMatch(block, /saenaegi|chobo|jungsu|gosu/);
+        // C-2: 숨쉬는 빛살만 따로 합성해서 매 프레임 다시 그리지 않아요
+        assert.match(block, /animation: plaza-gem-breathe 3\.2s ease-in-out infinite; will-change: opacity; \}/);
+        assert.equal(css.split('will-change: opacity; }').length - 1, 1, '숨쉬는 빛살 말고 다른 등급에는 will-change 를 붙이지 않아요');
+    });
+
+    it('C-2: 고수·수호자·전설 안쪽 금선은 outline 대신 안쪽 그림자로 그려요(눌렀을 때도 유지)', () => {
+        for (const ring of ['gosu', 'guardian', 'legend']) {
+            const m = css.match(new RegExp(`\\.plaza-tier-${ring}\\s*\\{([^}]*)\\}`));
+            assert.match(m[1], /--pt-rim-sh: inset 0 0 0 1px rgba\(2, 6, 23, 0\.35\), inset 0 0 0 2px var\(--pt-rim\);/, `${ring} 금선`);
+        }
+        for (const ring of ['saenaegi', 'chobo', 'jungsu']) {
+            const m = css.match(new RegExp(`\\.plaza-tier-${ring}\\s*\\{([^}]*)\\}`));
+            assert.doesNotMatch(m[1], /--pt-rim-sh/, `${ring} 는 금선 없어요`);
+        }
+        // 일반·눌림·전설 그림자 모두 금선 변수를 맨 앞에 둬요
+        assert.match(css, /:not\(\.is-credit-default\) \{\s*box-shadow: var\(--pt-rim-sh, 0 0 0 0 transparent\), inset 0 1px 0 rgba\(255, 255, 255, 0\.22\)/);
+        assert.match(css, /:not\(\.is-credit-default\):active \{\s*box-shadow: var\(--pt-rim-sh, 0 0 0 0 transparent\), inset 0 1px 0 rgba\(255, 255, 255, 0\.12\)/);
+        assert.match(css, /plaza-tier-legend:not\(\.plaza-tier-aura\):not\(\.is-credit-default\):not\(:active\) \{\s*box-shadow: var\(--pt-rim-sh\), /);
+        // outline 금선은 그림자를 따로 쓰는 신용불량 카드에만 남아요
+        assert.doesNotMatch(css, /\.plaza-card\.plaza-tier-(gosu|guardian|legend):not\(\.plaza-tier-aura\)(,|\s*\{)/);
+        const ol = css.match(/((?:\.plaza-card\.plaza-tier-\w+[^,{]*,?\s*)+)\{\s*outline: 1px solid var\(--pt-rim\);/);
+        assert.ok(ol, 'outline 금선 규칙이 있어요');
+        assert.equal(ol[1].split(',').filter(x => x.trim()).length, 3);
+        for (const sel of ol[1].split(',').filter(x => x.trim())) assert.match(sel, /\.is-credit-default:not\(\.plaza-tier-aura\)/);
     });
 });
 
@@ -108,5 +153,26 @@ describe('광장 카드 좁은 화면(폰 6칸 자리표)', () => {
         const block = sliceBetween(css, '@container (max-width: 6rem) {', '.praise-btn img { width: 0.72rem; height: 0.72rem; }\n        }');
         assert.match(block, /\.praise-btn \{[^}]*flex: 1 1 0;[^}]*min-width: 0;/);
         assert.match(block, /flex-direction: column;/);
+    });
+
+    it('C-1: 320·360px 폰에서 수치는 두 줄(경험치 / 온도계·봉)이고 아주 좁으면 온도계 아이콘만 빼요', () => {
+        const block = sliceBetween(css, '@container (max-width: 5.2rem) {', '\n        }');
+        assert.match(block, /\.plaza-card-stats \{ flex-wrap: wrap;/);
+        assert.match(block, /\.plaza-stat-xp \{ flex: 0 0 100%;/);
+        assert.match(block, /\.plaza-learning-thermometer \{ min-width: 0; max-width: none;/);
+        const tiny = sliceBetween(css, '@container (max-width: 2.9rem) {', '\n        }');
+        assert.match(tiny, /\.plaza-therm-ico \{ display: none; \}/);
+        // 온도계 아이콘은 따로 감싸서 숫자만 남길 수 있어요
+        assert.match(src, /<span class="plaza-therm-ico" aria-hidden="true">🌡<\/span>\$\{value >= 0 \? '\+' : ''\}\$\{value\}<\/span>/);
+    });
+
+    it('C-1: 폰에서도 방패 배지는 보이고, 카드 안쪽 오른쪽 위에 깜빡이지 않게 붙어요', () => {
+        const phone = sliceBetween(css, '.plaza-card-extra { display: none !important; }', '/* 자리표 연동');
+        const badge = sliceBetween(phone, '.plaza-card .plaza-card-extra.plaza-hp-badge {', '}');
+        assert.match(badge, /display: flex !important;/);
+        assert.match(badge, /top: 0\.12rem;/);
+        assert.match(badge, /right: 0\.12rem;/);
+        assert.match(badge, /animation: none;/);
+        assert.match(src, /plaza-card-extra plaza-hp-badge absolute/);
     });
 });

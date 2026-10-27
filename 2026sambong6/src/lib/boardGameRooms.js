@@ -195,6 +195,7 @@ export function emptyBoardRoom(gameType = 'gomoku', now = 0) {
         lastActivityAt: t,
         createdAt: t,
         updatedAt: t,
+        round: 0,
         game: emptyGameForType(def.id, t),
     };
 }
@@ -225,8 +226,15 @@ export function sanitizeBoardRoom(raw, now = 0) {
         lastActivityAt,
         createdAt,
         updatedAt,
+        round: sanitizeBoardRoomRound(raw.round),
         game: sanitizeGameForType(def.id, raw.game, t || updatedAt),
     };
+}
+
+/** '한 판 더'를 누를 때마다 1씩 올리는 판 번호예요. 0 이상의 정수만 받아요. */
+function sanitizeBoardRoomRound(raw) {
+    const n = Math.floor(Number(raw));
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 0;
 }
 
 function touchRoom(room, now, extra = {}) {
@@ -442,10 +450,36 @@ export function pickMyActiveBoardRoom(rooms, studentId) {
     return mine[0] || null;
 }
 
-/** 같은 id를 다시 쓰는 방(알까기)도 판마다 구별되게, id와 만든 시각을 함께 써요. */
+/**
+ * 같은 id를 다시 쓰는 방(알까기)도 판마다 구별되게, id와 만든 시각을 함께 써요.
+ * '한 판 더'로 새 판이 되면 판 번호(round)가 붙어서, 앞 판에서 나온 사람도 새 판에는 다시 들어와요.
+ * 판 번호가 0이면 예전 키(`id:만든 시각`) 그대로라, 이미 저장해 둔 '나온 방' 기억과 맞아요.
+ */
 export function boardRoomInstanceKey(room) {
     const r = sanitizeBoardRoom(room);
-    return r.id ? `${r.id}:${r.createdAt}` : '';
+    if (!r.id) return '';
+    return r.round > 0 ? `${r.id}:${r.createdAt}:${r.round}` : `${r.id}:${r.createdAt}`;
+}
+
+/**
+ * 방 목록 화면에서 이 방으로 저절로 들어갈지 정해요(순수 함수).
+ * - 내가 앉은 방만, 스스로 나온 판(leftKeys)은 빼요.
+ * - 두는 중인 판은 들어가요.
+ * - 끝난 판(알까기 제외)은 이 화면에서 두는 중이거나 기다리는 모습을 본 판(seenLiveKeys)이거나,
+ *   이 화면을 연 뒤(sinceMs 이후)에 끝난 판일 때만 들어가요. 새 탭·다른 기기에서 예전에 끝난 결과로 끌려가지 않게 해요.
+ * @param {object} room
+ * @param {{ selfId?: string, leftKeys?: Set<string>, seenLiveKeys?: Set<string>, sinceMs?: number }} [o]
+ */
+export function shouldAutoEnterBoardRoom(room, o = {}) {
+    const r = sanitizeBoardRoom(room);
+    if (!r.id || !isRoomMember(r, o.selfId)) return false;
+    const key = boardRoomInstanceKey(r);
+    if (o.leftKeys && o.leftKeys.has(key)) return false;
+    if (r.status === 'playing') return true;
+    if (r.status !== 'finished' || r.gameType === 'alkkagi') return false;
+    if (o.seenLiveKeys && o.seenLiveKeys.has(key)) return true;
+    const since = Number(o.sinceMs) || 0;
+    return since > 0 && r.updatedAt >= since;
 }
 
 /** 나온 끝난 방 기억(같은 탭 sessionStorage)에 남기는 최대 개수. */
@@ -563,7 +597,8 @@ export function continueBoardRoom(room, { actorId, now } = {}) {
     return {
         ok: true,
         error: '',
-        room: touchRoom(r, t, { status: 'playing', game }),
+        // 방 id·만든 시각은 그대로 두고 판 번호만 올려요(#88 규칙: hostUid·createdAt 바꾸지 않기).
+        room: touchRoom(r, t, { status: 'playing', game, round: r.round + 1 }),
     };
 }
 
@@ -651,8 +686,15 @@ export function boardRoomParticipantIds(room) {
 
 /** 로비 목록 질의 한 번에 받는 방 수 상한. 방 id가 새 방일수록 앞이라(createBoardRoomId) 넘치면 옛 방부터 빠져요. */
 export const BOARD_LOBBY_QUERY_LIMIT = 30;
-/** 내 방(참가 중·신청 중) 질의 상한. 넘치면 옛 방부터 빠져요(알까기 방장 고정 id alk_ 는 맨 앞). */
+/** 내 방(참가 중·신청 중) 중 `bg_`로 시작하는 방(오목·체스) 질의 상한. 넘치면 옛 방부터 빠져요. */
 export const BOARD_MINE_QUERY_LIMIT = 10;
+/**
+ * 내 방 질의를 문서 id로 둘로 나누는 경계예요. 알까기 방(`alk_<방장>`)은 id가 이보다 앞이라 따로 받아요.
+ * 끝난 알까기 방이 오목·체스 '내 방' 칸을 채워 새 대전에 못 들어가던 문제를 막아요(복합 색인 없이 id 범위만 써요).
+ */
+export const BOARD_MINE_ID_SPLIT = 'bg_';
+/** 알까기 등 `bg_` 앞 id 방의 '내 방' 질의 상한. 알까기 방은 방장마다 하나라 반 인원 정도면 충분해요. */
+export const BOARD_MINE_OTHER_QUERY_LIMIT = 20;
 
 /** 로비 질의에 넣을 상태. 알까기는 끝난 방을 목록에 보이지 않아서 빼요. */
 export function boardLobbyQueryStatuses(gameType) {

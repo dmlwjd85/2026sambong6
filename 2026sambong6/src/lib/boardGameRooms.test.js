@@ -468,3 +468,81 @@ describe('나온 끝난 방 기억(sessionStorage)', () => {
         assert.deepEqual(rememberBoardLeftRoom(['x:1', 'y:1'], 'x:1'), ['y:1', 'x:1']);
     });
 });
+
+describe('#86 r3: 끝난 방 자동 입장·내 방 나눠 받기·한 판 더 판 번호', () => {
+    const m = roomLib;
+    function finishedPair(now = 1000) {
+        let room = createBoardRoom({ gameType: 'gomoku', hostId: 'a', hostName: '가', now }).room;
+        room = requestJoinBoardRoom(room, { studentId: 'b', studentName: '나', now: now + 100 }).room;
+        room = approveJoinBoardRoom(room, { hostId: 'a', studentId: 'b', now: now + 200 }).room;
+        return finishBoardRoom(room, { game: { ...room.game, winner: 1, endReason: 'five' }, now: now + 300 }).room;
+    }
+
+    it('N1: 새 탭에서 처음 받은 끝난 옛 판에는 들어가지 않고, 두는 판에는 들어간다', () => {
+        const fin = finishedPair(1000);
+        const opts = { selfId: 'b', leftKeys: new Set(), seenLiveKeys: new Set(), sinceMs: 50_000 };
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, opts), false);
+        const playing = continueBoardRoom(fin, { actorId: 'a', now: 60_000 }).room;
+        assert.equal(m.shouldAutoEnterBoardRoom(playing, opts), true);
+        assert.equal(m.shouldAutoEnterBoardRoom(playing, { ...opts, selfId: 'z' }), false);
+    });
+
+    it('N1: 이 화면에서 두는 걸 봤거나, 화면을 연 뒤에 끝난 판이면 결과로 들어간다', () => {
+        const fin = finishedPair(100_000);
+        const key = boardRoomInstanceKey(fin);
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', seenLiveKeys: new Set([key]), sinceMs: 999_999 }), true);
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', sinceMs: 100_000 }), true);
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', leftKeys: new Set([key]), sinceMs: 1 }), false);
+    });
+
+    it('N1: 끝난 알까기·기다리는 방에는 저절로 들어가지 않는다', () => {
+        const fin = { ...finishedPair(100_000), gameType: 'alkkagi', id: 'alk_a' };
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', sinceMs: 1 }), false);
+        const waiting = createBoardRoom({ gameType: 'gomoku', hostId: 'a', now: 1000 }).room;
+        assert.equal(m.shouldAutoEnterBoardRoom(waiting, { selfId: 'a', sinceMs: 1 }), false);
+    });
+
+    it('N3: 한 판 더를 누르면 판 번호가 올라 키가 바뀌고, 방 id·만든 시각·방장은 그대로다', () => {
+        const fin = finishedPair(1000);
+        assert.equal(fin.round, 0);
+        const oldKey = boardRoomInstanceKey(fin);
+        const next = continueBoardRoom(fin, { actorId: 'a', now: 9000 }).room;
+        assert.equal(next.round, 1);
+        assert.equal(next.id, fin.id);
+        assert.equal(next.createdAt, fin.createdAt);
+        assert.equal(next.hostId, fin.hostId);
+        assert.notEqual(boardRoomInstanceKey(next), oldKey);
+        assert.equal(boardRoomInstanceKey(next), `${fin.id}:${fin.createdAt}:1`);
+        // 앞 판에서 나온 B도 새 판에는 다시 들어와요.
+        assert.equal(m.shouldAutoEnterBoardRoom(next, { selfId: 'b', leftKeys: new Set([oldKey]), sinceMs: 1 }), true);
+        // 문서로 저장했다 다시 읽어도 판 번호가 남아요.
+        assert.equal(sanitizeBoardRoom(boardRoomToDoc(next)).round, 1);
+        const again = continueBoardRoom(finishBoardRoom(next, { game: next.game, now: 9500 }).room, { actorId: 'b', now: 9600 }).room;
+        assert.equal(again.round, 2);
+    });
+
+    it('N3: 판 번호가 이상한 값이면 0으로 읽는다(예전 문서 호환)', () => {
+        assert.equal(sanitizeBoardRoom({ id: 'x', round: -3 }).round, 0);
+        assert.equal(sanitizeBoardRoom({ id: 'x', round: 'abc' }).round, 0);
+        assert.equal(sanitizeBoardRoom({ id: 'x' }).round, 0);
+        assert.equal(sanitizeBoardRoom({ id: 'x', round: 2.7 }).round, 2);
+    });
+
+    it('N2: 상대 12명과 끝난 알까기 방이 있어도 새 오목 방은 오목·체스 내 방 칸에 들어온다', () => {
+        const split = m.BOARD_MINE_ID_SPLIT;
+        const alk = Array.from({ length: 12 }, (_, i) => `alk_s${String(i).padStart(2, '0')}`);
+        const oldBg = Array.from({ length: 3 }, (_, i) => `bg_${(1_700_000_000_000 + i).toString(36)}`);
+        const fresh = createBoardRoomId(1_800_000_000_000);
+        const all = [...alk, ...oldBg, fresh].sort();
+        // 예전 한 질의: id 오름차순으로 10개 → 알까기 방만 와요.
+        assert.ok(!all.slice(0, BOARD_MINE_QUERY_LIMIT).includes(fresh));
+        // 새 질의: bg_ 부터 10개 + bg_ 앞(알까기) 따로.
+        const bgPart = all.filter((id) => id >= split).slice(0, BOARD_MINE_QUERY_LIMIT);
+        const other = all.filter((id) => id < split).slice(0, m.BOARD_MINE_OTHER_QUERY_LIMIT);
+        assert.equal(bgPart[0], fresh);
+        assert.equal(other.length, 12);
+        assert.ok(alk.every((id) => id < split));
+        assert.ok(m.hostBoardRoomId('alkkagi', 'zzzz') < split);
+        assert.ok(createBoardRoomId(0) >= split && createBoardRoomId(Date.now()) >= split);
+    });
+});

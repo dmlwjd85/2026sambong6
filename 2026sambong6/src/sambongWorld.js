@@ -21,6 +21,10 @@ import {
     query,
     where,
     limit,
+    orderBy,
+    documentId,
+    startAt,
+    endBefore,
 } from 'firebase/firestore';
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
@@ -228,6 +232,8 @@ import {
 } from './lib/chessGame.js';
 import {
     BOARD_LOBBY_QUERY_LIMIT,
+    BOARD_MINE_ID_SPLIT,
+    BOARD_MINE_OTHER_QUERY_LIMIT,
     BOARD_MINE_QUERY_LIMIT,
     applyBoardRoomGame,
     approveJoinBoardRoom,
@@ -262,6 +268,7 @@ import {
     rejectJoinBoardRoom,
     rememberBoardRoomCleaned,
     remainingSeats,
+    shouldAutoEnterBoardRoom,
     requestJoinBoardRoom,
     roomMemberSeat,
     sanitizeBoardRoom,
@@ -1925,9 +1932,7 @@ function redrawPlazaGrantsUi() {
         }
         window.refreshMarketQuotes = refreshMarketQuotes;
         void refreshMarketQuotes(true);
-        // 매시간 틱은 강제로 받지 않아요. 다른 기기가 50분 안에 공유해 둔 시세가 있으면 그대로 쓰고,
-        // settings/global 에 다시 쓰지 않아요(쓸 때마다 접속한 모든 기기가 설정 문서를 다시 읽어요).
-        _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(false); }, MARKET_REFRESH_MS);
+        _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(true); }, MARKET_REFRESH_MS);
 
         window.searchSchoolWeatherRegion = async function() {
             const inp = document.getElementById('schoolWeatherSearch');
@@ -12124,15 +12129,19 @@ ${subjectLine}
         }
 
         // ── 방 구독 범위: 전체 방 컬렉션 대신 지금 화면에 필요한 방만 받아요(읽기 비용 절약) ──
-        // lobby: 보고 있는 게임의 방 목록 / mine: 내가 참가·신청한 방 / room: 대전 중인 내 방 문서 하나
-        const _boardRoomSources = { lobby: new Map(), mine: new Map(), room: new Map() };
-        const _boardRoomUnsubs = { lobby: null, mine: null, room: null };
+        // lobby: 보고 있는 게임의 방 목록 / mine: 내가 참가·신청한 오목·체스 방(bg_) / mineOther: 내가 참가·신청한 알까기 방(alk_) / room: 대전 중인 내 방 문서 하나
+        const _boardRoomSources = { lobby: new Map(), mine: new Map(), mineOther: new Map(), room: new Map() };
+        const _boardRoomUnsubs = { lobby: null, mine: null, mineOther: null, room: null };
+        // 이 화면을 연 시각과, 이 화면에서 기다리거나 두는 모습을 본 판(boardRoomInstanceKey).
+        // 새 탭·다른 기기에서 예전에 끝난 판 결과로 저절로 끌려가지 않게 해요(shouldAutoEnterBoardRoom).
+        const _boardScreenStartedAt = Date.now();
+        const _boardSeenLiveRooms = new Set();
         let _boardRoomScopeKey = '';
         let _boardRoomScopeTimer = null;
 
         function mergedBoardRoomRows() {
             const byId = new Map();
-            ['lobby', 'mine', 'room'].forEach((k) => {
+            ['lobby', 'mine', 'mineOther', 'room'].forEach((k) => {
                 _boardRoomSources[k].forEach((row, id) => byId.set(id, row));
             });
             return Array.from(byId.values());
@@ -12195,7 +12204,7 @@ ${subjectLine}
             const roomsCol = collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms');
             // 대전으로 넘어가는 순간에도 내 방이 잠깐 비지 않게, 목록에서 받아 둔 내 방을 room 쪽으로 옮겨 둬요.
             if (scope.roomId && !_boardRoomSources.room.has(scope.roomId)) {
-                const carry = _boardRoomSources.lobby.get(scope.roomId) || _boardRoomSources.mine.get(scope.roomId);
+                const carry = _boardRoomSources.lobby.get(scope.roomId) || _boardRoomSources.mine.get(scope.roomId) || _boardRoomSources.mineOther.get(scope.roomId);
                 if (carry) _boardRoomSources.room.set(scope.roomId, carry);
             }
             if (prev[0] !== scope.lobbyGameType) {
@@ -12209,9 +12218,16 @@ ${subjectLine}
             }
             if (prev[1] !== scope.mineId) {
                 stopBoardRoomSource('mine');
+                stopBoardRoomSource('mineOther');
                 if (scope.mineId) {
+                    // 문서 id로 둘로 나눠 받아요. 알까기 방(alk_)은 id가 bg_보다 앞이라, 한 질의로 받으면 끝난 알까기 방이
+                    // 칸을 다 채워 새 오목·체스 방이 안 와요. id 범위만 쓰니 복합 색인은 필요 없어요.
+                    const mineIs = where('participantIds', 'array-contains', scope.mineId);
                     listenBoardRoomQuery('mine',
-                        query(roomsCol, where('participantIds', 'array-contains', scope.mineId), limit(BOARD_MINE_QUERY_LIMIT)),
+                        query(roomsCol, mineIs, orderBy(documentId()), startAt(BOARD_MINE_ID_SPLIT), limit(BOARD_MINE_QUERY_LIMIT)),
+                        query(roomsCol, mineIs, limit(BOARD_MINE_QUERY_LIMIT)));
+                    listenBoardRoomQuery('mineOther',
+                        query(roomsCol, mineIs, orderBy(documentId()), endBefore(BOARD_MINE_ID_SPLIT), limit(BOARD_MINE_OTHER_QUERY_LIMIT)),
                         null);
                 }
             }
@@ -12287,7 +12303,16 @@ ${subjectLine}
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
             // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.
             // 결과를 보고 스스로 나온 방은 건너뛰어요(내 방 구독이 목록을 열 때마다 바로 와서, 끝난 방으로 다시 끌려가지 않게).
-            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')) && !_alkLeftRooms.has(boardRoomInstanceKey(r)));
+            // 새 탭·다른 기기에서 처음 연 목록에서는 끝난 옛 판으로 들어가지 않아요(이 화면에서 두는 걸 봤거나, 연 뒤에 끝난 판만).
+            const mineEnter = rows.find((r) => shouldAutoEnterBoardRoom(r, {
+                selfId: me,
+                leftKeys: _alkLeftRooms,
+                seenLiveKeys: _boardSeenLiveRooms,
+                sinceMs: _boardScreenStartedAt,
+            }));
+            rows.forEach((r) => {
+                if ((r.status === 'waiting' || r.status === 'playing') && isRoomMember(r, me)) _boardSeenLiveRooms.add(boardRoomInstanceKey(r));
+            });
             if (mineEnter && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
                 enterBoardGameTable(mineEnter.id);
             }
@@ -31276,10 +31301,6 @@ ${subjectLine}
 
             const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
 
-            // 실시간으로 받은 설정에 이번 주 주급 정산이 이미 기록돼 있으면 트랜잭션(읽기)을 열지 않아요.
-            // 지급 금액 계산과 중복 지급 방지는 아래 트랜잭션이 그대로 맡아요.
-            if (window.globalSettings && window.globalSettings.lastSalaryWeek === wId) return;
-
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
             const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
 
@@ -32953,18 +32974,6 @@ ${subjectLine}
                     }
                 }
                 return;
-            }
-
-            // 실시간으로 받아 둔 상태로 먼저 걸러요. 이미 떠 있거나, 다음 등장 시간이 아직이거나,
-            // 이번 주말 7개를 다 띄웠으면 트랜잭션(읽기)을 열지 않아요. 최종 판단은 아래 트랜잭션이 그대로 해요.
-            const liveDb = window.dragonBallState;
-            if (liveDb && typeof liveDb === 'object') {
-                if (liveDb.isActive) return;
-                if (Date.now() < (Number(liveDb.nextSpawnTime) || 0)) return;
-                const liveSpawned = Array.isArray(liveDb.spawnedStarsThisWeekend)
-                    ? new Set(liveDb.spawnedStarsThisWeekend.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 7))
-                    : new Set();
-                if (liveDb.weekendKey === satKey && liveSpawned.size >= 7) return;
             }
 
             try {

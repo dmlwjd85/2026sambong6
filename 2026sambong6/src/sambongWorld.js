@@ -545,7 +545,7 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { CLASS_XP_FIRE_DELAY_MS, classXpCatchupSlot, classXpChunks, classXpErrorKind, classXpGivenOnDevice, classXpIssueMessage, classXpNextFireMs, classXpTargets, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { CLASS_XP_FIRE_DELAY_MS, classXpCatchupSlot, classXpChunks, classXpErrorKind, classXpGivenOnDevice, classXpGrantsFromServer, classXpIssueMessage, classXpNextFireMs, classXpTargets, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
@@ -30856,7 +30856,8 @@ ${subjectLine}
         /**
          * 수업 종료 XP는 단순하게 줘요.
          * 마스터 J 화면이 다음 종 시각(+20초)에 타이머를 한 번 걸고, 종이 치면 학급 학생을 한 번에 묶어 저장해요.
-         * 서버를 미리 읽지 않고, 실패해도 다시 시도하지 않아요(그 종은 건너뛰어요).
+         * 저장 안에서는 학생 문서를 읽어, 다른 마스터 화면이 이미 준 학생은 다시 +5 하지 않아요.
+         * 실패해도 이 기기는 그 종을 다시 시도하지 않아요.
          * 이 기기가 준 종은 저장소에 남겨서 같은 기기에서는 두 번 주지 않아요.
          * 알림은 큰 창 대신 토스트로, 실패했을 때만 이 기기에서 하루 한 번 띄워요.
          */
@@ -30923,7 +30924,7 @@ ${subjectLine}
             if (typeof window.showToast === 'function') window.showToast(message, 8000);
         }
 
-        /** 평일 KST. 오늘 가장 최근 종을 이 기기에서 한 번만, 읽기 없이 한 번에 저장해요. */
+        /** 평일 KST. 오늘 가장 최근 종을 이 기기에서 한 번만 저장해요. 이미 받은 학생은 서버 문서로 걸러요. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState || !window.playerState.isGM || typeof db === 'undefined' || !db) return;
             if (!window.allStudentsData || window.allStudentsData.length === 0) return;
@@ -30938,23 +30939,38 @@ ${subjectLine}
 
             const { key: slotKey, slotMs, timeStr, ymd } = slot;
             const { pending, invalidXp } = classXpTargets(window.allStudentsData, slotKey, studentIsCreditDefault);
-            const xpById = new Map(window.allStudentsData.map((stu) => [String(stu && stu.id), stu && stu.xp]));
             let grantedCount = 0;
             let failKind = '';
             for (const ids of classXpChunks(pending)) {
                 try {
-                    // 읽기 없는 한 번짜리 저장(commit 1번)이에요. 실패해도 SDK가 다시 시도하지 않게 maxAttempts는 1이에요.
-                    await runTransaction(db, async (transaction) => {
+                    // 학생 문서를 먼저 읽은 뒤, 이번 종이 없는 학생만 +5 해요.
+                    // 다른 마스터 화면과 겹치면 다시 읽고, 규칙 거절(시계가 다름)은 SDK가 다시 시도하지 않아요.
+                    const granted = await runTransaction(db, async (transaction) => {
+                        const loaded = [];
+                        const refs = new Map();
                         for (const sid of ids) {
-                            const beforeXp = xpById.get(sid);
-                            transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), {
-                                xp: increment(5),
-                                lastClassXpSlot: slotKey,
-                                xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, beforeXp, beforeXp + 5, { source: 'class-end-auto' })),
+                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                            refs.set(sid, ref);
+                            const snap = await transaction.get(ref);
+                            const data = snap.exists() ? (snap.data() || {}) : null;
+                            loaded.push({
+                                id: sid,
+                                exists: snap.exists(),
+                                xp: data ? data.xp : undefined,
+                                lastClassXpSlot: data ? data.lastClassXpSlot : undefined,
                             });
                         }
-                    }, { maxAttempts: 1 });
-                    grantedCount += ids.length;
+                        const grants = classXpGrantsFromServer(loaded, slotKey);
+                        for (const row of grants) {
+                            transaction.update(refs.get(row.id), {
+                                xp: increment(5),
+                                lastClassXpSlot: slotKey,
+                                xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, row.xp, row.xp + 5, { source: 'class-end-auto' })),
+                            });
+                        }
+                        return grants.length;
+                    }, { maxAttempts: 5 });
+                    grantedCount += granted;
                 } catch (e) {
                     failKind = classXpErrorKind(e);
                     console.warn('checkAndDistributeClassXP', slotKey, e);

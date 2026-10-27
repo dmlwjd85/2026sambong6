@@ -1,10 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
     CLASS_XP_END_TIMES,
     classXpCatchupSlot,
     classXpErrorKind,
     classXpGrantDecision,
+    classXpGrantsFromServer,
     CLASS_XP_FIRE_DELAY_MS,
     CLASS_XP_MAX_WAIT_MS,
     classXpChunks,
@@ -126,6 +129,35 @@ describe('수업 XP 대상 고르기와 알림 문구', () => {
         const students = [{ id: '1', xp: 125, lastClassXpSlot: slot }, { id: '2', xp: 125, lastClassXpSlot: slot }];
         assert.deepEqual(classXpTargets(students, slot), { pending: [], invalidXp: [] });
         assert.deepEqual(classXpTargets(null, slot), { pending: [], invalidXp: [] });
+    });
+
+    it('서버에 이미 이번 종이 있으면 화면 목록과 달라도 다시 주지 않는다', () => {
+        const docs = [
+            { id: '1', exists: true, xp: 130, lastClassXpSlot: slot },
+            { id: '2', exists: true, xp: 40, lastClassXpSlot: '2026_10_27_09:40' },
+            { id: '3', exists: false, xp: 10, lastClassXpSlot: '' },
+            { id: '4', exists: true, xp: '12', lastClassXpSlot: '' },
+            { id: '2', exists: true, xp: 40, lastClassXpSlot: '' },
+            { id: '5', exists: true, xp: 0 },
+        ];
+        assert.deepEqual(classXpGrantsFromServer(docs, slot), [
+            { id: '2', xp: 40 },
+            { id: '5', xp: 0 },
+        ]);
+        assert.deepEqual(classXpGrantsFromServer(null, slot), []);
+    });
+
+    it('지급 저장은 서버 문서를 읽은 뒤에만 이번 종을 더한다', () => {
+        const src = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const start = src.indexOf('window.checkAndDistributeClassXP = async function()');
+        const end = src.indexOf('window.checkAndDistributeSalary', start);
+        const body = src.slice(start, end);
+        assert.ok(start >= 0 && end > start);
+        const readAt = body.indexOf('transaction.get(ref)');
+        const grantAt = body.indexOf('classXpGrantsFromServer(loaded, slotKey)');
+        const writeAt = body.indexOf('transaction.update(refs.get(row.id)');
+        assert.ok(readAt >= 0 && grantAt > readAt && writeAt > grantAt);
+        assert.equal(body.includes('maxAttempts: 1'), false);
     });
 
     it('저장 실패를 거절·사용량 초과·기타로 나눈다', () => {

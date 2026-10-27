@@ -32783,6 +32783,18 @@ ${subjectLine}
                 return;
             }
 
+            // 실시간으로 받아 둔 상태로 먼저 걸러요. 이미 떠 있거나, 다음 등장 시간이 아직이거나,
+            // 이번 주말 7개를 다 띄웠으면 트랜잭션(읽기)을 열지 않아요. 최종 판단은 아래 트랜잭션이 그대로 해요.
+            const liveDb = window.dragonBallState;
+            if (liveDb && typeof liveDb === 'object') {
+                if (liveDb.isActive) return;
+                if (Date.now() < (Number(liveDb.nextSpawnTime) || 0)) return;
+                const liveSpawned = Array.isArray(liveDb.spawnedStarsThisWeekend)
+                    ? new Set(liveDb.spawnedStarsThisWeekend.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 7))
+                    : new Set();
+                if (liveDb.weekendKey === satKey && liveSpawned.size >= 7) return;
+            }
+
             try {
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(dragonBallRef);

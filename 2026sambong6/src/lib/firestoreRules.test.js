@@ -12,6 +12,14 @@ import {
 } from './learningThermometerSettlement.js';
 import { planThermometerLegacyVoteWrites } from './learningThermometerVotes.js';
 import {
+    applyBoardRoomGame,
+    approveJoinBoardRoom,
+    boardRoomToDoc,
+    createBoardRoom,
+    requestJoinBoardRoom,
+} from './boardGameRooms.js';
+import { GOMOKU_BLACK, placeGomokuStone } from './gomokuGame.js';
+import {
     assertFails,
     assertSucceeds,
     initializeTestEnvironment,
@@ -1089,6 +1097,113 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(guest, 'artifacts/class1/public/data/students/student_gm'), {
             pin: '2468',
         }));
+    });
+});
+
+describe('firestore rules: 보드게임 방 정리(hostUid·30분)', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {
+    /** @type {import('@firebase/rules-unit-testing').RulesTestEnvironment | null} */
+    let testEnv = null;
+    const MIN = 60 * 1000;
+    const roomPath = (id) => `artifacts/class1/public/data/boardGameRooms/${id}`;
+
+    before(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId,
+            firestore: { rules: fs.readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8') },
+        });
+    });
+    after(async () => { if (testEnv) await testEnv.cleanup(); });
+    beforeEach(async () => { await testEnv.clearFirestore(); });
+
+    const host = () => testEnv.authenticatedContext('uid-host', { firebase: { sign_in_provider: 'anonymous' } });
+    const other = () => testEnv.authenticatedContext('uid-other', { firebase: { sign_in_provider: 'anonymous' } });
+    const nobody = () => testEnv.unauthenticatedContext();
+
+    function makeRoom({ id = 'bg_r1', ageMin = 1, hostUid = 'uid-host', gameType = 'gomoku', hostId = '1' } = {}) {
+        const now = Date.now() - ageMin * MIN;
+        const made = createBoardRoom({ gameType, hostId, hostName: '민준', now, hostUid, id });
+        assert.equal(made.ok, true);
+        const doc0 = boardRoomToDoc(made.room);
+        if (!hostUid) delete doc0.hostUid;
+        return doc0;
+    }
+
+    async function seed(data, id = 'bg_r1') {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), roomPath(id)), data); });
+    }
+
+    it('방은 내 uid를 hostUid로 적어야 만들 수 있고, 로그인 없이는 못 만들어요', async () => {
+        await assertSucceeds(setDoc(doc(host().firestore(), roomPath('bg_r1')), makeRoom()));
+        await assertFails(setDoc(doc(other().firestore(), roomPath('bg_r2')), makeRoom({ id: 'bg_r2' })));
+        await assertFails(setDoc(doc(other().firestore(), roomPath('bg_r3')), makeRoom({ id: 'bg_r3', hostUid: '' })));
+        await assertFails(setDoc(doc(nobody().firestore(), roomPath('bg_r4')), makeRoom({ id: 'bg_r4' })));
+    });
+
+    it('방장은 만든 지 얼마 안 된 내 방을 언제든 지워요', async () => {
+        await seed(makeRoom({ ageMin: 1 }));
+        await assertSucceeds(deleteDoc(doc(host().firestore(), roomPath('bg_r1'))));
+    });
+
+    it('남의 새 방(30분 전)은 지우거나 hostUid를 바꿔 덮어쓰지 못해요', async () => {
+        await seed(makeRoom({ ageMin: 12 }));
+        await assertFails(deleteDoc(doc(other().firestore(), roomPath('bg_r1'))));
+        await assertFails(setDoc(doc(other().firestore(), roomPath('bg_r1')), makeRoom({ hostUid: 'uid-other', hostId: '2' })));
+        // createdAt을 옛날로 바꿔 30분 정리를 앞당기지도 못해요
+        const cur = makeRoom({ ageMin: 12 });
+        await assertFails(setDoc(doc(other().firestore(), roomPath('bg_r1')), { ...cur, createdAt: cur.createdAt - 60 * MIN }));
+    });
+
+    it('만든 지 30분이 지난 방은 로그인한 누구나 지우고 새 방으로 덮어써요', async () => {
+        await seed(makeRoom({ ageMin: 31 }));
+        await assertSucceeds(deleteDoc(doc(other().firestore(), roomPath('bg_r1'))));
+        await seed(makeRoom({ ageMin: 31 }));
+        await assertSucceeds(setDoc(doc(other().firestore(), roomPath('bg_r1')), makeRoom({ hostUid: 'uid-other', hostId: '2', ageMin: 0 })));
+    });
+
+    it('30분이 지나도 두는 중이고 10분 안에 활동한 판은 남이 지우지 못해요', async () => {
+        const base = makeRoom({ ageMin: 40 });
+        await seed({ ...base, status: 'playing', lastActivityAt: Date.now() - 2 * MIN });
+        await assertFails(deleteDoc(doc(other().firestore(), roomPath('bg_r1'))));
+        await assertSucceeds(deleteDoc(doc(host().firestore(), roomPath('bg_r1'))));
+        await seed({ ...base, status: 'playing', lastActivityAt: Date.now() - 11 * MIN });
+        await assertSucceeds(deleteDoc(doc(other().firestore(), roomPath('bg_r1'))));
+    });
+
+    it('hostUid가 없는 옛 방은 예전처럼 로그인한 누구나 지워요', async () => {
+        await seed(makeRoom({ ageMin: 1, hostUid: '' }));
+        await assertSucceeds(deleteDoc(doc(other().firestore(), roomPath('bg_r1'))));
+    });
+
+    it('로그인하지 않으면 새 방·옛 방·30분 지난 방 모두 지우거나 덮어쓰지 못해요', async () => {
+        for (const data of [makeRoom({ ageMin: 1 }), makeRoom({ ageMin: 1, hostUid: '' }), makeRoom({ ageMin: 31 })]) {
+            await seed(data);
+            await assertFails(deleteDoc(doc(nobody().firestore(), roomPath('bg_r1'))));
+            await assertFails(setDoc(doc(nobody().firestore(), roomPath('bg_r1')), { ...data, status: 'closed' }));
+            await assertFails(updateDoc(doc(nobody().firestore(), roomPath('bg_r1')), { status: 'closed' }));
+        }
+        // 공개 와일드카드로도 방 아래에 쓰지 못해요
+        await assertFails(setDoc(doc(nobody().firestore(), `${roomPath('bg_r1')}/x/y`), { a: 1 }));
+    });
+
+    it('참가 신청·승인·두기·나가기(hostUid·createdAt 그대로)는 예전처럼 돼요', async () => {
+        const made = createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '민준', now: Date.now(), hostUid: 'uid-host', id: 'bg_r1' });
+        await assertSucceeds(setDoc(doc(host().firestore(), roomPath('bg_r1')), boardRoomToDoc(made.room)));
+        const joined = requestJoinBoardRoom(made.room, { studentId: '2', studentName: '서연', now: Date.now() });
+        assert.equal(joined.ok, true);
+        await assertSucceeds(setDoc(doc(other().firestore(), roomPath('bg_r1')), boardRoomToDoc(joined.room)));
+        const ok = approveJoinBoardRoom(joined.room, { hostId: '1', studentId: '2', now: Date.now() });
+        assert.equal(ok.ok, true);
+        await assertSucceeds(setDoc(doc(host().firestore(), roomPath('bg_r1')), boardRoomToDoc(ok.room)));
+        const placed = placeGomokuStone(ok.room.game, { x: 9, y: 9, color: GOMOKU_BLACK, now: Date.now() });
+        assert.equal(placed.ok, true);
+        const moved = applyBoardRoomGame(ok.room, { game: placed.game, now: Date.now() });
+        await assertSucceeds(setDoc(doc(host().firestore(), roomPath('bg_r1')), boardRoomToDoc(moved)));
+        await assertSucceeds(updateDoc(doc(other().firestore(), roomPath('bg_r1')), { status: 'closed', updatedAt: Date.now() }));
+    });
+
+    it('같은 학번 방장이 다른 기기에서, 10분 넘게 빈 내 알까기 방을 새로 만들 수 있어요', async () => {
+        await seed(makeRoom({ id: 'alk_1', gameType: 'alkkagi', ageMin: 12 }), 'alk_1');
+        await assertSucceeds(setDoc(doc(other().firestore(), roomPath('alk_1')), makeRoom({ id: 'alk_1', gameType: 'alkkagi', ageMin: 0, hostUid: 'uid-other' })));
     });
 });
 

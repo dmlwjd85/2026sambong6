@@ -74,6 +74,11 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    // 보드게임 방(아래 전용 match만 쓰고, 공개 와일드카드에서는 뺍니다).
+    function isBoardGameRoomDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/boardGameRooms/.*');
+    }
+
     function isEstateStateDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/estate/state$');
     }
@@ -418,16 +423,58 @@ service cloud.firestore {
     }
 
     // 보드게임 방: 로그인(익명 인증)한 학급 화면에서만 만들고 고칩니다.
-    // 학번·방장 권한은 클라이언트 상태 머신(boardGameRooms.js)이 검사합니다.
-    // 익명 Auth에는 학번이 없으므로 규칙에서 명단 대조는 하지 않습니다.
+    // 학번·참가 순서는 클라이언트 상태 머신(boardGameRooms.js)이 검사합니다.
+    // 방장은 hostUid(만든 기기의 로그인 uid)로 알아봅니다. hostUid가 없는 옛 방은 예전처럼 로그인한 누구나 지울 수 있습니다.
+    // 만든 지(createdAt) 30분이 지난 방은 로그인한 누구나 지울 수 있습니다.
+    // 단, 두는 중(playing)이고 마지막 활동(lastActivityAt)이 10분 안인 판은 지우지 못합니다.
     match /artifacts/{appId}/public/data/boardGameRooms/{roomId} {
+      function roomHostUid(d) {
+        return d.get('hostUid', '');
+      }
+      function roomIsLegacy(d) {
+        return !(roomHostUid(d) is string) || roomHostUid(d) == '';
+      }
+      function roomIsMine(d) {
+        return roomHostUid(d) == request.auth.uid;
+      }
+      function roomCleanupAgeDue(d) {
+        let created = d.get('createdAt', 0);
+        let last = d.get('lastActivityAt', 0);
+        return created is number && created > 0
+          && request.time.toMillis() - created >= 1800000
+          && !(d.get('status', '') == 'playing' && last is number && request.time.toMillis() - last < 600000);
+      }
+      function roomIdle(d) {
+        let last = d.get('lastActivityAt', 0);
+        return last is number && request.time.toMillis() - last >= 600000;
+      }
+
       allow read: if true;
       allow create: if signedIn()
         && request.resource.data.gameType is string
         && request.resource.data.hostId is string
-        && request.resource.data.status is string;
-      allow update: if signedIn();
-      allow delete: if signedIn();
+        && request.resource.data.status is string
+        && roomIsMine(request.resource.data);
+      // 참가·두기·나가기 같은 보통 쓰기는 hostUid·createdAt을 바꾸지 않습니다.
+      // 같은 문서에 새 방을 덮어쓰려면(hostUid를 내 것으로) 내 방이거나, 옛 방이거나, 끝난 방이거나,
+      // 30분 정리 대상이거나, 같은 학번 방장이 10분 넘게 비운 방이어야 합니다.
+      allow update: if signedIn() && (
+        (roomHostUid(request.resource.data) == roomHostUid(resource.data)
+          && (!('createdAt' in resource.data)
+            || request.resource.data.get('createdAt', 0) == resource.data.get('createdAt', 0)))
+        || (roomIsMine(request.resource.data) && (
+          roomIsMine(resource.data)
+          || roomIsLegacy(resource.data)
+          || resource.data.get('status', '') in ['finished', 'closed']
+          || roomCleanupAgeDue(resource.data)
+          || (request.resource.data.get('hostId', '') == resource.data.get('hostId', '') && roomIdle(resource.data))
+        ))
+      );
+      allow delete: if signedIn() && (
+        roomIsMine(resource.data)
+        || roomIsLegacy(resource.data)
+        || roomCleanupAgeDue(resource.data)
+      );
     }
 
     // 부동산 자리표. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
@@ -523,6 +570,7 @@ service cloud.firestore {
         && !isApprovedClassIdDoc()
         && !isOxQuizBankDoc()
         && !isEstateStateDoc()
+        && !isBoardGameRoomDoc()
         && studentClassXpSlotAllowed();
     }
 

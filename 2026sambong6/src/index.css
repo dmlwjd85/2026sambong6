@@ -6595,3 +6595,172 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 --pr-f: min(calc(var(--pr-w) * var(--pr-scale)), calc(var(--pr-w) * 1.56), calc((100cqi - 0.6rem) / 1.14));
             }
         }
+
+        /* ── 광장 학생 카드: 등급별 보석 채움 ──
+           새내기 원석 → 초보 비취 → 중수 사파이어 → 고수 토파즈 → 수호자 자수정 → 전설 루비.
+           위쪽은 캐릭터 뒤로 퍼지는 빛살 면(::before), 아래쪽은 깎인 면 타일(::after). 둘 다 내용 뒤(z-index:-1)라
+           캐릭터·이름·수치를 가리지 않습니다. 등급이 오를수록 빛살 수·면 밀도·반짝임이 늘고, 고수부터 안쪽 금선.
+           오라 스킨(.plaza-tier-aura)과 신용불량 카드는 기존 테두리·빛을 그대로 둡니다. */
+        .plaza-card.plaza-tier {
+            isolation: isolate;
+            background-color: var(--pt-g2);
+            background-image:
+                var(--pt-spark, linear-gradient(transparent, transparent)),
+                radial-gradient(120% 72% at 50% 24%, var(--pt-g1) 0%, var(--pt-g2) 50%, var(--pt-g3) 100%);
+        }
+        .plaza-card.plaza-tier:not(.plaza-tier-aura) { border-color: var(--pt-edge); }
+        .plaza-card.plaza-tier:not(.plaza-tier-aura):not(.is-credit-default) {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 0 var(--pt-deep), 0 4px 8px -2px rgba(2, 6, 23, 0.45);
+        }
+        .plaza-card.plaza-tier:not(.plaza-tier-aura):not(.is-credit-default):active {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 var(--pt-deep), 0 1px 3px rgba(2, 6, 23, 0.4);
+        }
+        .plaza-card.plaza-tier::before,
+        .plaza-card.plaza-tier::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .plaza-card.plaza-tier::before {
+            background:
+                radial-gradient(circle at 50% 30%, rgba(var(--pt-ray-rgb, 255, 255, 255), var(--pt-core)) 0, transparent 34%),
+                repeating-conic-gradient(from 4deg at 50% 30%,
+                    rgba(var(--pt-ray-rgb, 255, 255, 255), var(--pt-ray-a)) 0 var(--pt-ray),
+                    rgba(0, 0, 0, var(--pt-ray-b)) var(--pt-ray) calc(var(--pt-ray) * 2));
+            -webkit-mask-image: radial-gradient(95% 62% at 50% 30%, #000 25%, transparent 100%);
+            mask-image: radial-gradient(95% 62% at 50% 30%, #000 25%, transparent 100%);
+        }
+        .plaza-card.plaza-tier::after {
+            background:
+                conic-gradient(from -45deg,
+                    rgba(255, 255, 255, var(--pt-fa)) 0 90deg,
+                    rgba(0, 0, 0, calc(var(--pt-fb) * 0.45)) 0 180deg,
+                    rgba(0, 0, 0, var(--pt-fb)) 0 270deg,
+                    rgba(255, 255, 255, calc(var(--pt-fa) * 0.45)) 0)
+                0 0 / var(--pt-fs) var(--pt-fs);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 38%, #000 74%);
+            mask-image: linear-gradient(to bottom, transparent 38%, #000 74%);
+        }
+        /* 이름표·Lv·수치 줄은 짙은 판 위에 — 어떤 무늬 위에서도 글자가 또렷하고, 수치 줄 아래로 무늬가 비치지 않게 불투명 */
+        .plaza-tier .plaza-card-name {
+            font-family: 'JJAEM Title', 'Noto Sans KR', sans-serif;
+            font-weight: 400;
+            background-color: var(--pt-plate);
+            border-color: var(--pt-plate-edge);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(0, 0, 0, 0.35);
+        }
+        .plaza-tier .plaza-card-lv {
+            font-family: 'JJAEM Title', 'Noto Sans KR', sans-serif;
+            font-weight: 400;
+            background-color: rgba(2, 6, 23, 0.72);
+            color: var(--pt-ink);
+            box-shadow: inset 0 0 0 1px var(--pt-plate-edge);
+        }
+        .plaza-tier .plaza-card-stats {
+            background-color: var(--pt-plate);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .plaza-card.plaza-tier-gosu:not(.plaza-tier-aura),
+        .plaza-card.plaza-tier-guardian:not(.plaza-tier-aura),
+        .plaza-card.plaza-tier-legend:not(.plaza-tier-aura) {
+            outline: 1px solid var(--pt-rim);
+            outline-offset: -3px;
+        }
+        .plaza-card.plaza-tier-legend:not(.plaza-tier-aura):not(.is-credit-default):not(:active) {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 4px rgba(252, 211, 77, 0.12), 0 2px 0 var(--pt-deep), 0 4px 10px -2px rgba(244, 63, 94, 0.45);
+        }
+        /* 1 새내기 — 회색 원석: 면이 크고 성기며 반짝임 없음 */
+        .plaza-tier-saenaegi {
+            --pt-g1: #6b7585; --pt-g2: #3d4553; --pt-g3: #1f242d;
+            --pt-edge: #a8b3c2; --pt-deep: #141920; --pt-ink: #e2e8f0;
+            --pt-plate: #0f141c; --pt-plate-edge: rgba(203, 213, 225, 0.22);
+            --pt-ray: 22.5deg; --pt-ray-a: 0.035; --pt-ray-b: 0.05; --pt-core: 0.07;
+            --pt-fs: 36px; --pt-fa: 0.05; --pt-fb: 0.09;
+        }
+        /* 2 초보 — 비취: 또렷한 초록, 반짝임 1개 */
+        .plaza-tier-chobo {
+            --pt-g1: #3cc283; --pt-g2: #148150; --pt-g3: #07402a;
+            --pt-edge: #6ee7a8; --pt-deep: #04251a; --pt-ink: #a7f3c8;
+            --pt-plate: #061f16; --pt-plate-edge: rgba(134, 239, 172, 0.3);
+            --pt-ray: 15deg; --pt-ray-a: 0.07; --pt-ray-b: 0.08; --pt-core: 0.15;
+            --pt-fs: 26px; --pt-fa: 0.09; --pt-fb: 0.14;
+            --pt-spark:
+                radial-gradient(2.6px 0.7px at 20% 16%, rgba(255, 255, 255, 0.8) 99%, transparent),
+                radial-gradient(0.7px 2.6px at 20% 16%, rgba(255, 255, 255, 0.8) 99%, transparent);
+        }
+        /* 3 중수 — 사파이어 */
+        .plaza-tier-jungsu {
+            --pt-g1: #3b97d6; --pt-g2: #155f93; --pt-g3: #0a2d50;
+            --pt-edge: #93dcff; --pt-deep: #061d36; --pt-ink: #c9ecff;
+            --pt-plate: #081a2e; --pt-plate-edge: rgba(125, 211, 252, 0.3);
+            --pt-ray: 10deg; --pt-ray-a: 0.09; --pt-ray-b: 0.09; --pt-core: 0.17;
+            --pt-fs: 20px; --pt-fa: 0.12; --pt-fb: 0.18;
+            --pt-spark:
+                radial-gradient(3px 0.8px at 18% 15%, rgba(255, 255, 255, 0.85) 99%, transparent),
+                radial-gradient(0.8px 3px at 18% 15%, rgba(255, 255, 255, 0.85) 99%, transparent),
+                radial-gradient(2.4px 0.7px at 84% 34%, rgba(255, 255, 255, 0.7) 99%, transparent),
+                radial-gradient(0.7px 2.4px at 84% 34%, rgba(255, 255, 255, 0.7) 99%, transparent);
+        }
+        /* 4 고수 — 토파즈 금 + 안쪽 금선 */
+        .plaza-tier-gosu {
+            --pt-g1: #e6b040; --pt-g2: #9a6510; --pt-g3: #4a2b04;
+            --pt-edge: #fde68a; --pt-deep: #2c1902; --pt-ink: #fde68a; --pt-rim: rgba(253, 230, 138, 0.55);
+            --pt-plate: #1f1405; --pt-plate-edge: rgba(253, 224, 71, 0.4);
+            --pt-ray: 7.5deg; --pt-ray-a: 0.13; --pt-ray-b: 0.11; --pt-core: 0.22;
+            --pt-fs: 15px; --pt-fa: 0.15; --pt-fb: 0.2;
+            --pt-spark:
+                radial-gradient(3.4px 0.9px at 16% 14%, #fff8dc 99%, transparent),
+                radial-gradient(0.9px 3.4px at 16% 14%, #fff8dc 99%, transparent),
+                radial-gradient(2.6px 0.7px at 86% 30%, #fff 99%, transparent),
+                radial-gradient(0.7px 2.6px at 86% 30%, #fff 99%, transparent),
+                radial-gradient(2px 0.6px at 24% 46%, #fff 99%, transparent),
+                radial-gradient(0.6px 2px at 24% 46%, #fff 99%, transparent);
+        }
+        /* 5 수호자 — 자수정 + 라일락 안쪽선 */
+        .plaza-tier-guardian {
+            --pt-g1: #b46ae6; --pt-g2: #6c22a3; --pt-g3: #2a0a47;
+            --pt-edge: #f0c4ff; --pt-deep: #1c0632; --pt-ink: #f5d0fe; --pt-rim: rgba(240, 171, 252, 0.6);
+            --pt-plate: #1a0a2c; --pt-plate-edge: rgba(240, 171, 252, 0.42);
+            --pt-ray: 6deg; --pt-ray-a: 0.15; --pt-ray-b: 0.12; --pt-core: 0.26;
+            --pt-fs: 13px; --pt-fa: 0.16; --pt-fb: 0.22;
+            --pt-spark:
+                radial-gradient(3.6px 0.9px at 15% 13%, #fff 99%, transparent),
+                radial-gradient(0.9px 3.6px at 15% 13%, #fff 99%, transparent),
+                radial-gradient(3px 0.8px at 86% 24%, #fbe8ff 99%, transparent),
+                radial-gradient(0.8px 3px at 86% 24%, #fbe8ff 99%, transparent),
+                radial-gradient(2.2px 0.6px at 26% 44%, #fff 99%, transparent),
+                radial-gradient(0.6px 2.2px at 26% 44%, #fff 99%, transparent),
+                radial-gradient(2.2px 0.6px at 78% 52%, #fff 99%, transparent),
+                radial-gradient(0.6px 2.2px at 78% 52%, #fff 99%, transparent);
+        }
+        /* 6 전설 — 루비 + 금빛 빛살 + 두 겹 금선 */
+        .plaza-tier-legend {
+            --pt-g1: #f0506c; --pt-g2: #a3123a; --pt-g3: #3e0313;
+            --pt-edge: #fcd34d; --pt-deep: #2a020c; --pt-ink: #fde68a; --pt-rim: rgba(252, 211, 77, 0.85);
+            --pt-plate: #24050f; --pt-plate-edge: rgba(252, 211, 77, 0.55);
+            --pt-ray-rgb: 255, 214, 120;
+            --pt-ray: 4.5deg; --pt-ray-a: 0.17; --pt-ray-b: 0.13; --pt-core: 0.3;
+            --pt-fs: 11px; --pt-fa: 0.17; --pt-fb: 0.24;
+            --pt-spark:
+                radial-gradient(4px 1px at 14% 12%, #fff3c4 99%, transparent),
+                radial-gradient(1px 4px at 14% 12%, #fff3c4 99%, transparent),
+                radial-gradient(3.4px 0.9px at 87% 20%, #fff 99%, transparent),
+                radial-gradient(0.9px 3.4px at 87% 20%, #fff 99%, transparent),
+                radial-gradient(2.6px 0.7px at 24% 42%, #fde68a 99%, transparent),
+                radial-gradient(0.7px 2.6px at 24% 42%, #fde68a 99%, transparent),
+                radial-gradient(2.6px 0.7px at 80% 48%, #fff 99%, transparent),
+                radial-gradient(0.7px 2.6px at 80% 48%, #fff 99%, transparent),
+                radial-gradient(1.4px 1.4px at 50% 8%, #fff 99%, transparent);
+        }
+        /* 수호자·전설만 빛살이 천천히 숨쉽니다(opacity만 바꿔 가볍게). 움직임 줄이기 설정이면 멈춥니다. */
+        @media (prefers-reduced-motion: no-preference) {
+            .plaza-card.plaza-tier-guardian::before,
+            .plaza-card.plaza-tier-legend::before { animation: plaza-gem-breathe 3.2s ease-in-out infinite; }
+        }
+        @keyframes plaza-gem-breathe {
+            0%, 100% { opacity: 0.78; }
+            50% { opacity: 1; }
+        }

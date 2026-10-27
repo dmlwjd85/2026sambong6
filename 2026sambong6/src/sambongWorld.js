@@ -20,6 +20,7 @@ import {
     serverTimestamp,
     query,
     where,
+    limit,
 } from 'firebase/firestore';
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
@@ -226,10 +227,15 @@ import {
     listLegalChessMoves,
 } from './lib/chessGame.js';
 import {
+    BOARD_LOBBY_QUERY_LIMIT,
+    BOARD_MINE_QUERY_LIMIT,
     applyBoardRoomGame,
     approveJoinBoardRoom,
+    boardLobbyQueryStatuses,
     boardRoomErrorText,
     boardRoomInstanceKey,
+    boardRoomScopeKey,
+    boardRoomSubscriptionScope,
     boardRoomToDoc,
     boardRoomStatusLabel,
     cancelJoinBoardRoom,
@@ -12075,12 +12081,159 @@ ${subjectLine}
             return _boardGameRooms.find((r) => r.id === _boardGameActiveId) || null;
         }
 
-        function applyBoardGameRoomsSnapshot(snap) {
-            const now = Date.now();
-            const rows = [];
-            snap.forEach((d) => {
-                rows.push(sanitizeBoardRoom({ id: d.id, ...d.data() }, now));
+        // ── 방 구독 범위: 전체 방 컬렉션 대신 지금 화면에 필요한 방만 받아요(읽기 비용 절약) ──
+        // lobby: 보고 있는 게임의 방 목록 / mine: 내가 참가·신청한 방 / room: 대전 중인 내 방 문서 하나
+        const _boardRoomSources = { lobby: new Map(), mine: new Map(), room: new Map() };
+        const _boardRoomUnsubs = { lobby: null, mine: null, room: null };
+        let _boardRoomScopeKey = '';
+        let _boardRoomScopeTimer = null;
+
+        function mergedBoardRoomRows() {
+            const byId = new Map();
+            ['lobby', 'mine', 'room'].forEach((k) => {
+                _boardRoomSources[k].forEach((row, id) => byId.set(id, row));
             });
+            return Array.from(byId.values());
+        }
+
+        function stopBoardRoomSource(key) {
+            if (_boardRoomUnsubs[key]) {
+                try { _boardRoomUnsubs[key](); } catch (_) { /* 이미 풀린 구독 */ }
+                _boardRoomUnsubs[key] = null;
+            }
+            _boardRoomSources[key].clear();
+        }
+
+        function boardRoomsLobbyVisible() {
+            if (typeof document === 'undefined' || document.hidden) return false;
+            const el = document.getElementById('boardgameLobbyView');
+            return !!(el && !el.classList.contains('hidden') && el.getClientRects().length > 0);
+        }
+
+        function boardRoomQuerySnapshotToMap(snap) {
+            const now = Date.now();
+            const map = new Map();
+            snap.forEach((d) => {
+                map.set(d.id, sanitizeBoardRoom({ id: d.id, ...d.data() }, now));
+            });
+            return map;
+        }
+
+        function listenBoardRoomQuery(key, primary, fallback) {
+            const start = (q, canFallback) => onSnapshot(q, (snap) => {
+                _boardRoomSources[key] = boardRoomQuerySnapshotToMap(snap);
+                applyBoardGameRoomsRows(mergedBoardRoomRows());
+            }, (err) => {
+                console.warn('boardGameRooms listen', key, err && err.code);
+                // 색인이 없다는 오류 등이 나면 더 단순한 질의로 한 번만 다시 받아요.
+                if (canFallback && fallback && _boardRoomUnsubs[key]) {
+                    try { _boardRoomUnsubs[key](); } catch (_) { /* noop */ }
+                    _boardRoomUnsubs[key] = start(fallback, false);
+                }
+            });
+            _boardRoomUnsubs[key] = start(primary, true);
+        }
+
+        /** 화면이 바뀔 때마다 불러도 돼요. 범위가 같으면 아무것도 하지 않아요. */
+        function syncBoardRoomSubscriptions() {
+            if (!db) return;
+            const scope = boardRoomSubscriptionScope({
+                toolOpen: classtoolSub === 'boardgames' && !(window.playerState && window.playerState.isGuest),
+                view: _boardGameView,
+                gameType: _boardGameType,
+                activeRoomId: _boardGameActiveId,
+                selfId: boardGameSelfId(),
+                lobbyVisible: boardRoomsLobbyVisible(),
+                localPlay: !!(_alkLocal || _gomokuAiSession || _chessAiSession),
+            });
+            const key = boardRoomScopeKey(scope);
+            if (key === _boardRoomScopeKey) return;
+            const prev = _boardRoomScopeKey.split('|');
+            _boardRoomScopeKey = key;
+            const roomsCol = collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms');
+            // 대전으로 넘어가는 순간에도 내 방이 잠깐 비지 않게, 목록에서 받아 둔 내 방을 room 쪽으로 옮겨 둬요.
+            if (scope.roomId && !_boardRoomSources.room.has(scope.roomId)) {
+                const carry = _boardRoomSources.lobby.get(scope.roomId) || _boardRoomSources.mine.get(scope.roomId);
+                if (carry) _boardRoomSources.room.set(scope.roomId, carry);
+            }
+            if (prev[0] !== scope.lobbyGameType) {
+                stopBoardRoomSource('lobby');
+                if (scope.lobbyGameType) {
+                    const t = scope.lobbyGameType;
+                    listenBoardRoomQuery('lobby',
+                        query(roomsCol, where('gameType', '==', t), where('status', 'in', boardLobbyQueryStatuses(t)), limit(BOARD_LOBBY_QUERY_LIMIT)),
+                        query(roomsCol, where('gameType', '==', t), limit(BOARD_LOBBY_QUERY_LIMIT)));
+                }
+            }
+            if (prev[1] !== scope.mineId) {
+                stopBoardRoomSource('mine');
+                if (scope.mineId) {
+                    listenBoardRoomQuery('mine',
+                        query(roomsCol, where('participantIds', 'array-contains', scope.mineId), limit(BOARD_MINE_QUERY_LIMIT)),
+                        null);
+                }
+            }
+            if (prev[2] !== scope.roomId || (!scope.roomId && _boardRoomSources.room.size)) {
+                if (_boardRoomUnsubs.room) {
+                    try { _boardRoomUnsubs.room(); } catch (_) { /* noop */ }
+                    _boardRoomUnsubs.room = null;
+                }
+                const keep = scope.roomId && _boardRoomSources.room.get(scope.roomId);
+                _boardRoomSources.room.clear();
+                if (keep) _boardRoomSources.room.set(scope.roomId, keep);
+                if (scope.roomId) {
+                    const id = scope.roomId;
+                    _boardRoomUnsubs.room = onSnapshot(boardGameRoomRef(id), (snap) => {
+                        const next = new Map();
+                        if (snap.exists()) next.set(snap.id, sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now()));
+                        _boardRoomSources.room = next;
+                        applyBoardGameRoomsRows(mergedBoardRoomRows());
+                    }, (err) => console.warn('boardGameRoom listen', err && err.code));
+                }
+            }
+            _boardGameRooms = mergedBoardRoomRows();
+        }
+
+        function startBoardRoomScopeWatch() {
+            // 탭을 옮기거나 창을 가렸을 때도 범위를 맞추려고 가볍게 확인해요(화면만 보고, Firestore는 읽지 않아요).
+            if (!_boardRoomScopeTimer) _boardRoomScopeTimer = setInterval(syncBoardRoomSubscriptions, 1500);
+            if (!startBoardRoomScopeWatch.bound && typeof document !== 'undefined') {
+                startBoardRoomScopeWatch.bound = true;
+                document.addEventListener('visibilitychange', () => syncBoardRoomSubscriptions());
+            }
+            syncBoardRoomSubscriptions();
+        }
+
+        /** 새로고침 뒤 알까기 이어 하기: 저장해 둔 방 하나만 한 번 읽어요(전체 방 구독 없이). */
+        async function bootBoardRoomResume() {
+            if (_alkResumeTried) return;
+            _alkResumeTried = true;
+            const saved = _alkResumeBoot;
+            let rows = [];
+            if (saved && saved.kind === 'room' && saved.id && db) {
+                try {
+                    const snap = await getDoc(boardGameRoomRef(saved.id));
+                    if (snap.exists()) {
+                        const row = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                        _boardRoomSources.room.set(row.id, row);
+                        _boardGameRooms = mergedBoardRoomRows();
+                        rows = [row];
+                    }
+                } catch (e) {
+                    console.warn('alkkagi resume read', e);
+                }
+            }
+            tryResumeAlkkagi(rows);
+            // 이어 하지 않았으면 잠깐 넣어 둔 방은 버려요(대전 화면이 아닐 때 옛 방이 남지 않게).
+            if (rows.length && !(_boardGameView === 'play' && _boardGameActiveId === rows[0].id)) {
+                _boardRoomSources.room.delete(rows[0].id);
+                _boardGameRooms = mergedBoardRoomRows();
+            }
+            syncBoardRoomSubscriptions();
+        }
+
+        function applyBoardGameRoomsRows(rows) {
+            const now = Date.now();
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
@@ -12142,6 +12295,7 @@ ${subjectLine}
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
+            syncBoardRoomSubscriptions();
         }
 
         function gomokuAiRoomView() {
@@ -21361,10 +21515,11 @@ ${subjectLine}
                             if (classtoolSub === 'openlesson') renderOpenLessonPanel();
                         });
 
+                        // 방 컬렉션 전체를 구독하지 않아요. 보드게임 로비·대전 화면에 있을 때만 필요한 방을 받아요.
                         if (unsubscribeBoardRooms) unsubscribeBoardRooms();
-                        unsubscribeBoardRooms = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms'), (snap) => {
-                            applyBoardGameRoomsSnapshot(snap);
-                        });
+                        unsubscribeBoardRooms = null;
+                        startBoardRoomScopeWatch();
+                        void bootBoardRoomResume();
 
                         if(unsubscribeRaid) unsubscribeRaid();
                         unsubscribeRaid = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), snap => {

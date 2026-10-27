@@ -590,5 +590,61 @@ export function boardRoomToDoc(room) {
     const game = r.gameType === 'gomoku'
         ? gomokuGameToDoc(r.game)
         : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : r.game));
-    return { ...r, game };
+    return { ...r, game, participantIds: boardRoomParticipantIds(r) };
+}
+
+/**
+ * 방 문서에 함께 넣는 참가자 id 목록(방장·멤버·대기 중인 참가 신청).
+ * members 는 객체 배열이라 Firestore 질의를 못 해서, 이 목록으로 `array-contains` 질의를 해요(단일 필드 색인만 써요).
+ */
+export function boardRoomParticipantIds(room) {
+    const r = room && typeof room === 'object' ? room : {};
+    const ids = [];
+    const push = (raw) => {
+        const id = cleanId(raw);
+        if (id && !ids.includes(id)) ids.push(id);
+    };
+    push(r.hostId);
+    (Array.isArray(r.members) ? r.members : []).forEach((m) => push(m && m.id));
+    (Array.isArray(r.joinRequests) ? r.joinRequests : []).forEach((j) => {
+        if (j && j.status === 'pending') push(j.id);
+    });
+    return ids;
+}
+
+/** 로비 목록 질의 한 번에 받는 방 수 상한. */
+export const BOARD_LOBBY_QUERY_LIMIT = 30;
+/** 내 방(참가 중·신청 중) 질의 상한. */
+export const BOARD_MINE_QUERY_LIMIT = 10;
+
+/** 로비 질의에 넣을 상태. 알까기는 끝난 방을 목록에 보이지 않아서 빼요. */
+export function boardLobbyQueryStatuses(gameType) {
+    return gameType === 'alkkagi' ? ['waiting', 'playing'] : ['waiting', 'playing', 'finished'];
+}
+
+/**
+ * 지금 화면에 필요한 방 구독 범위를 정해요(순수 함수).
+ * - 보드게임 창이 아니면 아무것도 구독하지 않아요.
+ * - 로비가 화면에 보일 때만: 그 게임의 방 목록 + 내 방(다른 게임 방 포함).
+ * - 대전 중: 내 방 문서 하나만.
+ * @param {{ toolOpen?: boolean, view?: string, gameType?: string, activeRoomId?: string, selfId?: string, lobbyVisible?: boolean, localPlay?: boolean }} [o]
+ * @returns {{ lobbyGameType: string, mineId: string, roomId: string }}
+ */
+export function boardRoomSubscriptionScope(o = {}) {
+    const none = { lobbyGameType: '', mineId: '', roomId: '' };
+    if (!o || !o.toolOpen) return none;
+    if (o.view === 'play') {
+        const roomId = o.localPlay ? '' : String(o.activeRoomId || '').trim();
+        return { ...none, roomId };
+    }
+    if (o.view === 'lobby' && o.lobbyVisible && isBoardGameType(o.gameType)) {
+        return { lobbyGameType: o.gameType, mineId: cleanId(o.selfId), roomId: '' };
+    }
+    return none;
+}
+
+/** 범위가 같은지 비교할 때 쓰는 키. */
+export function boardRoomScopeKey(scope) {
+    const s = scope || {};
+    return `${s.lobbyGameType || ''}|${s.mineId || ''}|${s.roomId || ''}`;
 }

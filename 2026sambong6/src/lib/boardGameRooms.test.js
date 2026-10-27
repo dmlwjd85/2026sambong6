@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    BOARD_LOBBY_QUERY_LIMIT,
     BOARD_ROOM_IDLE_TTL_MS,
+    boardLobbyQueryStatuses,
+    boardRoomParticipantIds,
+    boardRoomScopeKey,
+    boardRoomSubscriptionScope,
     approveJoinBoardRoom,
     closeBoardRoom,
     continueBoardRoom,
@@ -333,5 +338,54 @@ describe('알까기 방 지우기', () => {
         const again = mod.deleteWaitingBoardRoom(closed, { actorId: '1', now: 1300 });
         assert.equal(again.ok, true);
         assert.equal(again.room.status, 'closed');
+    });
+});
+
+describe('boardGameRooms subscription scope (읽기 절약)', () => {
+    it('boardRoomToDoc 에 방장·멤버·대기 신청 id 를 participantIds 로 넣어요', () => {
+        const made = createBoardRoom({ gameType: 'gomoku', hostId: 'h1', hostName: '방장', now: 1000 });
+        let room = requestJoinBoardRoom(made.room, { studentId: 's2', studentName: '둘', now: 1100 }).room;
+        room = requestJoinBoardRoom(room, { studentId: 's3', studentName: '셋', now: 1200 }).room;
+        room = rejectJoinBoardRoom(room, { hostId: 'h1', studentId: 's3', now: 1300 }).room;
+        assert.deepEqual(boardRoomParticipantIds(room), ['h1', 's2']);
+        assert.deepEqual(boardRoomToDoc(room).participantIds, ['h1', 's2']);
+        const approved = approveJoinBoardRoom(room, { hostId: 'h1', studentId: 's2', now: 1400 }).room;
+        assert.deepEqual(boardRoomToDoc(approved).participantIds, ['h1', 's2']);
+        assert.deepEqual(boardRoomParticipantIds(null), []);
+    });
+
+    it('보드게임 창이 아니면 아무 방도 구독하지 않아요', () => {
+        const s = boardRoomSubscriptionScope({ toolOpen: false, view: 'lobby', gameType: 'gomoku', selfId: 'a', lobbyVisible: true });
+        assert.deepEqual(s, { lobbyGameType: '', mineId: '', roomId: '' });
+        assert.deepEqual(boardRoomSubscriptionScope(), { lobbyGameType: '', mineId: '', roomId: '' });
+    });
+
+    it('로비가 보일 때만 그 게임 목록과 내 방을 구독해요', () => {
+        assert.deepEqual(
+            boardRoomSubscriptionScope({ toolOpen: true, view: 'lobby', gameType: 'chess', selfId: 'a', lobbyVisible: true }),
+            { lobbyGameType: 'chess', mineId: 'a', roomId: '' },
+        );
+        assert.deepEqual(
+            boardRoomSubscriptionScope({ toolOpen: true, view: 'lobby', gameType: 'chess', selfId: 'a', lobbyVisible: false }),
+            { lobbyGameType: '', mineId: '', roomId: '' },
+        );
+        assert.equal(boardRoomSubscriptionScope({ toolOpen: true, view: 'lobby', gameType: 'nope', selfId: 'a', lobbyVisible: true }).lobbyGameType, '');
+        assert.equal(boardRoomSubscriptionScope({ toolOpen: true, view: 'home', gameType: 'gomoku', selfId: 'a', lobbyVisible: true }).lobbyGameType, '');
+    });
+
+    it('대전 중에는 내 방 문서 하나만, AI·혼자 하기는 구독하지 않아요', () => {
+        assert.deepEqual(
+            boardRoomSubscriptionScope({ toolOpen: true, view: 'play', gameType: 'gomoku', activeRoomId: 'r1', selfId: 'a', lobbyVisible: false }),
+            { lobbyGameType: '', mineId: '', roomId: 'r1' },
+        );
+        assert.equal(boardRoomSubscriptionScope({ toolOpen: true, view: 'play', activeRoomId: 'r1', localPlay: true }).roomId, '');
+    });
+
+    it('범위 키와 로비 상태 목록', () => {
+        assert.equal(boardRoomScopeKey({ lobbyGameType: 'gomoku', mineId: 'a', roomId: '' }), 'gomoku|a|');
+        assert.equal(boardRoomScopeKey(null), '||');
+        assert.deepEqual(boardLobbyQueryStatuses('alkkagi'), ['waiting', 'playing']);
+        assert.deepEqual(boardLobbyQueryStatuses('gomoku'), ['waiting', 'playing', 'finished']);
+        assert.ok(BOARD_LOBBY_QUERY_LIMIT >= 20);
     });
 });

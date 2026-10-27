@@ -20,6 +20,13 @@ import {
     createBoardRoom,
     finishBoardRoom,
     requestJoinBoardRoom,
+    claimBoardRoomHostUid,
+    hostBoardRoomFallbackId,
+    hostBoardRoomId,
+    hostBoardRoomRandomId,
+    needsHostBoardRoomFallback,
+    pickMyHostAlkRoom,
+    sanitizeBoardRoom,
 } from './boardGameRooms.js';
 import { GOMOKU_BLACK, placeGomokuStone } from './gomokuGame.js';
 import {
@@ -1529,11 +1536,179 @@ describe('firestore rules: 보드게임 방 QA r2 공격(R2-1~R2-4)', { skip: em
         const noUid = playing({ members: [{ id: '1', uid: 'uid-A' }, { id: '2', name: '서연', role: 'player', seat: 1 }], memberUids: ['uid-A'] });
         const claimed = { members: [{ id: '1', uid: 'uid-A' }, { id: '2', name: '서연', role: 'player', seat: 1, uid: 'uid-B' }], memberUids: ['uid-A', 'uid-B'], lastActivityAt: Date.now() };
         await seed('q', noUid);
-        await t('uid 채우면서 판도 바꾸기', false, updateDoc(D(B, 'q'), { ...claimed, game: { board: [9], winner: '' } }));
+        // r4 ④: 규칙이 바뀐 뒤 처음 두는 수에 자리 uid 채우기를 함께 실어요(판 바꾸기 허용).
+        await t('uid 채우면서 판도 바꾸기(r4 ④ 허용)', true, updateDoc(D(B, 'q'), { ...claimed, game: { board: [9], winner: '' } }));
+        await seed('q', noUid);
         await t('uid 채우면서 자리 이름 바꾸기', false, updateDoc(D(B, 'q'), { ...claimed, members: [claimed.members[0], { ...claimed.members[1], name: '가짜' }] }));
         await t('uid 채우기(자리 차지)', true, updateDoc(D(B, 'q'), claimed));
         await t('이미 uid 있는 자리를 남이 다시 차지', false, updateDoc(D(C, 'q'), { members: [claimed.members[0], { ...claimed.members[1], uid: 'uid-C' }], memberUids: ['uid-A', 'uid-C'] }));
         await t('채운 뒤 끝내기', true, updateDoc(D(B, 'q'), { status: 'finished', lastActivityAt: Date.now() }));
         await t('채운 뒤 내 자리 빼고 나가기', true, updateDoc(D(B, 'q'), { members: [claimed.members[0]], memberUids: ['uid-A'] }));
+    });
+});
+
+// #88 r4: QA r3 남은 우회(①~⑤)를 규칙·클라이언트 함수로 함께 확인해요.
+describe('firestore rules: 보드게임 방 #88 r4', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {
+    /** @type {import('@firebase/rules-unit-testing').RulesTestEnvironment | null} */
+    let testEnv = null;
+    const RP = 'artifacts/sambong-class-2026/public/data/boardGameRooms';
+    const M = 60000;
+    before(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId,
+            firestore: { rules: fs.readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8') },
+        });
+    });
+    after(async () => { if (testEnv) await testEnv.cleanup(); });
+    beforeEach(async () => { await testEnv.clearFirestore(); });
+
+    function ctx() {
+        const now = Date.now();
+        const db = (uid) => testEnv.authenticatedContext(uid).firestore();
+        const D = (d, id) => doc(d, `${RP}/${id}`);
+        const seed = (id, d) => testEnv.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), `${RP}/${id}`), d));
+        const read = async (id) => {
+            let out = null;
+            await testEnv.withSecurityRulesDisabled(async (c) => {
+                const snap = await getDoc(doc(c.firestore(), `${RP}/${id}`));
+                out = snap.exists() ? { id, ...snap.data() } : null;
+            });
+            return out;
+        };
+        const t = async (name, allow, p) => {
+            try {
+                if (allow) await assertSucceeds(p); else await assertFails(p);
+            } catch (e) {
+                throw new Error(`${name}: ${allow ? '허용' : '거부'}이어야 해요 (${e && (e.code || e.message)})`);
+            }
+        };
+        const alkDoc = (hostId, hostUid, id, at = Date.now()) => boardRoomToDoc(createBoardRoom({ gameType: 'alkkagi', hostId, hostName: '가', now: at, id, hostUid }).room);
+        // 앱 쓰기와 같은 길: 읽고(트랜잭션) 바꾼 뒤 hostUid·내 자리 uid 채우기를 얹어 통째로 써요.
+        const appWrite = (d, id, selfId, uid, mutate) => runTransaction(d, async (tx) => {
+            const snap = await tx.get(D(d, id));
+            const room = sanitizeBoardRoom({ id, ...snap.data() }, Date.now());
+            const next = claimBoardRoomHostUid(mutate(room), { hostId: selfId, uid });
+            tx.set(D(d, id), boardRoomToDoc(next));
+        });
+        return { now, db, D, seed, read, t, alkDoc, appWrite };
+    }
+
+    it('① 알까기 정해진 id·두 번째 id를 남이 미리 차지해도, 피해자는 세 번째 id로 방을 만들고 다시 써요', async () => {
+        const { now, db, D, seed, read, t, alkDoc } = ctx();
+        const C = db('uid-C');
+        const V = db('uid-V');
+        const base = hostBoardRoomId('alkkagi', '7');
+        const fb = hostBoardRoomFallbackId('alkkagi', '7', 'uid-V');
+        await t('C가 alk_7 선점(규칙은 학번·기기를 묶지 못해 허용)', true, setDoc(D(C, base), alkDoc('7', 'uid-C', base, now)));
+        await t('C가 두 번째 id 선점', true, setDoc(D(C, fb), alkDoc('7', 'uid-C', fb, now)));
+        const ex1 = await read(base);
+        assert.equal(needsHostBoardRoomFallback(ex1, { uid: 'uid-V', now: Date.now() }), true);
+        const ex2 = await read(fb);
+        assert.equal(needsHostBoardRoomFallback(ex2, { uid: 'uid-V', now: Date.now() }), true);
+        await t('피해자 alk_7 덮어쓰기는 막혀요', false, setDoc(D(V, base), alkDoc('7', 'uid-V', base)));
+        await t('피해자 두 번째 id 덮어쓰기도 막혀요', false, setDoc(D(V, fb), alkDoc('7', 'uid-V', fb)));
+        const rid = hostBoardRoomRandomId('alkkagi', '7');
+        assert.match(rid, /^alk_7_r[a-z0-9]{8}$/);
+        await t('피해자는 세 번째 id(미리 알 수 없음)로 만들어요', true, setDoc(D(V, rid), alkDoc('7', 'uid-V', rid)));
+        // C가 시계를 되돌리며 alk_7을 다시 덮어써도, 피해자는 이미 연 세 번째 id 방을 다시 고르고 C 방은 고르지 않아요.
+        await t('C가 alk_7 닫기', true, updateDoc(D(C, base), { status: 'closed', updatedAt: Date.now() }));
+        await t('C가 alk_7 새 시각으로 다시 덮어쓰기(남은 한계, 피해자 영향 없음)', true, runTransaction(C, async (tx) => { await tx.get(D(C, base)); tx.set(D(C, base), alkDoc('7', 'uid-C', base, Date.now())); }));
+        const rows = [await read(base), await read(fb), await read(rid)];
+        const own = pickMyHostAlkRoom(rows, { hostId: '7', uid: 'uid-V', now: Date.now() });
+        assert.equal(own && own.id, rid);
+        assert.equal(pickMyHostAlkRoom(rows, { hostId: '7', uid: 'uid-X', now: Date.now() }), null);
+        await t('피해자는 세 번째 id 방에 계속 써요(시작)', true, updateDoc(D(V, rid), { status: 'playing', lastActivityAt: Date.now() }));
+        await t('C는 피해자의 세 번째 id 방을 못 바꿔요', false, updateDoc(D(C, rid), { status: 'closed' }));
+        await seed('alk_8', alkDoc('8', 'uid-C', 'alk_8', now - 31 * M));
+        await t('30분 지난 위조 방은 피해자가 덮어써요', true, runTransaction(V, async (tx) => { await tx.get(D(V, 'alk_8')); tx.set(D(V, 'alk_8'), alkDoc('8', 'uid-V', 'alk_8')); }));
+    });
+
+    it('② 끝난 방은 참가자가 10분 뒤 지우고, 닫힌 방은 참가자가 바로 지워요', async () => {
+        const { now, db, D, seed, t } = ctx();
+        const B = db('uid-B');
+        const C = db('uid-C');
+        const base = (o) => ({
+            ...boardRoomToDoc(createBoardRoom({ gameType: 'alkkagi', hostId: '1', hostName: '가', now: now - 20 * M, id: 'f', hostUid: 'uid-A' }).room),
+            members: [{ id: '1', uid: 'uid-A', role: 'host', seat: 0 }, { id: '2', uid: 'uid-B', role: 'player', seat: 1 }],
+            memberUids: ['uid-A', 'uid-B'], participantIds: ['1', '2'], ...o,
+        });
+        await seed('f1', base({ status: 'finished', lastActivityAt: now - 11 * M }));
+        await t('남은 30분 전 끝난 방을 못 지워요', false, deleteDoc(D(C, 'f1')));
+        await t('참가자는 10분 지난 끝난 방을 지워요', true, deleteDoc(D(B, 'f1')));
+        await seed('f2', base({ status: 'finished', lastActivityAt: now - 2 * M }));
+        await t('참가자도 방금 끝난 방은 못 지워요(결과 보기)', false, deleteDoc(D(B, 'f2')));
+        await seed('f3', base({ status: 'closed', lastActivityAt: now - 1 * M }));
+        await t('참가자는 닫힌 방을 바로 지워요', true, deleteDoc(D(B, 'f3')));
+        await seed('f4', base({ status: 'finished', createdAt: now - 60 * M, lastActivityAt: now - 55 * M }));
+        await t('QA 묶음 B: 60분 전 끝난 방은 누구나 지워요(30분 정리)', true, deleteDoc(D(C, 'f4')));
+        await seed('f5', base({ status: 'closed', createdAt: now - 60 * M, lastActivityAt: now - 60 * M }));
+        await t('QA 묶음 J: 60분 전 닫힌 방도 누구나 지워요', true, deleteDoc(D(C, 'f5')));
+    });
+
+    it('③ c2b: 이미 방에 있는 학번으로는 신청을 못 넣고, 끝난 방 자리 채우기도 막아요', async () => {
+        const { now, db, D, seed, t } = ctx();
+        const C = db('uid-C');
+        const B = db('uid-B');
+        const reqB = { id: '2', name: '서연', status: 'pending', at: now, uid: 'uid-B' };
+        const w = {
+            ...boardRoomToDoc(createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '가', now: now - M, id: 'w', hostUid: 'uid-A' }).room),
+            joinRequests: [reqB], participantIds: ['1', '2'],
+        };
+        await seed('w', w);
+        await t('남이 방장 학번(1)으로 신청', false, updateDoc(D(C, 'w'), { joinRequests: [reqB, { id: '1', name: '가', status: 'pending', at: now, uid: 'uid-C' }], participantIds: ['1', '2'], lastActivityAt: Date.now() }));
+        await t('남이 이미 신청한 학번(2)으로 또 신청', false, updateDoc(D(C, 'w'), { joinRequests: [reqB, { id: '2', name: '서연', status: 'pending', at: now, uid: 'uid-C' }], participantIds: ['1', '2'], lastActivityAt: Date.now() }));
+        await t('남이 남의 신청을 같은 학번 내 uid로 바꿔치기', false, updateDoc(D(C, 'w'), { joinRequests: [{ ...reqB, uid: 'uid-C' }], participantIds: ['1', '2'], lastActivityAt: Date.now() }));
+        await t('내 신청을 같은 학번으로 다시 넣기(시각만 바꿈)', true, updateDoc(D(B, 'w'), { joinRequests: [{ ...reqB, at: now + 1 }], participantIds: ['1', '2'], lastActivityAt: Date.now() }));
+        await t('새 학번(3)으로 내 신청 넣기(정상)', true, updateDoc(D(C, 'w'), { joinRequests: [{ ...reqB, at: now + 1 }, { id: '3', name: '다', status: 'pending', at: now, uid: 'uid-C' }], participantIds: ['1', '2', '3'], lastActivityAt: Date.now() }));
+        const fin = {
+            ...w, status: 'finished', joinRequests: [], participantIds: ['1', '2'],
+            members: [{ id: '1', uid: 'uid-A', role: 'host', seat: 0 }, { id: '2', role: 'player', seat: 1 }], memberUids: ['uid-A'],
+        };
+        await seed('fin', fin);
+        await t('끝난 방의 빈 자리 uid 채우기는 막아요', false, updateDoc(D(C, 'fin'), { members: [fin.members[0], { ...fin.members[1], uid: 'uid-C' }], memberUids: ['uid-A', 'uid-C'] }));
+        await t('남이 방장 자리(hostUid 있음)를 채우기', false, updateDoc(D(C, 'w'), { members: [{ ...w.members[0], uid: 'uid-C' }], memberUids: ['uid-C'] }));
+    });
+
+    it('④ 규칙 게시 뒤 자리 uid가 없는 학생도 앱 쓰기 그대로 두고 끝내요(자기 자리 하나만)', async () => {
+        const { now, db, seed, read, t, appWrite } = ctx();
+        const B = db('uid-B');
+        const C = db('uid-C');
+        let r = createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '가', now: now - 3 * M, id: 'g', hostUid: 'uid-A' }).room;
+        r = requestJoinBoardRoom(r, { studentId: '2', studentName: '나', now: now - 3 * M + 1, uid: '' }).room;
+        r = approveJoinBoardRoom(r, { hostId: '1', studentId: '2', now: now - 3 * M + 2 }).room;
+        const d0 = boardRoomToDoc({ ...r, status: 'playing', lastActivityAt: now - M });
+        d0.members = d0.members.map((m) => (m.id === '2' ? (({ uid, ...x }) => x)(m) : m));
+        d0.memberUids = ['uid-A'];
+        await seed('g', d0);
+        const move = (room) => ({ ...room, game: { ...room.game, moves: [...((room.game && room.game.moves) || []), 1] }, lastActivityAt: Date.now(), updatedAt: Date.now() });
+        await t('uid 없는 학생2가 첫 수(자리 채우기와 함께)', true, appWrite(B, 'g', '2', 'uid-B', move));
+        const after1 = await read('g');
+        assert.deepEqual(after1.memberUids.slice().sort(), ['uid-A', 'uid-B']);
+        assert.equal(after1.members.find((m) => m.id === '2').uid, 'uid-B');
+        assert.equal(after1.members.find((m) => m.id === '1').uid, 'uid-A');
+        await t('이어서 학생2가 판을 끝내요', true, appWrite(B, 'g', '2', 'uid-B', (room) => ({ ...move(room), status: 'finished' })));
+        // 끝내는 수에 자리 채우기를 함께 실어도 돼요(규칙은 쓰기 전 상태로 봐요).
+        await seed('g2', d0);
+        await t('첫 수가 곧 끝내는 수여도 돼요', true, appWrite(B, 'g2', '2', 'uid-B', (room) => ({ ...move(room), status: 'finished' })));
+        // 이미 채운 자리는 다른 기기가 못 가져가요.
+        await t('채운 뒤 C가 같은 자리로 두기', false, appWrite(C, 'g', '2', 'uid-C', move));
+        // 방장 자리(hostUid 있음)는 학번이 같아도 다른 기기가 못 채워요.
+        await seed('g3', { ...d0, members: d0.members.map((m) => (m.id === '1' ? (({ uid, ...x }) => x)(m) : m)), memberUids: [] });
+        await t('방장 학번으로 다른 기기가 두기', false, appWrite(C, 'g3', '1', 'uid-C', move));
+    });
+
+    it('⑤ 마지막 활동 시각은 줄지 않고 서버 시각 앞뒤 10분 안에서만 바뀌어요(시계 11분 차이)', async () => {
+        const { now, db, D, seed, t } = ctx();
+        const A = db('uid-A');
+        const p = {
+            ...boardRoomToDoc(createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '가', now: now - 5 * M, id: 'k', hostUid: 'uid-A' }).room),
+            lastActivityAt: now - 2 * M,
+        };
+        await seed('k', p);
+        await t('11분 느린 기기가 과거 시각 적기', false, updateDoc(D(A, 'k'), { lastActivityAt: Date.now() - 11 * M }));
+        await t('11분 빠른 기기가 미래 시각 적기', false, updateDoc(D(A, 'k'), { lastActivityAt: Date.now() + 11 * M }));
+        await t('앱처럼 그대로 두기(touchRoom이 이전 값보다 줄이지 않아요)', true, updateDoc(D(A, 'k'), { lastActivityAt: p.lastActivityAt, updatedAt: Date.now() }));
+        await t('지금 시각', true, updateDoc(D(A, 'k'), { lastActivityAt: Date.now() }));
+        await t('지금보다 앞선 값 뒤에 더 이른 값으로 줄이기', false, updateDoc(D(A, 'k'), { lastActivityAt: Date.now() - 3 * M }));
     });
 });

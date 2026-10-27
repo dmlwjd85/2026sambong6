@@ -269,6 +269,8 @@ import {
     boardRoomDeniedText,
     boardRoomMemberUids,
     hostBoardRoomFallbackId,
+    hostBoardRoomRandomId,
+    pickMyHostAlkRoom,
     needsHostBoardRoomFallback,
     pickMyActiveBoardRoom,
     boardRoomCleanupKey,
@@ -12328,8 +12330,10 @@ ${subjectLine}
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
+            const myUid = auth && auth.currentUser ? auth.currentUser.uid : '';
             // 두는 중 > 대기 > 결과 순서로 내 방을 골라요. 끝난 옛 방 때문에 방금 만든 방이 닫히지 않게 해요.
-            const mineActive = pickMyActiveBoardRoom(rows, me);
+            // r4 ①: 내 학번 자리가 다른 기기 uid로 적힌 방(남이 내 학번으로 만든 방)은 고르지 않아요.
+            const mineActive = pickMyActiveBoardRoom(rows, me, { uid: myUid });
             // 끝난 판은 '지금 앉은 자리'가 아니에요. 끝난 방 때문에 새로 낸 참가 신청·새로 연 방이 지워지지 않게 해요.
             if (mineActive && mineActive.status !== 'finished') void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
@@ -12339,6 +12343,7 @@ ${subjectLine}
             // 새 탭·다른 기기에서 처음 연 목록에서는 끝난 옛 판으로 들어가지 않아요(이 화면에서 두는 걸 봤거나, 연 뒤에 끝난 판만).
             const mineEnter = rows.find((r) => shouldAutoEnterBoardRoom(r, {
                 selfId: me,
+                uid: myUid,
                 leftKeys: _alkLeftRooms,
                 seenLiveKeys: _boardSeenLiveRooms,
                 sinceMs: _boardScreenStartedAt,
@@ -12367,11 +12372,14 @@ ${subjectLine}
 
         // 방 목록을 연 기기가 정리 대상 방을 한 번씩 지워요.
         // 30분 지난 방(두는 중이고 10분 안에 활동한 판은 빼요)은 누구나, 10분 쉰 방은 내 방·옛 방만 지워요(규칙과 같은 기준).
-        async function sweepIdleBoardRooms(now = Date.now()) {
+        async function sweepIdleBoardRooms(now = Date.now(), extraRows = null) {
             if (!db || !auth || !auth.currentUser) return;
             if (_boardGameView !== 'lobby' || classtoolSub !== 'boardgames') return;
             let mem = readBoardCleanedMemory(now);
-            const due = pickBoardRoomsToCleanup(_boardGameRooms, { now, uid: auth.currentUser.uid, memory: mem });
+            // r4 ②: 목록 구독에 오지 않는 오래된 끝난·닫힌 방(가끔 한 번 읽은 것)도 같은 길로 지워요.
+            const extra = new Map((Array.isArray(extraRows) ? extraRows : []).map((r) => [r.id, r]));
+            const pool = extra.size ? [..._boardGameRooms, ...[...extra.values()].filter((r) => !_boardGameRooms.some((x) => x.id === r.id))] : _boardGameRooms;
+            const due = pickBoardRoomsToCleanup(pool, { now, uid: auth.currentUser.uid, memory: mem });
             if (!due.length) return;
             // 지우기 전에 먼저 기억해요. 실패해도 이 기기는 다시 시도하지 않아요(다른 기기나 30분 정리가 맡아요).
             due.forEach((room) => { mem = rememberBoardRoomCleaned(mem, boardRoomCleanupKey(room), now); });
@@ -12383,7 +12391,7 @@ ${subjectLine}
                 const key = boardRoomCleanupKey(room);
                 const wait = boardRoomCleanupDelayMs(room, myUid);
                 if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-                const live = _boardGameRooms.find((r) => r.id === room.id);
+                const live = _boardGameRooms.find((r) => r.id === room.id) || extra.get(room.id);
                 if (!live || boardRoomCleanupKey(live) !== key) return;
                 if (!auth.currentUser || auth.currentUser.uid !== myUid) return;
                 if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) return;
@@ -12405,10 +12413,60 @@ ${subjectLine}
             }));
         }
 
+        // r4 ②: 끝난 알까기 방·닫힌 방은 목록 질의(대기·두는 중)에 오지 않아서, 같이 둔 사람이 목록을 다시 열지 않으면 남아요.
+        // 목록을 연 기기가 10분에 한 번만, 끝난 방·닫힌 방을 10개씩 읽어 30분 정리 대상이면 같은 길(기억 먼저·기다림·트랜잭션)로 지워요.
+        // 단일 필드 질의라 새 색인이 필요 없어요. 읽기는 기기마다 10분에 많아야 20건이에요.
+        const BOARD_OLD_SWEEP_STORAGE_KEY = 'sambong_board_old_sweep_v1';
+        const BOARD_OLD_SWEEP_EVERY_MS = 10 * 60 * 1000;
+        const BOARD_OLD_SWEEP_LIMIT = 10;
+        let _boardOldSweepBusy = false;
+        async function sweepOldBoardRooms(now = Date.now()) {
+            if (!db || !auth || !auth.currentUser || _boardOldSweepBusy) return;
+            if (_boardGameView !== 'lobby' || classtoolSub !== 'boardgames' || !boardRoomsLobbyVisible()) return;
+            let last = 0;
+            try { last = Number(localStorage.getItem(BOARD_OLD_SWEEP_STORAGE_KEY)) || 0; } catch (_) { last = 0; }
+            if (last && now - last < BOARD_OLD_SWEEP_EVERY_MS && last <= now) return;
+            // 읽기 전에 먼저 적어요(여러 탭·연속 호출이 겹쳐 읽지 않게).
+            try { localStorage.setItem(BOARD_OLD_SWEEP_STORAGE_KEY, String(now)); } catch (_) { /* 저장 못 해도 괜찮아요 */ }
+            _boardOldSweepBusy = true;
+            try {
+                const roomsCol = collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms');
+                const rows = [];
+                for (const st of ['finished', 'closed']) {
+                    try {
+                        const snap = await getDocs(query(roomsCol, where('status', '==', st), limit(BOARD_OLD_SWEEP_LIMIT)));
+                        snap.forEach((d) => rows.push(sanitizeBoardRoom({ id: d.id, ...d.data() }, Date.now())));
+                    } catch (e) {
+                        console.warn('sweepOldBoardRooms', st, e && e.code);
+                    }
+                }
+                if (rows.length) await sweepIdleBoardRooms(Date.now(), rows);
+            } finally {
+                _boardOldSweepBusy = false;
+            }
+        }
+
         // r3 R2-6: 방 목록(로비)을 열면 30초마다 정리를 다시 봐요. 목록이 그대로여도(새 스냅샷이 없어도) 정리 시각이 오면 지워요.
         function ensureBoardIdleSweepTimer() {
             if (_boardGameIdleTimer) return;
-            _boardGameIdleTimer = setInterval(() => { void sweepIdleBoardRooms(Date.now()); }, 30000);
+            _boardGameIdleTimer = setInterval(() => {
+                void sweepIdleBoardRooms(Date.now());
+                void sweepOldBoardRooms(Date.now());
+                void checkBoardClockOnce();
+            }, 30000);
+        }
+
+        // r4 ⑤: 기기 시계가 10분 넘게 틀리면 목록에서 방이 안 보이거나 '정리됐어요'로 보일 수 있어요.
+        // 목록을 연 뒤 한 번만 재 보고, 많이 틀렸으면 시계 안내를 짧게 띄워요.
+        let _boardClockChecked = false;
+        async function checkBoardClockOnce() {
+            if (_boardClockChecked || _boardGameView !== 'lobby' || classtoolSub !== 'boardgames' || !boardRoomsLobbyVisible()) return;
+            _boardClockChecked = true;
+            const skewMs = await measureBoardClockSkewMs();
+            if (boardRoomDeniedReason({ skewMs }) !== 'clock') return;
+            console.warn('board clock skew', skewMs);
+            const text = boardRoomDeniedText('clock', { skewMs }).replace('저장하지 못했어요', '방 목록이 맞지 않을 수 있어요');
+            if (typeof window.showToast === 'function') window.showToast(text.replace(/<br>/g, ' '), 8000);
         }
 
         function activeBoardPlayKind() {
@@ -12440,7 +12498,11 @@ ${subjectLine}
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
             syncBoardRoomSubscriptions();
-            if (_boardGameView === 'lobby') ensureBoardIdleSweepTimer();
+            if (_boardGameView === 'lobby') {
+                ensureBoardIdleSweepTimer();
+                // r4 ②⑤: 목록을 열고 조금 뒤 한 번 봐요(둘 다 스스로 횟수를 줄여요).
+                setTimeout(() => { void sweepOldBoardRooms(Date.now()); void checkBoardClockOnce(); }, 4000);
+            }
         }
 
         function gomokuAiRoomView() {
@@ -13355,9 +13417,11 @@ ${subjectLine}
             }
             const ref = boardGameRoomRef(roomId);
             await claimBoardSeatIfNeeded(ref);
+            let docSeen = false;
             try {
                 return await runTransaction(db, async (tx) => {
                     const snap = await tx.get(ref);
+                    docSeen = snap.exists();
                     if (!snap.exists()) throw new Error('expired');
                     const room = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
                     const result = mutator(room);
@@ -13376,6 +13440,21 @@ ${subjectLine}
                     console.warn('mutateBoardRoom', roomId, 'permission-denied');
                     await showBoardDeniedNotice(roomId, { quiet: silent });
                     return null;
+                }
+                // r4 ⑤: 방은 그대로 있는데 이 기기 시계로는 '오래된 방'으로 보이면(시계가 10분 넘게 빠름),
+                // '정리됐어요' 대신 기기 시계 안내를 띄워요.
+                if (code === 'expired' && docSeen) {
+                    const skewMs = await measureBoardClockSkewMs();
+                    if (boardRoomDeniedReason({ skewMs }) === 'clock') {
+                        console.warn('mutateBoardRoom', roomId, 'expired by clock', skewMs);
+                        const text = boardRoomDeniedText('clock', { skewMs }).replace('저장하지 못했어요', '이 방이 지난 방으로 보여요');
+                        if (silent) {
+                            if (typeof window.showToast === 'function') window.showToast(text.replace(/<br>/g, ' '), 8000);
+                        } else {
+                            await window.customAlert(text);
+                        }
+                        return null;
+                    }
                 }
                 if (silent) {
                     console.warn('mutateBoardRoom', roomId, code);
@@ -13938,9 +14017,10 @@ ${subjectLine}
                 const snap = await tx.get(ref);
                 const now = Date.now();
                 const existing = snap.exists() ? sanitizeBoardRoom({ id: snap.id, ...snap.data() }, now) : null;
-                const decision = decideBoardRoomCreate(existing, { hostId: me, now });
+                const decision = decideBoardRoomCreate(existing, { hostId: me, now, uid: myUid });
                 // r3 R2-2: 다른 기기(uid)가 연 내 학번 방이 살아 있으면 이 기기는 두 번째 id로 만들어요(규칙이 덮어쓰기를 막아요).
-                if (decision.action !== 'enter' && needsHostBoardRoomFallback(existing, { uid: myUid, now })) {
+                // r4 ①: 두는 중인 판이어도 같아요. 남이 내 학번으로 미리 만든 '두는 중' 방에 들어가지 않아요.
+                if (needsHostBoardRoomFallback(existing, { uid: myUid, now })) {
                     return { action: 'fallback', error: '' };
                 }
                 if (decision.action === 'create') {
@@ -13970,15 +14050,31 @@ ${subjectLine}
             let outcome = null;
             try {
                 const fixedId = hostBoardRoomId(def.id, me);
-                await vacateOtherBoardRooms(fixedId);
+                // r4 ①: 이 기기가 이미 연 내 알까기 방(두 번째·세 번째 id)은 정리하지 않고 다시 써요.
+                const keepOwn = fixedId ? pickMyHostAlkRoom(_boardGameRooms, {
+                    hostId: me,
+                    uid: auth && auth.currentUser ? auth.currentUser.uid : '',
+                    now: Date.now(),
+                }) : null;
+                await vacateOtherBoardRooms(keepOwn ? keepOwn.id : fixedId);
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
                     outcome = { action: 'alert', text: '인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.' };
                 } else if (fixedId) {
                     let roomId = fixedId;
                     let decision = await createHostBoardRoomOnce(def, me, roomId);
+                    const myUid = auth && auth.currentUser ? auth.currentUser.uid : '';
                     if (decision.action === 'fallback') {
-                        roomId = hostBoardRoomFallbackId(def.id, me, auth && auth.currentUser ? auth.currentUser.uid : '');
+                        roomId = hostBoardRoomFallbackId(def.id, me, myUid);
+                        decision = roomId
+                            ? await createHostBoardRoomOnce(def, me, roomId)
+                            : { action: 'error', error: 'bad_create' };
+                    }
+                    // r4 ①: 정해진 id와 두 번째 id를 남이 미리 차지했으면(학번·uid로 알 수 있는 id라서요),
+                    // 이 기기가 연 내 알까기 방을 다시 쓰고, 없으면 미리 알 수 없는 세 번째 id로 만들어요.
+                    if (decision.action === 'fallback') {
+                        const own = pickMyHostAlkRoom(_boardGameRooms, { hostId: me, uid: myUid, now: Date.now() });
+                        roomId = own ? own.id : hostBoardRoomRandomId(def.id, me);
                         decision = roomId
                             ? await createHostBoardRoomOnce(def, me, roomId)
                             : { action: 'error', error: 'bad_create' };

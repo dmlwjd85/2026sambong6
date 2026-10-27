@@ -520,14 +520,18 @@ service cloud.firestore {
           || roomIsMine(d)
           || roomSelfSeatOnly(d, n);
       }
-      // R2-4: uid 없이 승인된 자리(옛 화면이 섞였을 때 생겨요) 하나에 내 uid만 채우기. 다른 칸·상태·판은 그대로예요.
-      function roomClaimSeatOnly(d, n) {
+      // R2-4·r4 ④: uid 없이 승인된 자리(옛 화면이 섞였을 때 생겨요) 하나에 내 uid를 채우는 쓰기.
+      // 자리 칸은 그 자리 uid만 바뀌어야 해요. 대기·두는 중인 방에서만 돼요.
+      // 채우는 쓰기에 두기(판·차례·결과)를 함께 실어도 돼요(규칙이 바뀐 뒤에도 두던 판을 끝까지 둘 수 있게).
+      // 이 쓰기를 한 기기는 그 순간부터 참가자로 봐요(상태 바꾸기 기준).
+      function roomClaimSeat(d, n) {
         let dm = roomMembers(d);
         let nm = roomMembers(n);
         let me = request.auth.uid;
         let gone = dm.removeAll(nm);
         let added = nm.removeAll(dm);
-        return !(me in roomMemberUids(d))
+        return d.get('status', '') in ['waiting', 'playing']
+          && !(me in roomMemberUids(d))
           && !roomIsMine(d)
           && nm.size() == dm.size()
           && gone.size() == 1 && added.size() == 1
@@ -536,9 +540,7 @@ service cloud.firestore {
           && added[0].diff(gone[0]).affectedKeys().hasOnly(['uid'])
           && roomMemberUids(n).size() == roomMemberUids(d).size() + 1
           && roomMemberUids(n).hasAll(roomMemberUids(d))
-          && (me in roomMemberUids(n))
-          && n.diff(d).affectedKeys().hasOnly(['members', 'memberUids', 'lastActivityAt', 'updatedAt', 'round'])
-          && n.get('round', 0) == d.get('round', 0);
+          && (me in roomMemberUids(n));
       }
       // R2-3: 방장·참가자가 아닌 기기가 할 수 있는 일만.
       // - 대기 방에 내 신청(내 uid, pending) 하나 넣기·바꾸기, 또는 내 신청 빼기
@@ -554,6 +556,9 @@ service cloud.firestore {
         let np = n.get('participantIds', []);
         return d.get('status', '') == 'waiting'
           && dj is list && nj is list && dp is list && np is list
+          // r4 ③(c2b): 이미 방에 있는 학번(방장·자리·남의 신청)으로는 새 신청을 못 넣어요. 내 신청을 같은 학번으로 바꾸는 것만 돼요.
+          && (addedJ.size() == 0 || !(addedJ[0].get('id', '') in dp)
+            || (goneJ.size() == 1 && goneJ[0].get('id', '') == addedJ[0].get('id', '')))
           && n.diff(d).affectedKeys().hasOnly(['joinRequests', 'participantIds', 'lastActivityAt', 'updatedAt', 'round'])
           && n.get('round', 0) == d.get('round', 0)
           && addedJ.size() <= 1 && goneJ.size() <= 1 && addedJ.size() + goneJ.size() >= 1
@@ -572,30 +577,30 @@ service cloud.firestore {
       function roomOutsiderOk(d, n) {
         return roomIsParty(d)
           || roomOutsiderJoinOk(d, n)
-          || roomOutsiderCloseOk(d, n)
-          || roomClaimSeatOnly(d, n);
+          || roomOutsiderCloseOk(d, n);
       }
       // 상태: playing·finished → waiting 금지, closed는 되돌리지 않음.
       // finished·closed로 바꾸기와 끝난 판 다시 두기는 방장·참가자만(10분 넘게 멈춘 방 닫기는 누구나).
-      function roomStatusOk(d, n) {
+      function roomStatusOk(d, n, party) {
         let a = d.get('status', '');
         let b = n.get('status', '');
         return a == b
           || (a == 'waiting' && b == 'playing')
-          || (a in ['waiting', 'playing'] && b == 'finished' && roomIsParty(d))
-          || (a == 'finished' && b == 'playing' && roomIsParty(d))
-          || (a in ['waiting', 'playing', 'finished'] && b == 'closed' && (roomIsParty(d) || roomIdle(d)));
+          || (a in ['waiting', 'playing'] && b == 'finished' && party)
+          || (a == 'finished' && b == 'playing' && party)
+          || (a in ['waiting', 'playing', 'finished'] && b == 'closed' && (party || roomIdle(d)));
       }
       // 보통 쓰기(참가 신청·승인·두기·나가기): 방장·학번·만든 시각은 그대로
       function roomUpdateKeepsRoom(d, n) {
+        let claim = roomClaimSeat(d, n);
         return roomHostUid(n) == roomHostUid(d)
           && (roomIsLegacy(d)
             || (n.get('hostId', '') == d.get('hostId', '')
               && roomCreatedOk(d, n)
               && roomActivityOk(d, n)
-              && (roomClaimSeatOnly(d, n)
-                || (roomMembersOk(d, n) && roomStatusOk(d, n)))
-              && roomOutsiderOk(d, n)));
+              && (claim || roomMembersOk(d, n))
+              && roomStatusOk(d, n, claim || roomIsParty(d))
+              && (claim || roomOutsiderOk(d, n))));
       }
       // 같은 문서에 새로 만든 방: 새 방 모양(roomFreshShape)이고, 만든 시각은 예전 방보다 앞서지 않음
       function roomFreshOver(d, n) {
@@ -637,12 +642,14 @@ service cloud.firestore {
         roomUpdateKeepsRoom(resource.data, request.resource.data)
         || roomOverwriteOk(resource.data, request.resource.data)
       );
-      // 지우기: 내 방, 옛 방, 30분 정리 대상, 또는 참가자가 닫은(closed) 방
+      // 지우기: 내 방, 옛 방, 30분 정리 대상, 참가자가 닫은(closed) 방,
+      // 또는 r4 ②: 참가자가 10분 넘게 둔 끝난(finished) 방
       allow delete: if signedIn() && (
         roomIsMine(resource.data)
         || roomIsLegacy(resource.data)
         || roomCleanupAgeDue(resource.data)
         || (resource.data.get('status', '') == 'closed' && roomIsParty(resource.data))
+        || (resource.data.get('status', '') == 'finished' && roomIsParty(resource.data) && roomIdle(resource.data))
       );
     }
 

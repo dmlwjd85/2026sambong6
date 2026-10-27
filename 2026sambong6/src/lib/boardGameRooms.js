@@ -123,6 +123,48 @@ export function hostBoardRoomFallbackId(gameType, hostId, uid) {
     return `${base}_${h.toString(36).padStart(6, '0').slice(-6)}`;
 }
 
+/**
+ * 세 번째 id예요(#88 r4 ①). 정해진 id와 두 번째 id는 학번·uid로 정해져서 남이 미리 차지할 수 있어요.
+ * 둘 다 막혔을 때만 이 기기에서 뽑은, 미리 알 수 없는 id로 만들어요. alk_학번_ 로 시작해서 '내 방' 질의에도 잡혀요.
+ * @param {() => number} [rand] 시험용. 없으면 crypto 난수를 써요.
+ */
+export function hostBoardRoomRandomId(gameType, hostId, rand) {
+    const base = hostBoardRoomId(gameType, hostId);
+    if (!base) return '';
+    const abc = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let bytes = null;
+    if (typeof rand !== 'function' && typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+        bytes = globalThis.crypto.getRandomValues(new Uint8Array(8));
+    }
+    let out = '';
+    for (let i = 0; i < 8; i += 1) {
+        const n = bytes ? bytes[i] : Math.floor((Number((rand || Math.random)()) || 0) * 256);
+        out += abc[Math.abs(n) % abc.length];
+    }
+    return `${base}_r${out}`;
+}
+
+/**
+ * 이 기기(uid)가 연, 아직 살아 있는 내 알까기 방을 골라요(#88 r4 ①).
+ * 정해진 id·두 번째 id가 남에게 막혔을 때 세 번째 id 방을 또 만들지 않고 이 방을 다시 써요.
+ */
+export function pickMyHostAlkRoom(rooms, { hostId, uid, now } = {}) {
+    const hid = cleanId(hostId);
+    const me = cleanUid(uid);
+    const base = hostBoardRoomId('alkkagi', hid);
+    if (!hid || !me || !base) return null;
+    const t = Math.max(0, Math.floor(Number(now) || Date.now()));
+    const mine = (Array.isArray(rooms) ? rooms : [])
+        .map((raw) => sanitizeBoardRoom(raw, t))
+        .filter((r) => r.id && r.gameType === 'alkkagi'
+            && (r.id === base || r.id.startsWith(`${base}_`))
+            && r.hostId === hid && cleanUid(r.hostUid) === me
+            && (r.status === 'waiting' || r.status === 'playing')
+            && !isRoomIdleExpired(r, t) && !isBoardRoomCleanupAgeDue(r, t));
+    mine.sort((a, b) => b.updatedAt - a.updatedAt);
+    return mine[0] || null;
+}
+
 function cleanId(raw) {
     return String(raw || '').trim().slice(0, 20);
 }
@@ -363,10 +405,14 @@ export function isBoardRoomCleanupAgeDue(room, now) {
     return true;
 }
 
+/** 닫힌 방을 참가자가 지우기 전 기다리는 시간(r4 ②). */
+export const BOARD_ROOM_CLOSED_GRACE_MS = 60 * 1000;
+
 /**
  * 이 기기가 지워도 되는(규칙이 허락하는) 정리 대상인지 골라요.
  * - 30분 정리 대상(누구나)
  * - 10분 넘게 쉰 방 가운데 내 방(hostUid가 내 uid)이거나, hostUid가 없는 옛 방
+ * - r4 ②: 내가 참가자인 닫힌 방(1분 뒤)·끝난 방(10분 쉰 뒤)
  * 남의 새 방(hostUid가 다르고 30분 전)은 10분 쉬어도 지우지 않고 목록에서만 숨겨요.
  */
 export function boardRoomCleanupDue(room, { now, uid = '' } = {}) {
@@ -374,8 +420,13 @@ export function boardRoomCleanupDue(room, { now, uid = '' } = {}) {
     const t = Math.max(0, Math.floor(Number(now) || 0));
     if (!r.id || !t) return false;
     if (isBoardRoomCleanupAgeDue(r, t)) return true;
-    if (r.status === 'closed' || !isRoomIdleExpired(r, t)) return false;
     const me = cleanUid(uid);
+    // r4 ②: 내가 방장·참가자(자리 uid)인 방은 닫힌 지 1분이 지나면, 끝난 판은 10분 쉬면 지워요(규칙과 같은 기준).
+    // (닫힌 방 1분은 판 화면에 남은 친구가 '방이 닫혔어요'를 볼 시간이에요.)
+    const party = !!me && (cleanUid(r.hostUid) === me || r.members.some((m) => cleanUid(m.uid) === me));
+    if (r.status === 'closed') return party && t - (Number(r.updatedAt) || 0) >= BOARD_ROOM_CLOSED_GRACE_MS;
+    if (!isRoomIdleExpired(r, t)) return false;
+    if (r.status === 'finished' && party) return true;
     return !r.hostUid || (!!me && r.hostUid === me);
 }
 
@@ -407,7 +458,12 @@ export function claimBoardRoomHostUid(room, { hostId, uid } = {}) {
     const me = cleanUid(uid);
     const hid = cleanId(hostId);
     if (!room || typeof room !== 'object' || !me || !hid) return room;
-    if (cleanUid(room.hostUid) || cleanId(room.hostId) !== hid) return room;
+    if (cleanUid(room.hostUid) || cleanId(room.hostId) !== hid) {
+        // r4 ④: 대국 중에 규칙이 바뀌어 내 자리(학번이 나인 자리 하나) uid가 비어 있으면, 이번 쓰기에 함께 채워요.
+        // 규칙은 자리 칸에서 uid만 바뀐 쓰기를 '참가자 쓰기'로 받아 줘요. 다른 사람 자리·채워진 자리는 건드리지 않아요.
+        // (방 상태는 쓰기 전 상태로 규칙이 봐요. 이번 쓰기로 판이 끝나도 채워요.)
+        return claimBoardRoomSeatUid(room, { studentId: hid, uid: me, anyStatus: true }) || room;
+    }
     const members = (Array.isArray(room.members) ? room.members : []).map((m) => (
         m && m.id === hid && !m.uid ? { ...m, uid: me } : m
     ));
@@ -430,7 +486,7 @@ export function needsHostBoardRoomFallback(existing, { uid = '', now } = {}) {
  * 승인될 때 uid가 비어 있던 내 자리(섞인 버전 화면에서 승인된 자리)에 이 기기 uid를 채워요(#88 r3 R2-4).
  * 규칙은 이 채우기만 따로 받아요(다른 칸은 그대로). 채울 필요가 없으면 null이에요.
  */
-export function claimBoardRoomSeatUid(room, { studentId, uid } = {}) {
+export function claimBoardRoomSeatUid(room, { studentId, uid, anyStatus = false } = {}) {
     const me = cleanUid(uid);
     const id = cleanId(studentId);
     if (!room || typeof room !== 'object' || !me || !id) return null;
@@ -439,6 +495,10 @@ export function claimBoardRoomSeatUid(room, { studentId, uid } = {}) {
     if (members.some((m) => m && cleanUid(m.uid) === me)) return null;
     const idx = members.findIndex((m) => m && cleanId(m.id) === id);
     if (idx < 0 || cleanUid(members[idx].uid)) return null;
+    // 방장 자리는 hostUid 기기 몫이에요. 다른 기기가 방장 학번 자리를 채우지 않아요.
+    if (cleanId(room.hostId) === id && cleanUid(room.hostUid)) return null;
+    // 규칙은 대기·두는 중인 방에서만 자리 채우기를 받아요.
+    if (!anyStatus && room.status && room.status !== 'waiting' && room.status !== 'playing') return null;
     const next = members.map((m, i) => (i === idx ? { ...m, uid: me } : m));
     return { ...room, members: next };
 }
@@ -466,14 +526,21 @@ export function boardRoomClockSkewMs(dateHeader, { sentAt, receivedAt } = {}) {
  */
 export function boardRoomDeniedReason({ room = null, studentId = '', uid = '', skewMs = null } = {}) {
     if (typeof skewMs === 'number' && Math.abs(skewMs) > BOARD_ROOM_CLOCK_WARN_MS) return 'clock';
+    if (boardRoomSeatOnOtherDevice(room, { studentId, uid })) return 'other_device';
+    return 'stale';
+}
+
+/**
+ * 내 학번 자리(방장 자리 포함)가 다른 기기 uid로 적혀 있는지(#88 r4 ①).
+ * 남이 내 학번으로 만든 방(알까기 id 선점 등)이면 true라서, 그 방에 저절로 들어가거나 내 방으로 붙잡지 않아요.
+ */
+export function boardRoomSeatOnOtherDevice(room, { studentId = '', uid = '' } = {}) {
     const me = cleanUid(uid);
     const id = cleanId(studentId);
-    if (room && typeof room === 'object' && me && id) {
-        if (cleanId(room.hostId) === id && cleanUid(room.hostUid) && cleanUid(room.hostUid) !== me) return 'other_device';
-        const seat = (Array.isArray(room.members) ? room.members : []).find((m) => m && cleanId(m.id) === id);
-        if (seat && cleanUid(seat.uid) && cleanUid(seat.uid) !== me) return 'other_device';
-    }
-    return 'stale';
+    if (!room || typeof room !== 'object' || !me || !id) return false;
+    if (cleanId(room.hostId) === id && cleanUid(room.hostUid) && cleanUid(room.hostUid) !== me) return true;
+    const seat = (Array.isArray(room.members) ? room.members : []).find((m) => m && cleanId(m.id) === id);
+    return !!(seat && cleanUid(seat.uid) && cleanUid(seat.uid) !== me);
 }
 
 /** 막힌 까닭에 맞는 안내 문구예요(stale은 화면 쪽 새로고침 안내를 그대로 써요). */
@@ -565,7 +632,7 @@ export function listLobbyBoardRooms(rooms, { gameType, now } = {}) {
  * - reuse: 내가 만든 대기 방이 이미 있어요. 새로 만들지 않고 그 방으로 안내해요.
  * - enter: 내가 두고 있는 판이 있어요. 그 판으로 들어가요.
  */
-export function decideBoardRoomCreate(existing, { hostId, now } = {}) {
+export function decideBoardRoomCreate(existing, { hostId, now, uid = '' } = {}) {
     const hid = cleanId(hostId);
     if (!hid) return { action: 'error', error: 'bad_create' };
     if (!existing) return { action: 'create', error: '' };
@@ -573,7 +640,8 @@ export function decideBoardRoomCreate(existing, { hostId, now } = {}) {
     const r = sanitizeBoardRoom(existing, t);
     if (r.status === 'closed' || r.status === 'finished' || isRoomIdleExpired(r, t) || isBoardRoomCleanupAgeDue(r, t)) return { action: 'create', error: '' };
     if (r.status === 'waiting' && isRoomHost(r, hid)) return { action: 'reuse', error: '' };
-    if (r.status === 'playing' && isRoomMember(r, hid)) return { action: 'enter', error: '' };
+    // r4 ①: 내 학번 자리가 다른 기기 uid로 적힌 판(남이 내 학번으로 미리 만든 방)에는 들어가지 않아요.
+    if (r.status === 'playing' && isRoomMember(r, hid) && !boardRoomSeatOnOtherDevice(r, { studentId: hid, uid })) return { action: 'enter', error: '' };
     return { action: 'create', error: '' };
 }
 
@@ -679,13 +747,15 @@ export function cancelJoinBoardRoom(room, { studentId, now } = {}) {
  * 내가 들어 있는 방 가운데 지금 붙잡을 방을 골라요. 두는 중 > 대기 > 결과 순서이고, 같으면 최근 방이에요.
  * (예전에는 문서 순서대로 첫 방을 골라, 끝난 옛 방 때문에 방금 만든 대기 방이 닫힐 수 있었어요.)
  */
-export function pickMyActiveBoardRoom(rooms, studentId) {
+export function pickMyActiveBoardRoom(rooms, studentId, { uid = '' } = {}) {
     const id = cleanId(studentId);
     if (!id) return null;
     const rank = { playing: 0, waiting: 1, finished: 2 };
+    // r4 ①: 내 학번 자리가 다른 기기 uid로 적힌 방은 고르지 않아요(남이 내 학번으로 만든 방 때문에 내 방이 닫히지 않게).
     const mine = (Array.isArray(rooms) ? rooms : [])
         .map((raw) => sanitizeBoardRoom(raw))
-        .filter((r) => r.id && r.status in rank && r.members.some((m) => m.id === id));
+        .filter((r) => r.id && r.status in rank && r.members.some((m) => m.id === id)
+            && !boardRoomSeatOnOtherDevice(r, { studentId: id, uid }));
     mine.sort((a, b) => (rank[a.status] - rank[b.status]) || (b.updatedAt - a.updatedAt));
     return mine[0] || null;
 }
@@ -708,11 +778,12 @@ export function boardRoomInstanceKey(room) {
  * - 끝난 판(알까기 제외)은 이 화면에서 두는 중이거나 기다리는 모습을 본 판(seenLiveKeys)이거나,
  *   이 화면을 연 뒤(sinceMs 이후)에 끝난 판일 때만 들어가요. 새 탭·다른 기기에서 예전에 끝난 결과로 끌려가지 않게 해요.
  * @param {object} room
- * @param {{ selfId?: string, leftKeys?: Set<string>, seenLiveKeys?: Set<string>, sinceMs?: number }} [o]
+ * @param {{ selfId?: string, uid?: string, leftKeys?: Set<string>, seenLiveKeys?: Set<string>, sinceMs?: number }} [o]
  */
 export function shouldAutoEnterBoardRoom(room, o = {}) {
     const r = sanitizeBoardRoom(room);
     if (!r.id || !isRoomMember(r, o.selfId)) return false;
+    if (boardRoomSeatOnOtherDevice(r, { studentId: o.selfId, uid: o.uid })) return false;
     const key = boardRoomInstanceKey(r);
     if (o.leftKeys && o.leftKeys.has(key)) return false;
     if (r.status === 'playing') return true;

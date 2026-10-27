@@ -751,3 +751,111 @@ describe('r3 R2-4·R2-5: 막힌 까닭 안내', () => {
         assert.equal(R3.boardRoomDeniedText('stale'), '');
     });
 });
+
+describe('#88 r4: 알까기 id 선점·끝난 방 정리·자리 채우기', () => {
+    const m = roomLib;
+    const M = 60000;
+    const alk = (hostId, hostUid, id, now = 100 * M) => m.createBoardRoom({ gameType: 'alkkagi', hostId, hostName: '가', now, id, hostUid }).room;
+
+    it('① 세 번째 id는 alk_학번_r + 8글자이고 40자를 넘지 않아요', () => {
+        const a = m.hostBoardRoomRandomId('alkkagi', '7');
+        const b = m.hostBoardRoomRandomId('alkkagi', '7');
+        assert.match(a, /^alk_7_r[a-z0-9]{8}$/);
+        assert.notEqual(a, b);
+        const seq = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let i = 0;
+        assert.equal(m.hostBoardRoomRandomId('alkkagi', '7', () => seq[i++]), m.hostBoardRoomRandomId('alkkagi', '7', ((j) => () => seq[j++])(0)));
+        const long = m.hostBoardRoomRandomId('alkkagi', 'x'.repeat(40));
+        assert.ok(long.length <= 40, long);
+        assert.equal(m.hostBoardRoomRandomId('alkkagi', ''), '');
+    });
+
+    it('① 내 알까기 방 고르기: 이 기기 uid가 연 살아 있는 방만', () => {
+        const now = 100 * M;
+        const fake = alk('7', 'uid-C', 'alk_7', now);
+        const mine = alk('7', 'uid-V', 'alk_7_rabcdefgh', now);
+        const old = { ...alk('7', 'uid-V', 'alk_7_rzzzzzzzz', now - 40 * M), status: 'finished' };
+        const other = alk('8', 'uid-V', 'alk_8', now);
+        const rows = [fake, old, other, mine];
+        assert.equal(m.pickMyHostAlkRoom(rows, { hostId: '7', uid: 'uid-V', now })?.id, 'alk_7_rabcdefgh');
+        assert.equal(m.pickMyHostAlkRoom(rows, { hostId: '7', uid: 'uid-C', now })?.id, 'alk_7');
+        assert.equal(m.pickMyHostAlkRoom(rows, { hostId: '7', uid: 'uid-Z', now }), null);
+        assert.equal(m.pickMyHostAlkRoom([{ ...mine, lastActivityAt: now - 11 * M, createdAt: now - 12 * M }], { hostId: '7', uid: 'uid-V', now }), null);
+    });
+
+    it('① 남이 내 학번으로 만든 방은 내 방으로 고르지도, 저절로 들어가지도, 들어가기로 정하지도 않아요', () => {
+        const now = 100 * M;
+        const fake = { ...alk('7', 'uid-C', 'alk_7', now), status: 'playing' };
+        assert.equal(m.boardRoomSeatOnOtherDevice(fake, { studentId: '7', uid: 'uid-V' }), true);
+        assert.equal(m.boardRoomSeatOnOtherDevice(fake, { studentId: '7', uid: 'uid-C' }), false);
+        assert.equal(m.boardRoomSeatOnOtherDevice(fake, { studentId: '7', uid: '' }), false);
+        assert.equal(m.pickMyActiveBoardRoom([fake], '7', { uid: 'uid-V' }), null);
+        assert.equal(m.pickMyActiveBoardRoom([fake], '7', { uid: 'uid-C' })?.id, 'alk_7');
+        assert.equal(m.pickMyActiveBoardRoom([fake], '7')?.id, 'alk_7');
+        const opts = { selfId: '7', uid: 'uid-V', leftKeys: new Set(), seenLiveKeys: new Set(), sinceMs: 1 };
+        assert.equal(m.shouldAutoEnterBoardRoom(fake, opts), false);
+        assert.equal(m.shouldAutoEnterBoardRoom(fake, { ...opts, uid: 'uid-C' }), true);
+        assert.equal(m.decideBoardRoomCreate(fake, { hostId: '7', now, uid: 'uid-V' }).action, 'create');
+        assert.equal(m.decideBoardRoomCreate(fake, { hostId: '7', now, uid: 'uid-C' }).action, 'enter');
+        assert.equal(m.needsHostBoardRoomFallback(fake, { uid: 'uid-V', now }), true);
+        assert.equal(m.boardRoomDeniedReason({ room: fake, studentId: '7', uid: 'uid-V' }), 'other_device');
+    });
+
+    it('② 끝난 방은 참가자 기기가 10분 뒤, 닫힌 방은 1분 뒤 지워요(남의 방은 30분)', () => {
+        const now = 100 * M;
+        const two = (o) => ({
+            ...alk('1', 'uid-A', 'alk_1', now - 20 * M),
+            members: [{ id: '1', uid: 'uid-A', role: 'host', seat: 0 }, { id: '2', uid: 'uid-B', role: 'player', seat: 1 }],
+            ...o,
+        });
+        const fin = two({ status: 'finished', lastActivityAt: now - 11 * M, updatedAt: now - 11 * M });
+        assert.equal(m.boardRoomCleanupDue(fin, { now, uid: 'uid-B' }), true);
+        assert.equal(m.boardRoomCleanupDue(fin, { now, uid: 'uid-A' }), true);
+        assert.equal(m.boardRoomCleanupDue(fin, { now, uid: 'uid-C' }), false);
+        assert.equal(m.boardRoomCleanupDue({ ...fin, lastActivityAt: now - 2 * M }, { now, uid: 'uid-B' }), false);
+        const closed = two({ status: 'closed', lastActivityAt: now - 2 * M, updatedAt: now - 2 * M });
+        assert.equal(m.boardRoomCleanupDue(closed, { now, uid: 'uid-B' }), true);
+        assert.equal(m.boardRoomCleanupDue({ ...closed, updatedAt: now - 10_000 }, { now, uid: 'uid-B' }), false);
+        assert.equal(m.boardRoomCleanupDue(closed, { now, uid: 'uid-C' }), false);
+        const qaB = two({ status: 'finished', createdAt: now - 60 * M, lastActivityAt: now - 55 * M });
+        assert.equal(m.boardRoomCleanupDue(qaB, { now, uid: 'uid-C' }), true);
+        const picked = m.pickBoardRoomsToCleanup([fin, closed, qaB], { now, uid: 'uid-C', memory: new Map() });
+        assert.ok(Array.isArray(picked));
+    });
+
+    it('④ 규칙이 바뀐 뒤에도 uid 없는 내 자리를 쓰기에 함께 채워요(내 자리 하나, 방장 자리는 안 채워요)', () => {
+        const now = 100 * M;
+        const room = {
+            ...m.createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '가', now, id: 'g', hostUid: 'uid-A' }).room,
+            status: 'playing',
+            members: [{ id: '1', uid: 'uid-A', role: 'host', seat: 0 }, { id: '2', role: 'player', seat: 1 }, { id: '3', role: 'player', seat: 2 }],
+        };
+        const next = m.claimBoardRoomHostUid({ ...room, status: 'finished' }, { hostId: '2', uid: 'uid-B' });
+        assert.equal(next.members.find((x) => x.id === '2').uid, 'uid-B');
+        assert.equal(next.members.find((x) => x.id === '3').uid || '', '');
+        assert.equal(next.hostUid, 'uid-A');
+        assert.equal(m.claimBoardRoomHostUid(next, { hostId: '2', uid: 'uid-B' }), next);
+        // 다른 기기는 이미 채운 자리를 못 가져가요.
+        assert.equal(m.claimBoardRoomHostUid(next, { hostId: '2', uid: 'uid-C' }), next);
+        // 방장 자리는 hostUid 기기 몫이에요.
+        const hostless = { ...room, members: [{ id: '1', role: 'host', seat: 0 }, room.members[1]] };
+        assert.equal(m.claimBoardRoomHostUid(hostless, { hostId: '1', uid: 'uid-C' }), hostless);
+        assert.equal(m.claimBoardRoomSeatUid(hostless, { studentId: '1', uid: 'uid-C' }), null);
+        // 끝난 방은 자리 채우기만 따로 쓰지 않아요(규칙도 막아요).
+        assert.equal(m.claimBoardRoomSeatUid({ ...room, status: 'finished' }, { studentId: '2', uid: 'uid-B' }), null);
+        assert.ok(m.claimBoardRoomSeatUid(room, { studentId: '2', uid: 'uid-B' }));
+    });
+
+    it('⑤ 시계가 11분 빠른 친구에게는 시계 안내를 보여요(해요체)', () => {
+        assert.equal(m.boardRoomDeniedReason({ skewMs: 11 * M }), 'clock');
+        assert.equal(m.boardRoomDeniedReason({ skewMs: -11 * M }), 'clock');
+        assert.equal(m.boardRoomDeniedReason({ skewMs: 5 * M }), 'stale');
+        const text = m.boardRoomDeniedText('clock', { skewMs: 11 * M });
+        assert.match(text, /약 11분 빠르게/);
+        assert.match(text, /해 주세요\.$/);
+        // touchRoom은 마지막 활동 시각을 줄이지 않아요(느린 시계가 과거 시각을 쓰지 않음).
+        const r = m.createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '가', now: 100 * M, id: 'k', hostUid: 'uid-A' }).room;
+        const back = m.requestJoinBoardRoom(r, { studentId: '2', studentName: '나', now: 89 * M, uid: 'uid-B' }).room;
+        assert.ok(back.lastActivityAt >= r.lastActivityAt);
+    });
+});

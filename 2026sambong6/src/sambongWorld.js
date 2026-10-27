@@ -21744,6 +21744,11 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
+            // 카드 이름표의 쨈 제목 글꼴: 알까기와 같은 글꼴 CSS를 한 번만 불러옵니다(이미 불러왔으면 건너뜀).
+            if (!_alkFontsLoaded) {
+                _alkFontsLoaded = true;
+                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+            }
 
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
@@ -21780,6 +21785,9 @@ ${subjectLine}
                 const aura = applyEquippedAura(displayData, lv.info.borderColor, 'shadow-md');
                 let border = aura.border;
                 let glow = aura.glow;
+                // 등급별 보석 채움. 오라 스킨을 끼면 plaza-tier-aura로 표시해 오라 테두리·빛을 덮지 않습니다.
+                const hasAuraSkin = border !== lv.info.borderColor || glow !== 'shadow-md';
+                const tierClass = ` plaza-tier plaza-tier-${lv.info.ring}${hasAuraSkin ? ' plaza-tier-aura' : ''}`;
                 const face = buildCharacterAvatarHtml({
                     studentId: targetId,
                     data: displayData,
@@ -21884,7 +21892,7 @@ ${subjectLine}
                 </div>${dislikeReasonHtml}`;
 
                 return `
-                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
+                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${tierClass}${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
                     <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">

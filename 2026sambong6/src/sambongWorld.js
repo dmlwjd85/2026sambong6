@@ -1919,7 +1919,9 @@ function redrawPlazaGrantsUi() {
         }
         window.refreshMarketQuotes = refreshMarketQuotes;
         void refreshMarketQuotes(true);
-        _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(true); }, MARKET_REFRESH_MS);
+        // 매시간 틱은 강제로 받지 않아요. 다른 기기가 50분 안에 공유해 둔 시세가 있으면 그대로 쓰고,
+        // settings/global 에 다시 쓰지 않아요(쓸 때마다 접속한 모든 기기가 설정 문서를 다시 읽어요).
+        _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(false); }, MARKET_REFRESH_MS);
 
         window.searchSchoolWeatherRegion = async function() {
             const inp = document.getElementById('schoolWeatherSearch');

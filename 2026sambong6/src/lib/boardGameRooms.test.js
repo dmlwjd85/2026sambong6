@@ -389,3 +389,78 @@ describe('boardGameRooms subscription scope (읽기 절약)', () => {
         assert.ok(BOARD_LOBBY_QUERY_LIMIT >= 20);
     });
 });
+
+describe('방 정리(30분·hostUid)', () => {
+    const MIN = 60 * 1000;
+    const T0 = 1_700_000_000_000;
+    function room(extra = {}) {
+        const made = createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '민준', now: T0, hostUid: 'uid-a', ...extra });
+        return made.room;
+    }
+
+    it('새 방에 hostUid를 넣고, 정리(sanitize)·문서 변환·수정 뒤에도 남겨요', () => {
+        const r = room();
+        assert.equal(r.hostUid, 'uid-a');
+        assert.equal(sanitizeBoardRoom(boardRoomToDoc(r)).hostUid, 'uid-a');
+        const joined = requestJoinBoardRoom(r, { studentId: '2', studentName: '서연', now: T0 + MIN });
+        assert.equal(boardRoomToDoc(joined.room).hostUid, 'uid-a');
+        const old = sanitizeBoardRoom({ id: 'bg_old', gameType: 'chess', hostId: '3', status: 'waiting', createdAt: T0 });
+        assert.equal(old.hostUid, '');
+        assert.equal(sanitizeBoardRoom({ ...old, hostUid: 42 }).hostUid, '');
+    });
+
+    it('만든 지 30분이 지나면 목록에서 숨겨요(활동이 있어도)', () => {
+        const r = touch(room(), T0 + 29 * MIN);
+        assert.equal(roomLib.listLobbyBoardRooms([r], { gameType: 'gomoku', now: T0 + 29 * MIN }).length, 1);
+        const r2 = touch(room(), T0 + 30 * MIN);
+        assert.equal(roomLib.isBoardRoomPastListAge(r2, T0 + 30 * MIN), true);
+        assert.equal(roomLib.listLobbyBoardRooms([r2], { gameType: 'gomoku', now: T0 + 30 * MIN }).length, 0);
+    });
+
+    function touch(r, t) { return { ...r, lastActivityAt: t, updatedAt: t }; }
+
+    it('30분 지난 대기·끝난 방은 누구나 정리 대상, 두는 중이고 10분 안에 활동한 판은 빼요', () => {
+        const now = T0 + 31 * MIN;
+        assert.equal(roomLib.boardRoomCleanupDue(room(), { now, uid: 'uid-b' }), true);
+        assert.equal(roomLib.boardRoomCleanupDue({ ...room(), status: 'finished' }, { now, uid: 'uid-b' }), true);
+        const playingActive = { ...room(), status: 'playing', lastActivityAt: now - 9 * MIN };
+        assert.equal(roomLib.boardRoomCleanupDue(playingActive, { now, uid: 'uid-b' }), false);
+        const playingIdle = { ...room(), status: 'playing', lastActivityAt: now - 10 * MIN };
+        assert.equal(roomLib.boardRoomCleanupDue(playingIdle, { now, uid: 'uid-b' }), true);
+    });
+
+    it('30분 전 방은 10분 쉬어도 내 방이거나 hostUid 없는 옛 방일 때만 지워요', () => {
+        const now = T0 + 12 * MIN;
+        const r = room();
+        assert.equal(roomLib.boardRoomCleanupDue(r, { now, uid: 'uid-b' }), false);
+        assert.equal(roomLib.boardRoomCleanupDue(r, { now, uid: 'uid-a' }), true);
+        assert.equal(roomLib.boardRoomCleanupDue({ ...r, hostUid: '' }, { now, uid: 'uid-b' }), true);
+        assert.equal(roomLib.boardRoomCleanupDue(r, { now: T0 + 5 * MIN, uid: 'uid-a' }), false);
+    });
+
+    it('정리한 방은 기기에 기억해 다시 고르지 않고, 하루 지난 기억은 버려요', () => {
+        const now = T0 + 31 * MIN;
+        const a = { ...room(), id: 'bg_a' };
+        const b = { ...room(), id: 'bg_b' };
+        const first = roomLib.pickBoardRoomsToCleanup([a, b, a], { now, uid: 'x' });
+        assert.deepEqual(first.map((r) => r.id), ['bg_a', 'bg_b']);
+        let mem = roomLib.rememberBoardRoomCleaned({}, roomLib.boardRoomCleanupKey(a), now);
+        assert.deepEqual(roomLib.pickBoardRoomsToCleanup([a, b], { now, uid: 'x', memory: JSON.stringify(mem) }).map((r) => r.id), ['bg_b']);
+        // 같은 id라도 새로 만든 방(createdAt이 다름)은 따로 봐요
+        const a2 = { ...a, createdAt: T0 + 1 };
+        assert.deepEqual(roomLib.pickBoardRoomsToCleanup([a2], { now: now + 1, uid: 'x', memory: mem }).map((r) => r.id), ['bg_a']);
+        const later = now + roomLib.BOARD_ROOM_CLEANED_MEMORY_MS;
+        assert.deepEqual(roomLib.parseBoardRoomCleanedMemory(mem, later), {});
+        assert.deepEqual(roomLib.parseBoardRoomCleanedMemory('깨진값', now), {});
+        for (let i = 0; i < roomLib.BOARD_ROOM_CLEANED_MEMORY_MAX + 5; i++) mem = roomLib.rememberBoardRoomCleaned(mem, `k${i}`, now + i);
+        assert.equal(Object.keys(mem).length, roomLib.BOARD_ROOM_CLEANED_MEMORY_MAX);
+    });
+
+    it('30분 지난 알까기 대기 방은 다시 쓰지 않고 새로 만들어요', () => {
+        const made = createBoardRoom({ gameType: 'alkkagi', hostId: '1', hostName: '민준', now: T0, id: 'alk_1', hostUid: 'uid-a' }).room;
+        const fresh = touch(made, T0 + 29 * MIN);
+        assert.equal(roomLib.decideBoardRoomCreate(fresh, { hostId: '1', now: T0 + 29 * MIN }).action, 'reuse');
+        const old = touch(made, T0 + 30 * MIN);
+        assert.equal(roomLib.decideBoardRoomCreate(old, { hostId: '1', now: T0 + 30 * MIN }).action, 'create');
+    });
+});

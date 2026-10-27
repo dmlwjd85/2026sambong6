@@ -19,6 +19,16 @@ import { emptyGomokuGame, gomokuGameToDoc, sanitizeGomokuGame } from './gomokuGa
 
 /** 10분 무활동이면 방을 자동 종료합니다. */
 export const BOARD_ROOM_IDLE_TTL_MS = 10 * 60 * 1000;
+/**
+ * 만든 지(createdAt) 30분이 지난 방은 목록에서 숨기고, 목록을 연 기기가 한 번 지워요.
+ * 단, 두는 중(playing)이고 마지막 활동(lastActivityAt)이 10분 안이면 지우지 않아요.
+ * firestore.rules 의 boardRoomCleanupDue() 와 같은 기준이에요.
+ */
+export const BOARD_ROOM_CLEANUP_AGE_MS = 30 * 60 * 1000;
+/** 정리한 방을 기기에 기억하는 시간(하루). 지나면 기억을 버려요. */
+export const BOARD_ROOM_CLEANED_MEMORY_MS = 24 * 60 * 60 * 1000;
+/** 기기에 기억하는 정리한 방 수 상한. */
+export const BOARD_ROOM_CLEANED_MEMORY_MAX = 200;
 export const BOARD_ROOM_DEFAULT_TIMER_SEC = 30;
 export const BOARD_ROOM_STATUSES = Object.freeze(['waiting', 'playing', 'finished', 'closed']);
 export const BOARD_JOIN_STATUSES = Object.freeze(['pending', 'approved', 'rejected']);
@@ -87,6 +97,10 @@ export function hostBoardRoomId(gameType, hostId) {
 
 function cleanId(raw) {
     return String(raw || '').trim().slice(0, 20);
+}
+
+function cleanUid(raw) {
+    return typeof raw === 'string' ? raw.trim().slice(0, 128) : '';
 }
 
 function cleanName(raw) {
@@ -174,6 +188,7 @@ export function emptyBoardRoom(gameType = 'gomoku', now = 0) {
         gameType: def.id,
         status: 'waiting',
         hostId: '',
+        hostUid: '',
         hostName: '',
         minPlayers: def.minPlayers,
         maxPlayers: def.maxPlayers,
@@ -204,6 +219,8 @@ export function sanitizeBoardRoom(raw, now = 0) {
         gameType: def.id,
         status,
         hostId,
+        // 방장 기기의 로그인 uid(규칙이 방장을 알아보는 값). 옛 방에는 없어서 빈 문자열이에요.
+        hostUid: cleanUid(raw.hostUid),
         hostName: cleanName(raw.hostName) || hostId,
         minPlayers: def.minPlayers,
         maxPlayers: def.maxPlayers,
@@ -228,7 +245,7 @@ function touchRoom(room, now, extra = {}) {
     };
 }
 
-export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled = false, id = '' } = {}) {
+export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled = false, id = '', hostUid = '' } = {}) {
     const def = getBoardGameDef(gameType);
     const hid = cleanId(hostId);
     if (!def || !hid) return { ok: false, error: 'bad_create', room: null };
@@ -236,6 +253,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
     const room = emptyBoardRoom(def.id, t);
     room.id = String(id || '').trim().slice(0, 40) || createBoardRoomId();
     room.hostId = hid;
+    room.hostUid = cleanUid(hostUid);
     room.hostName = cleanName(hostName) || hid;
     room.timerEnabled = timerEnabled === true;
     room.members = [{
@@ -281,12 +299,96 @@ export function isRoomIdleExpired(room, now) {
     return t - r.lastActivityAt >= BOARD_ROOM_IDLE_TTL_MS;
 }
 
-/** 목록에 올릴 방만 남깁니다. 종료·만료 방은 빠집니다. */
+/** 만든 지 30분이 지났는지(createdAt 기준). 목록에서 숨기는 기준이에요. */
+export function isBoardRoomPastListAge(room, now) {
+    const r = sanitizeBoardRoom(room, now);
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    if (!t || !r.createdAt) return false;
+    return t - r.createdAt >= BOARD_ROOM_CLEANUP_AGE_MS;
+}
+
+/**
+ * 30분 정리 대상인지. 만든 지 30분이 지났고, 두는 중이며 10분 안에 활동이 있던 판은 빼요.
+ * (규칙과 같은 기준이라, 누가 지워도 규칙이 받아 줘요.)
+ */
+export function isBoardRoomCleanupAgeDue(room, now) {
+    const r = sanitizeBoardRoom(room, now);
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    if (!r.id || !isBoardRoomPastListAge(r, t)) return false;
+    if (r.status === 'playing' && t - r.lastActivityAt < BOARD_ROOM_IDLE_TTL_MS) return false;
+    return true;
+}
+
+/**
+ * 이 기기가 지워도 되는(규칙이 허락하는) 정리 대상인지 골라요.
+ * - 30분 정리 대상(누구나)
+ * - 10분 넘게 쉰 방 가운데 내 방(hostUid가 내 uid)이거나, hostUid가 없는 옛 방
+ * 남의 새 방(hostUid가 다르고 30분 전)은 10분 쉬어도 지우지 않고 목록에서만 숨겨요.
+ */
+export function boardRoomCleanupDue(room, { now, uid = '' } = {}) {
+    const r = sanitizeBoardRoom(room, now);
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    if (!r.id || !t) return false;
+    if (isBoardRoomCleanupAgeDue(r, t)) return true;
+    if (r.status === 'closed' || !isRoomIdleExpired(r, t)) return false;
+    const me = cleanUid(uid);
+    return !r.hostUid || (!!me && r.hostUid === me);
+}
+
+/** 정리한 방을 기기에 기억하는 키. 같은 id를 다시 쓰는 알까기 방도 판마다 따로 기억해요. */
+export function boardRoomCleanupKey(room) {
+    return boardRoomInstanceKey(room);
+}
+
+/** 기기에 저장한 정리 기억을 읽어요. 하루 지난 기억과 깨진 값은 버려요. */
+export function parseBoardRoomCleanedMemory(raw, now) {
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    let obj = raw;
+    if (typeof raw === 'string') {
+        try { obj = JSON.parse(raw); } catch (_) { obj = null; }
+    }
+    const out = {};
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+    Object.keys(obj).forEach((k) => {
+        const at = Math.floor(Number(obj[k]) || 0);
+        if (!k || at <= 0) return;
+        if (t && t - at >= BOARD_ROOM_CLEANED_MEMORY_MS) return;
+        out[k] = at;
+    });
+    return out;
+}
+
+/** 정리 기억에 방을 더해요. 오래된 것부터 버려 상한을 지켜요. */
+export function rememberBoardRoomCleaned(memory, key, now) {
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    const next = { ...parseBoardRoomCleanedMemory(memory, t) };
+    if (key) next[String(key)] = t || 1;
+    const keys = Object.keys(next).sort((a, b) => next[a] - next[b]);
+    while (keys.length > BOARD_ROOM_CLEANED_MEMORY_MAX) delete next[keys.shift()];
+    return next;
+}
+
+/** 이번에 지울 방만 골라요. 이미 정리(시도)한 방은 다시 고르지 않아요. */
+export function pickBoardRoomsToCleanup(rooms, { now, uid = '', memory = {} } = {}) {
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    const mem = parseBoardRoomCleanedMemory(memory, t);
+    const seen = new Set();
+    return (Array.isArray(rooms) ? rooms : [])
+        .map((raw) => sanitizeBoardRoom(raw, t))
+        .filter((r) => {
+            const key = boardRoomCleanupKey(r);
+            if (!key || seen.has(key) || mem[key]) return false;
+            seen.add(key);
+            return boardRoomCleanupDue(r, { now: t, uid });
+        });
+}
+
+/** 목록에 올릴 방만 남깁니다. 종료·만료 방, 만든 지 30분이 지난 방은 빠집니다. */
 export function listVisibleBoardRooms(rooms, now) {
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     return (Array.isArray(rooms) ? rooms : [])
         .map((raw) => sanitizeBoardRoom(raw, t))
-        .filter((room) => room.id && room.status !== 'closed' && !isRoomIdleExpired(room, t))
+        .filter((room) => room.id && room.status !== 'closed' && !isRoomIdleExpired(room, t) && !isBoardRoomPastListAge(room, t))
         .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -313,7 +415,7 @@ export function decideBoardRoomCreate(existing, { hostId, now } = {}) {
     if (!existing) return { action: 'create', error: '' };
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     const r = sanitizeBoardRoom(existing, t);
-    if (r.status === 'closed' || r.status === 'finished' || isRoomIdleExpired(r, t)) return { action: 'create', error: '' };
+    if (r.status === 'closed' || r.status === 'finished' || isRoomIdleExpired(r, t) || isBoardRoomCleanupAgeDue(r, t)) return { action: 'create', error: '' };
     if (r.status === 'waiting' && isRoomHost(r, hid)) return { action: 'reuse', error: '' };
     if (r.status === 'playing' && isRoomMember(r, hid)) return { action: 'enter', error: '' };
     return { action: 'create', error: '' };
@@ -564,7 +666,7 @@ export const BOARD_ROOM_ERROR_LABEL = Object.freeze({
     bad_create: '방을 만들지 못했습니다.',
     need_login: '로그인한 학생만 참가할 수 있습니다.',
     not_waiting: '지금 참가할 수 없는 방입니다.',
-    expired: '오래 비어 있어 방이 닫혔습니다.',
+    expired: '이 방은 이제 들어갈 수 없어요. 정리됐거나 방장이 지웠어요.',
     already_in: '이미 이 방에 있습니다.',
     full: '방이 가득 찼습니다.',
     already_requested: '이미 참가 신청을 보냈습니다.',

@@ -6525,3 +6525,73 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .ox-mark img { height: 32vh; }
             .ox-choice, .ox-go { font-size: 1.5rem; }
         }
+
+        /* 광장 학생 카드: 대시보드와 같은 등급 그림 테두리·오라. 캐릭터(초상)는 테두리 앞, 바깥 장식은 초상 밖에 남습니다.
+           테두리(날개·왕관 포함)와 오라 전체가 카드 폭 안에 들어가도록 카드 폭(cqi) 비율로 초상 크기를 정하고,
+           위아래에는 테두리가 초상 밖으로 나오는 만큼 여백을 둡니다. 고정 px 오프셋은 쓰지 않습니다.
+           움직임은 오라 opacity만 씁니다. 줄인 모션이면 멈춥니다. */
+        .plaza-rank-framed {
+            --pr-scale: 1.72;
+            --pr-base: 3.15rem;
+            /* 초상은 원래 크기를 지키고, 날개·왕관이 있는 테두리 그림만 카드 폭(cqi) 안에 맞춰 줄입니다.
+               1.2: 캐릭터 감정 모션(크기·기울기) 여유, 1.7rem: 옆에 붙는 Lv 표시만큼 초상이 비켜난 거리 */
+            --pr-w: var(--pr-base);
+            --pr-f: min(calc(var(--pr-w) * var(--pr-scale)), calc((100cqi - 1.7rem) / 1.2));
+            --pr-pad: max(0px, calc((var(--pr-f) * 1.2 - var(--pr-w)) * 0.5));
+        }
+        @media (max-width: 639px) {
+            .plaza-rank-framed { --pr-base: 2.35rem; }
+        }
+        .plaza-rank-framed.plaza-rank-saenaegi { --pr-scale: 1.56; }
+        .plaza-rank-framed.plaza-rank-chobo { --pr-scale: 1.72; }
+        .plaza-rank-framed.plaza-rank-jungsu { --pr-scale: 1.61; }
+        .plaza-rank-framed.plaza-rank-gosu { --pr-scale: 1.92; }
+        .plaza-rank-framed.plaza-rank-guardian { --pr-scale: 2; }
+        .plaza-rank-framed.plaza-rank-legend { --pr-scale: 2.08; }
+        .plaza-card-face .char-avatar-stack.plaza-rank-framed,
+        .plaza-cards-seating .plaza-card-face .char-avatar-stack.plaza-rank-framed {
+            padding-top: var(--pr-pad);
+            padding-bottom: var(--pr-pad);
+        }
+        .plaza-rank-framed .char-portrait-clip,
+        .plaza-rank-framed.char-avatar-has-rank .char-portrait-clip { box-shadow: none; background: transparent; }
+        .plaza-cards-seating .plaza-rank-framed .char-portrait-clip,
+        .plaza-rank-framed .char-portrait-clip { width: var(--pr-w); height: var(--pr-w); max-width: none; }
+        .plaza-rank-frame,
+        .plaza-rank-aura {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: var(--pr-f);
+            height: auto;
+            aspect-ratio: 1 / 1;
+            max-width: none;
+            max-height: none;
+            transform: translate(-50%, -50%);
+            object-fit: contain;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .plaza-rank-aura {
+            opacity: 0.85;
+            will-change: opacity;
+            animation: plaza-aura-breathe 4s ease-in-out infinite;
+        }
+        @keyframes plaza-aura-breathe {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .plaza-rank-aura { animation: none !important; opacity: 0.85; }
+        }
+        /* 430px 이하: 등급 테두리(날개·왕관)가 초상보다 1.5배 이상 크게 보이도록 카드 폭을 넓히고,
+           옆의 Lv 표시를 테두리 오른쪽 아래에 살짝 겹쳐 초상이 카드 가운데에 오게 합니다. 열 수는 그대로입니다. */
+        @media (max-width: 430px) {
+            .plaza-classroom.glass-panel { padding-left: 0.15rem; padding-right: 0.15rem; }
+            .plaza-cards.plaza-cards-seating { gap: 0.1rem; }
+            .plaza-cards-seating .plaza-card { padding-left: 0.05rem !important; padding-right: 0.05rem !important; }
+            .plaza-card-figure:has(.plaza-rank-framed) .plaza-card-lv { margin-left: -1.2rem; }
+            .plaza-rank-framed {
+                --pr-f: min(calc(var(--pr-w) * var(--pr-scale)), calc(var(--pr-w) * 1.56), calc((100cqi - 0.6rem) / 1.14));
+            }
+        }

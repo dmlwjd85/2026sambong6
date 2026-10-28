@@ -9,17 +9,42 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MATE">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f172a'/><text x='50%25' y='54%25' font-size='48' dominant-baseline='central' text-anchor='middle' fill='%2367e8f9' font-family='sans-serif' font-weight='700'>M</text></svg>">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%25' y='54%25' font-size='48' dominant-baseline='central' text-anchor='middle' fill='%2367e8f9' font-family='sans-serif' font-weight='700'>M</text></svg>">
+    <meta name="theme-color" content="#0ea5e9">
+    <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="%BASE_URL%favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="%BASE_URL%apple-touch-icon.png">
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest">
     <script>
-        const manifest = {
-            "name": "MATE", "short_name": "MATE", "start_url": window.location.pathname,
-            "display": "standalone", "background_color": "#f0f9ff", "theme_color": "#0ea5e9",
-            "icons": [{"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%25' y='50%25' font-size='65' dominant-baseline='central' text-anchor='middle'>👑</text></svg>", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable"}]
-        };
-        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-        const manifestUrl = URL.createObjectURL(manifestBlob);
-        document.write(`<link rel="manifest" href="${manifestUrl}">`);
+    (function () {
+        var SW_CLEAR = '20261019';
+        var onceKey = 'mate-sw-clear-once';
+        var params = new URLSearchParams(location.search);
+        function registerWorker() {
+            if (!('serviceWorker' in navigator)) return;
+            addEventListener('load', function () {
+                navigator.serviceWorker.register('%BASE_URL%sw.js', { scope: '%BASE_URL%' }).catch(function () {});
+            });
+        }
+        if (params.get('sw-clear') === SW_CLEAR && sessionStorage.getItem(onceKey) !== SW_CLEAR) {
+            sessionStorage.setItem(onceKey, SW_CLEAR);
+            addEventListener('load', function () {
+                var clearCaches = (window.caches && caches.keys)
+                    ? caches.keys().then(function (keys) {
+                        return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+                    })
+                    : Promise.resolve();
+                clearCaches.then(function () {
+                    if (!('serviceWorker' in navigator)) return;
+                    return navigator.serviceWorker.getRegistrations().then(function (regs) {
+                        return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+                    });
+                }).then(function () { location.reload(); });
+            });
+            return;
+        }
+        if (params.get('sw-clear') !== SW_CLEAR) sessionStorage.removeItem(onceKey);
+        registerWorker();
+    })();
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -337,6 +362,15 @@
     </div>
 
     <!-- ★ 마스터 스피드 퀴즈 모달 (선착순 정답 1명 보상) ★ -->
+    <div id="oxQuizStage" class="ox-stage hidden" role="dialog" aria-modal="true" aria-labelledby="oxQuizHeading">
+        <div class="ox-stage-bar">
+            <button type="button" class="ox-text-btn" data-ox-close>닫기</button>
+            <h2 id="oxQuizHeading">OX 퀴즈</h2>
+            <p data-ox-meta>최고 기록 없음</p>
+        </div>
+        <div class="ox-stage-body" data-ox-body></div>
+        <input type="file" data-ox-file class="sr-only" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    </div>
     <div id="masterQuizModal" class="hidden fixed inset-0 z-[262] bg-black/75 backdrop-blur-sm flex items-center justify-center px-3 py-6 transition-all duration-300">
         <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-lg w-full border-t-4 border-t-cyan-400 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <div class="flex items-start justify-between gap-2 mb-3">
@@ -683,23 +717,48 @@
                     <!-- 아바타 카드 -->
                     <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
                         <div id="dashRankBg" class="dash-rank-bg" aria-hidden="true"></div>
+                        <img id="dashRankFx" class="dash-rank-fx" alt="" hidden>
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
                         <div id="dashCreditStamp" class="credit-default-stamp hidden" aria-hidden="true">신용불량</div>
                         <div class="dash-figure">
-                            <div id="dashAvatar" class="text-6xl sm:text-7xl relative z-10 drop-shadow-xl avatar-bounce">👦</div>
-                            <div id="dashLevelName" class="text-xs font-bold text-sb-blue z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
+                            <div class="dash-portrait-slot">
+                                <div id="dashRankBack" class="dash-rank-back" aria-hidden="true">
+                                    <span class="dash-mote m1"></span>
+                                    <span class="dash-mote m2"></span>
+                                    <span class="dash-mote m3"></span>
+                                    <span class="dash-mote m4"></span>
+                                    <span class="dash-ember e1"></span>
+                                    <span class="dash-ember e2"></span>
+                                    <span class="dash-ember e3"></span>
+                                    <span class="dash-ember e4"></span>
+                                </div>
+                                <img id="dashRankAura" class="dash-rank-aura" alt="" hidden>
+                                <img id="dashRankFrame" class="dash-rank-frame" alt="" hidden>
+                                <div id="dashRankFront" class="dash-rank-front" aria-hidden="true">
+                                    <span class="dash-shine"></span>
+                                    <span class="dash-gem g1"></span>
+                                    <span class="dash-gem g2"></span>
+                                    <span class="dash-gem g3"></span>
+                                    <span class="dash-crown"></span>
+                                </div>
+                                <div id="dashAvatar" class="text-6xl sm:text-7xl relative z-10 drop-shadow-xl avatar-bounce">👦</div>
+                            </div>
                         </div>
-                        <div id="baseFacePicker" class="hidden w-full mt-1 mb-2 z-10 char-dress-panel"></div>
-                        <h3 id="dashName" class="text-2xl font-display text-white mt-2 z-10 tracking-wider">이름</h3>
+                        <h3 id="dashName" class="dash-name text-2xl font-display text-white mt-1 z-10 tracking-wider">이름</h3>
+                        <div class="dash-rank-badge z-10">
+                            <div id="dashRankStars" class="dash-rank-stars" aria-hidden="true"></div>
+                            <div id="dashLevelName" class="text-xs font-bold text-sb-blue bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
+                        </div>
                         <button type="button" id="dashChangePinBtn" onclick="void window.changeMyPassword()" class="hidden mt-2 z-10 min-h-[44px] px-3 py-1.5 rounded-xl text-[11px] font-black text-amber-100 bg-slate-900/80 border border-amber-400/50 hover:bg-amber-900/40">
                             <i class="fa-solid fa-key mr-1 text-amber-300"></i>비밀번호 변경 · 10<span data-currency-unit>B</span>
                         </button>
-                        <div class="flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
-                            <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">XP</div><div id="dashXp" class="font-display text-lg text-white">0</div></div>
+                        <div class="dash-stats flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
+                            <div id="dashXpCell" class="dash-stat-cell text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">XP</div><div id="dashXp" class="font-display text-lg text-white">0</div></div>
                             <div class="w-px bg-slate-700"></div>
-                            <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">자산 (<span data-currency-unit>B</span>)</div><div id="dashBong" class="font-display text-lg text-sb-gold transition-colors">0.0</div></div>
+                            <div id="dashBongCell" class="dash-stat-cell text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">자산 (<span data-currency-unit>B</span>)</div><div id="dashBong" class="font-display text-lg text-sb-gold transition-colors">0.0</div></div>
                         </div>
+                        <div id="baseFacePicker" class="hidden w-full mt-3 mb-1 z-10 char-dress-panel"></div>
                     </div>
                     
                     <!-- 내 무기고 (종류별 컬렉션) -->
@@ -1651,9 +1710,9 @@
             <div class="max-w-7xl mx-auto space-y-4">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-yellow-300"><i class="fa-solid fa-trophy"></i> 도전</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드 · OX퀴즈에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
                 </div>
-                <div id="challengeSubtabs" class="app-sub-dock cols-3">
+                <div id="challengeSubtabs" class="app-sub-dock cols-4">
                     <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="app-sub-item is-active">
                         <span class="app-sub-icon"><img src="nav/nav-goldenbell.webp" alt="" width="192" height="192"></span>
                         <span>골든벨</span>
@@ -1666,6 +1725,14 @@
                         <span class="app-sub-icon"><img src="nav/nav-raid.webp" alt="" width="192" height="192"></span>
                         <span>퀴즈레이드</span>
                     </button>
+                    <button type="button" id="challengeSub-ox" onclick="window.switchChallengeSub('ox')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-oxquiz.jpg" alt="" width="192" height="192"></span>
+                        <span>OX퀴즈</span>
+                    </button>
+                </div>
+
+                <div id="challengePane-ox" class="hidden space-y-3">
+                    <button type="button" onclick="window.openOxQuiz()" class="ox-go">OX 퀴즈 열기</button>
                 </div>
 
                 <div id="challengePane-goldenbell" class="space-y-3">
@@ -2418,6 +2485,11 @@
                                 <span class="boardgame-game-name">체스</span>
                                 <span class="boardgame-game-meta">2명 · 8×8 · 정식 규칙 · AI 고수/초인</span>
                             </button>
+                            <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('alkkagi')">
+                                <span class="boardgame-game-emoji" aria-hidden="true">🥌</span>
+                                <span class="boardgame-game-name">알까기</span>
+                                <span class="boardgame-game-meta">2명 · 알 5개씩 · 당겨서 튕기기 · 한 화면 둘이서 · AI 쉬움/보통/고수</span>
+                            </button>
                         </div>
                     </div>
 
@@ -2432,6 +2504,13 @@
                             <div class="boardgame-ai-row" role="group" aria-label="AI 색">
                                 <button type="button" id="boardgameAiColorWhite" class="boardgame-mini-btn is-on hidden" onclick="window.setBoardGameAiColor('w')">내가 백</button>
                                 <button type="button" id="boardgameAiColorBlack" class="boardgame-mini-btn hidden" onclick="window.setBoardGameAiColor('b')">내가 흑</button>
+                            </div>
+                            <button type="button" id="boardgameLocalBtn" class="boardgame-primary-btn hidden" onclick="void window.startAlkkagiLocal()">한 화면 둘이서</button>
+                            <div id="boardgameAlkAiRow" class="boardgame-ai-row boardgame-alk-ai hidden" role="group" aria-labelledby="boardgameAlkAiLabel">
+                                <span id="boardgameAlkAiLabel" class="boardgame-ai-label">AI와 하기</span>
+                                <button type="button" class="boardgame-mini-btn" aria-label="AI 쉬움" onclick="void window.startAlkkagiAi('easy')">쉬움</button>
+                                <button type="button" class="boardgame-mini-btn" aria-label="AI 보통" onclick="void window.startAlkkagiAi('normal')">보통</button>
+                                <button type="button" class="boardgame-mini-btn" aria-label="AI 고수" onclick="void window.startAlkkagiAi('hard')">고수</button>
                             </div>
                             <div class="boardgame-ai-row" role="group" aria-label="AI 난이도">
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.startBoardGameAi('gosu')">AI 고수</button>
@@ -2519,6 +2598,61 @@
                                 <button type="button" class="boardgame-primary-btn" onclick="void window.continueBoardGameRoom()">다시 두기</button>
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.endBoardGameRoom()">방 종료</button>
                             </div>
+                        </div>
+                    </div>
+                    <div id="boardgameAlkkagiPlayView" class="boardgame-view boardgame-play alk-view hidden">
+                        <div class="alk-paper">
+                            <header class="alk-head">
+                                <button type="button" class="alk-back alk-hanji" onclick="void window.leaveBoardGameTable()"><span>나가기</span></button>
+                                <h2 class="alk-title">알까기</h2>
+                                <div class="alk-head-side">
+                                    <span id="alkkagiHudTimer" class="alk-timer" hidden></span>
+                                    <label id="alkkagiTimerToggleWrap" class="alk-timer-toggle hidden">
+                                        <input type="checkbox" id="alkkagiTimerToggle" onchange="void window.toggleBoardGameTimer(this.checked)">
+                                        <span>30초씩</span>
+                                    </label>
+                                </div>
+                            </header>
+                            <div class="alk-cards">
+                                <div id="alkkagiCardBlack" class="alk-card alk-hanji">
+                                    <i class="alk-rib" aria-hidden="true"></i>
+                                    <div class="alk-who"><i class="alk-mini b" aria-hidden="true"></i><span id="alkkagiNameBlack" class="alk-name">흑</span></div>
+                                    <div class="alk-left"><span id="alkkagiLeftBlack" class="alk-n">5개</span><span id="alkkagiDotsBlack" class="alk-dots" aria-hidden="true"></span></div>
+                                </div>
+                                <div id="alkkagiCardWhite" class="alk-card alk-hanji">
+                                    <i class="alk-rib" aria-hidden="true"></i>
+                                    <div class="alk-who"><i class="alk-mini w" aria-hidden="true"></i><span id="alkkagiNameWhite" class="alk-name">백</span></div>
+                                    <div class="alk-left"><span id="alkkagiLeftWhite" class="alk-n">5개</span><span id="alkkagiDotsWhite" class="alk-dots" aria-hidden="true"></span></div>
+                                </div>
+                            </div>
+                            <div class="alk-turn-row">
+                                <div id="alkkagiTurn" class="alk-turn" aria-live="polite"><i id="alkkagiTurnDot" class="alk-mini b" aria-hidden="true"></i><span id="alkkagiTurnText">차례를 기다려요</span></div>
+                            </div>
+                            <div id="alkkagiStage" class="alk-stage">
+                                <div class="alk-board-wrap">
+                                    <canvas id="alkkagiCanvas" class="alk-canvas" role="img" aria-label="알까기 판" data-fit-el="alkkagiStage" data-max-board="520"></canvas>
+                                </div>
+                                <div id="alkkagiResult" class="alk-result hidden" role="status">
+                                    <div class="alk-result-card alk-hanji">
+                                        <span class="alk-spark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                                        <i id="alkkagiResultStone" class="alk-result-stone b" aria-hidden="true"></i>
+                                        <p id="alkkagiResultTitle" class="alk-result-title">검은 알 승리</p>
+                                        <p id="alkkagiResultLine" class="alk-result-line"></p>
+                                        <p id="alkkagiResultLeft" class="alk-result-left"></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <p id="alkkagiTip" class="alk-tip">알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.</p>
+                            <div id="alkkagiPlayActions" class="alk-btns">
+                                <button type="button" class="alk-btn sub alk-hanji" onclick="void window.forfeitAlkkagi()"><span>기권할게요</span></button>
+                                <button type="button" class="alk-btn sub alk-hanji" onclick="void window.showAlkkagiRules()"><span>규칙 볼래요</span></button>
+                            </div>
+                            <div id="alkkagiResultActions" class="alk-btns hidden">
+                                <button type="button" class="alk-btn main" onclick="void window.continueAlkkagi()"><span>한 판 더 할래요</span></button>
+                                <button type="button" class="alk-btn sub alk-hanji" onclick="void window.closeAlkkagi()"><span id="alkkagiCloseLabel">방 닫을게요</span></button>
+                            </div>
+                            <button type="button" class="alk-cr-link" onclick="void window.showAlkkagiFontCredit()">글꼴 정보</button>
+                            <template id="alkkagiFontCredit"><p class="alk-cr">글꼴: 쨈 제목 — © 2026 쨈 폰트 팀<br>글꼴: 쨈 본문(JJAEM Body) —<br>Resource Han Rounded(Cyano Hao, SIL OFL 1.1) 바탕</p></template>
                         </div>
                     </div>
                 </div>
@@ -3006,7 +3140,7 @@
                     </div>
                     <button type="button" onclick="window.openTeacherAuthModal()" class="bg-amber-500 hover:bg-amber-400 text-stone-900 font-black py-2 px-3 rounded-xl text-[10px]">선생님 계정 인증</button>
                 </div>
-                <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">월드 이름, 레이드 비밀번호, 주말 레이드 보상을 저장하려면 인증된 선생님 계정이 필요합니다.</p>
+                <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">월드 이름, 레이드 비밀번호, 주말 레이드 보상은 마스터 비밀번호로 들어와 바로 저장합니다. 추가 구글 인증은 하지 않습니다.</p>
             </div>
             <div class="js-season2-start-card mb-3 rounded-2xl border-2 border-yellow-300 bg-amber-500 p-4 space-y-2 shadow-[0_6px_0_#92400e]">
                 <p class="text-base font-black text-stone-900"><i class="fa-solid fa-flag-checkered"></i> 시즌 2 시작</p>

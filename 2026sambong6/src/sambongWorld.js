@@ -183,6 +183,8 @@ import {
     sanitizeGomokuAiLevel,
 } from './lib/gomokuAi.js';
 import {
+    alkkagiRecordResult,
+    alkkagiResultKey,
     applyBoardGameRecord,
     boardGameRecordText,
     chessRecordResult,
@@ -227,6 +229,7 @@ import {
     applyBoardRoomGame,
     approveJoinBoardRoom,
     boardRoomErrorText,
+    boardRoomInstanceKey,
     boardRoomToDoc,
     boardRoomStatusLabel,
     cancelJoinBoardRoom,
@@ -234,13 +237,17 @@ import {
     collectBoardRoomVacateActions,
     continueBoardRoom,
     createBoardRoom,
+    decideBoardRoomCreate,
+    deleteWaitingBoardRoom,
     expireIdleBoardRoom,
     getBoardGameDef,
+    hostBoardRoomId,
     isRoomHost,
     isRoomIdleExpired,
     isRoomMember,
     isTurnTimedOut,
-    listVisibleBoardRooms,
+    listLobbyBoardRooms,
+    pickMyActiveBoardRoom,
     rejectJoinBoardRoom,
     remainingSeats,
     requestJoinBoardRoom,
@@ -249,6 +256,24 @@ import {
     setBoardRoomTimer,
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
+import {
+    ALKKAGI_BLACK,
+    ALKKAGI_STONES_PER_SIDE,
+    ALKKAGI_WHITE,
+    alkkagiAliveCount,
+    alkkagiEndText,
+    alkkagiSubject,
+    alkkagiErrorText,
+    alkkagiSeatColor,
+    applyAlkkagiForfeit,
+    applyAlkkagiShotTurn,
+    applyAlkkagiTimeout,
+    emptyAlkkagiGame,
+    isAlkkagiOver,
+} from './lib/alkkagiGame.js';
+import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
+import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
+import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
     DAILY_ALL_CLEAR_BONG,
     DAILY_ALL_CLEAR_XP,
@@ -398,7 +423,7 @@ import {
     shouldUseLocalFirebaseEmulator,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
-import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping } from './lib/preLoginGuard.js';
+import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll, runPraiseMidnightRollOnce } from './lib/preLoginGuard.js';
 import {
     clearPersistedLoginIdentity,
     readPersistedLogin,
@@ -521,8 +546,14 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpGivenOnDevice, classXpIssueMessage, classXpNextFireMs, classXpNoticeFirstToday, classXpStudentLabel, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpSkewFromDateHeader, classXpStoredSkew, runClassXpGrant } from './lib/classXpGrant.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
+import { applyBongTone, bongToneClass } from './lib/bongTone.js';
+import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
+import { levelXpForDisplay } from './lib/levelDisplay.js';
+import { chooseOxRecord } from './lib/oxQuiz.js';
+import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
     buildThermometerParentPayload,
@@ -536,6 +567,8 @@ import {
     thermometerVotesShouldReplaceValues,
 } from './lib/learningThermometerVotes.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
+import { planEstateMerge } from './lib/estateWrite.js';
+import { pinMasterCanEditShopPrices, pinMasterSkipsTeacherGoogle } from './lib/masterAdminAccess.js';
 import {
     listAllCharacterBases,
     listCharacterBases,
@@ -670,6 +703,14 @@ import {
     rollPraiseDay,
     sanitizePraiseBoard,
 } from './lib/peerPraise.js';
+import {
+    DISLIKE_XP_COST,
+    dislikeCountForToday,
+    dislikeFailMessage,
+    latestDislikeReason,
+    planPeerDislike,
+    sanitizeDislikeBoard,
+} from './lib/peerDislike.js';
 import {
     buildScreenNotice,
     closeScreenNotice,
@@ -2503,7 +2544,7 @@ function redrawPlazaGrantsUi() {
         }
 
         /** 학생/스태프 초상 + 통짜 캐릭터·무기·방패·신발. 방패는 오른쪽, 신발은 아래. */
-        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, showShield, showShoes, showRankBg = false, portraitClass = '' } = {}) {
+        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, showShield, showShoes, showRankBg = false, rankFrame = false, portraitClass = '' } = {}) {
             const row = data || {};
             const equipped = row.equippedSkins || {};
             const drawShield = showShield !== undefined ? !!showShield : !!showWeapon;
@@ -2538,6 +2579,18 @@ function redrawPlazaGrantsUi() {
                     rankStackClass = ` char-avatar-has-rank${ring ? ` char-rank-${ring}` : ''}`;
                 }
             }
+            // 광장 카드: 대시보드와 같은 등급 그림 테두리·오라를 초상 뒤에 깝니다. 캐릭터는 테두리 앞입니다.
+            let rankFrameHtml = '';
+            if (rankFrame && showRankBg && !isStaff) {
+                const ring = (getLevelInfo(row.xp || 0).info || {}).ring || '';
+                const frameSrc = dashRankFrameSrc(ring);
+                if (frameSrc) {
+                    const auraSrc = dashRankAuraSrc(ring);
+                    rankFrameHtml = `${auraSrc ? `<img class="plaza-rank-aura" src="${auraSrc}" alt="" aria-hidden="true" decoding="async" loading="lazy">` : ''}<img class="plaza-rank-frame" src="${frameSrc}" alt="" aria-hidden="true" decoding="async" loading="lazy">`;
+                    rankStackClass += ` plaza-rank-framed plaza-rank-${ring}`;
+                }
+            }
+            if (rankFrameHtml) rankLayer = rankFrameHtml;
             let overlays = '';
             if (showWeapon && row.equippedWeapon) {
                 const wp = WEAPON_DATA.find((w) => w.id === row.equippedWeapon);
@@ -2551,7 +2604,7 @@ function redrawPlazaGrantsUi() {
                 const shoes = getGear(row.equippedShoes) || SHOE_DATA.find((g) => g.id === row.equippedShoes);
                 if (shoes) overlays += shoeMarkHtml(shoes, gearEnhanceOf(row, row.equippedShoes));
             }
-            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none">${rankLayer}${inner}${overlays}</div>`;
+            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none"><span class="char-portrait-frame">${rankLayer}${inner}</span>${overlays}</div>`;
         }
 
         function applyEquippedAura(data, fallbackBorder, fallbackGlow) {
@@ -4828,7 +4881,7 @@ function redrawPlazaGrantsUi() {
 
         function describeSettingsWriteFailure(error) {
             if (classifyAuthError(error) === 'permission_denied') {
-                return '저장이 거부되었습니다. 배포된 규칙은 익명 로그인으로 이 설정(artifacts/…/settings/global 의 마스터 항목, 상점 할인, 온도계 수동 저장)을 바꾸지 못합니다.';
+                return '저장이 거부되었습니다. 마스터 비밀번호로 저장을 시도했습니다. 배포된 규칙이 이 버전보다 오래되면 규칙 배포 뒤에 반영됩니다.';
             }
             return (error && error.message) ? error.message : String(error);
         }
@@ -4957,6 +5010,10 @@ function redrawPlazaGrantsUi() {
         }
 
         window.openTeacherAuthModal = function(options = {}) {
+            if (pinMasterSkipsTeacherGoogle({ isAdmin: !!(window.playerState && window.playerState.isAdmin) })) {
+                if (window.showToast) window.showToast('마스터 비밀번호로 이미 열려 있습니다. 추가 인증은 필요 없습니다.');
+                return;
+            }
             const modal = document.getElementById('teacherAuthModal');
             const form = document.getElementById('teacherAuthEmailForm');
             const hint = document.getElementById('teacherAuthModalHint');
@@ -5030,14 +5087,21 @@ function redrawPlazaGrantsUi() {
         };
 
         /** 짧은 토스트 (복사 성공 등) */
-        window.showToast = function(message, ms = 2200) {
+        /** opts.tone: 'warn'이면 실패 안내용 주황 계열로 띄워요. 기본은 예전 그대로 초록이에요. */
+        window.showToast = function(message, ms = 2200, opts = {}) {
             let el = document.getElementById('appToast');
             if (!el) {
                 el = document.createElement('div');
                 el.id = 'appToast';
-                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
+                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] w-max max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
                 document.body.appendChild(el);
             }
+            const warn = !!(opts && opts.tone === 'warn');
+            el.classList.toggle('bg-emerald-700', !warn);
+            el.classList.toggle('bg-orange-700', warn);
+            el.classList.toggle('ring-2', warn);
+            el.classList.toggle('ring-orange-200', warn);
+            el.setAttribute('role', warn ? 'alert' : 'status');
             el.textContent = message || '';
             el.classList.remove('opacity-0');
             el.classList.add('opacity-100');
@@ -7520,7 +7584,7 @@ ${subjectLine}
             const rowsHtml = report.alerts.map((a) => `
                 <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
                     <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
-                    <div class="text-amber-200/90 mt-0.5">보유 ${formatBongAmount(a.totalBong)} · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
+                    <div class="text-amber-200/90 mt-0.5">보유 <span class="${bongToneClass(a.totalBong)}">${formatBongAmount(a.totalBong)}</span> · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
                     <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
@@ -9893,10 +9957,66 @@ ${subjectLine}
             if (ecoSec) ecoSec.classList.remove('hidden');
         };
 
+        const oxQuizUi = bindOxQuiz(document.getElementById('oxQuizStage'), {
+            load: async () => {
+                if (!db) return {};
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'));
+                return snap.exists() ? (snap.data() || {}) : {};
+            },
+            saveQuestions: async (questions) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    questions,
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            saveSettings: async (settings) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    settings,
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            clearRecords: async () => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    records: {},
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            saveRecord: async (studentId, record) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank');
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const data = snap.exists() ? (snap.data() || {}) : {};
+                    const records = { ...(data.records || {}) };
+                    if (chooseOxRecord(records[studentId], record) !== record) return;
+                    records[studentId] = record;
+                    tx.set(ref, { records, updatedAt: Date.now() }, { merge: true });
+                });
+            },
+            isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
+            studentId: () => localStorage.getItem('sambong_student_id') || '',
+            isGuest: () => !!(window.playerState && window.playerState.isGuest),
+            alert: (message) => window.customAlert(message),
+            confirm: (message) => window.customConfirm(message),
+        });
+        window.openOxQuiz = function() {
+            if (oxQuizUi) void oxQuizUi.open();
+        };
+        window.closeOxQuiz = function() {
+            if (oxQuizUi) oxQuizUi.close();
+        };
+
         window.switchChallengeSub = function(sub) {
             // 냥코 원정은 삭제됨 — 옛 딥링크는 골든벨로 보냄
             challengeSub = (sub === 'catbattle' || !sub) ? 'goldenbell' : sub;
-            ['goldenbell', 'speedquiz', 'raid'].forEach(s => {
+            ['goldenbell', 'speedquiz', 'raid', 'ox'].forEach(s => {
                 const btn = document.getElementById('challengeSub-' + s);
                 if (btn) btn.classList.toggle('is-active', s === challengeSub);
                 const pane = document.getElementById('challengePane-' + s);
@@ -9905,6 +10025,8 @@ ${subjectLine}
                     else pane.classList.add('hidden');
                 }
             });
+            if (challengeSub === 'ox') window.openOxQuiz();
+            else window.closeOxQuiz();
             if (challengeSub === 'goldenbell') {
                 if (window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                     window.renderGoldenBellMasterLive();
@@ -10139,6 +10261,8 @@ ${subjectLine}
             
             const activeSec = document.getElementById(tabId + 'Section');
             if(activeSec) activeSec.classList.remove('hidden');
+            // 광장을 열 때 카드 이름표 글꼴을 불러와요. 로그인 화면에서는 받지 않고, 광장을 그린 뒤 한가할 때 받아요.
+            if (tabId === 'plaza') loadAlkkagiFontsOnce({ idle: true });
             
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
@@ -11714,6 +11838,7 @@ ${subjectLine}
         /** 마스터가 연 수업도구 창을 학생·TV에도 같이 띄우거나 내립니다. */
         window.closeClassToolFullscreen = function (opts = {}) {
             const fromShare = !!opts.fromShare;
+            closeAlkkagiDialogs();
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             // 쪽지를 보고 있을 때 위쪽 닫기는 창이 아니라 쪽지만 닫습니다.
             if (!fromShare && classtoolSub === 'classboard' && isAdmin) {
@@ -11731,6 +11856,8 @@ ${subjectLine}
                 }
             }
             if (_classToolShareFollower && !fromShare) return;
+            // 알까기 방 목록에서 창을 닫으면, 아직 아무도 받지 않은 내 대기 방도 닫아요.
+            if (classtoolSub === 'boardgames' && isClassToolFullscreenOpen() && _boardGameView === 'lobby' && _boardGameType === 'alkkagi') void closeMyWaitingAlkkagiRooms();
             const share = currentClassToolShare();
             const shouldPublish = !fromShare
                 && !_classToolShareApplying
@@ -11893,6 +12020,35 @@ ${subjectLine}
         let _boardGameRooms = [];
         let _boardGameView = 'home';
         let _boardGameType = 'gomoku';
+        // 알까기 상태
+        let _alkBoard = null;
+        let _alkLocal = null; // { game, ai } — 한 화면 둘이서(ai 없음) 또는 AI와 하기(ai: { level, color, seed, job, thinking, pulling })
+        const _alkLeftRooms = new Set(); // 판 중에 나간 방(boardRoomInstanceKey): 자동으로 다시 들어가지 않아요
+        let _alkResumeTried = false;
+        const ALKKAGI_GUIDE_OLD_KEY = 'sambong_alk_guide_seen'; // 예전 '기기당 한 번' 기억(이제 안 써요, 지우기만 해요)
+        const ALKKAGI_GUIDE_TEXT = '세게 당길수록 멀리 가지만, 알이 떨리면 조금 빗나갈 수 있어요.';
+        // 판 아래 두 줄 자리에 맞춘 짧은 안내(판 크기가 바뀌지 않게 두 줄 안에 들어가요)
+        const ALKKAGI_GUIDE_SHORT = '세게 당기면 알이 떨려서 조금 빗나가요.';
+        let _alkGuideDone = false; // 이번 판에서 첫 발을 쐈는지(판마다 새로 시작해요)
+        let _alkSeen = { roomId: '', moveCount: -1 };
+        let _alkWriting = false;
+        let _alkBusy = false;
+        // 쨈 글꼴 CSS(제목 약 443KB 포함)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요.
+        // 앱을 켤 때 바로 받지 않게 해서 첫 화면이 가벼워요. (함수 선언이라 위쪽 switchTab에서 불러도 안전해요)
+        // { idle: true } 이면 첫 화면을 다 그린 뒤 한가할 때(최대 2초 안에) 불러와요. 알까기 판은 바로 불러요.
+        function loadAlkkagiFontsOnce(opts) {
+            if (loadAlkkagiFontsOnce.started) return;
+            if (opts && opts.idle) {
+                if (loadAlkkagiFontsOnce.queued) return;
+                loadAlkkagiFontsOnce.queued = true;
+                const run = () => loadAlkkagiFontsOnce();
+                if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2000 });
+                else setTimeout(run, 300);
+                return;
+            }
+            loadAlkkagiFontsOnce.started = true;
+            import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+        }
         let _boardGameActiveId = '';
         let _boardGameWriteChain = Promise.resolve();
         let _boardGameIdleTimer = 0;
@@ -11915,6 +12071,8 @@ ${subjectLine}
         let _chessPrevCells = null;
         let _chessSeenMoveKey = '';
         let _boardGameVacating = false;
+        let _boardGameCreating = false; // 「방 만들기」를 처리하는 동안 또 눌러도 방이 하나만 생기게 막아요
+        let _boardGameDeleting = false;
         let _gomokuLastVp = { w: 0, h: 0 };
         const _gomokuView = { scale: 1, min: 1, max: 4.8, x: 0, y: 0 };
 
@@ -11952,12 +12110,19 @@ ${subjectLine}
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
-            const mineActive = rows.find((r) => isRoomMember(r, me) && (r.status === 'waiting' || r.status === 'playing' || r.status === 'finished'));
+            // 두는 중 > 대기 > 결과 순서로 내 방을 골라요. 끝난 옛 방 때문에 방금 만든 방이 닫히지 않게 해요.
+            const mineActive = pickMyActiveBoardRoom(rows, me);
             if (mineActive) void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
-            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession) {
-                enterBoardGameTable(minePlaying.id);
+            // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.
+            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')));
+            if (mineEnter && !_alkLeftRooms.has(boardRoomInstanceKey(mineEnter)) && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
+                enterBoardGameTable(mineEnter.id);
+            }
+            if (!_alkResumeTried) {
+                _alkResumeTried = true;
+                tryResumeAlkkagi(rows);
             }
             if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
         }
@@ -11976,15 +12141,22 @@ ${subjectLine}
         }
 
         function activeBoardPlayKind() {
+            if (_alkLocal) return 'alkkagi';
             if (_chessAiSession) return 'chess';
             if (_gomokuAiSession) return 'gomoku';
             const room = currentBoardGameRoom();
             if (room && room.gameType === 'chess') return 'chess';
+            if (room && room.gameType === 'alkkagi') return 'alkkagi';
+            if (_boardGameType === 'alkkagi') return 'alkkagi';
             return _boardGameType === 'chess' ? 'chess' : 'gomoku';
         }
 
         function showBoardGameView(view) {
-            _boardGameView = view === 'chess-play' ? 'play' : view;
+            const nextView = view === 'chess-play' ? 'play' : view;
+            // 다른 화면으로 가면 알까기 창을 닫아요. 방 목록을 다시 그릴 때는 방 목록 창(방 지우기 확인)을 그대로 둬요.
+            const keepDialogs = nextView === 'lobby' ? 'lobby' : (nextView === 'play' && activeBoardPlayKind() === 'alkkagi' ? 'play' : '');
+            closeAlkkagiDialogs(keepDialogs);
+            _boardGameView = nextView;
             const home = document.getElementById('boardgameHomeView');
             const lobby = document.getElementById('boardgameLobbyView');
             const play = document.getElementById('boardgamePlayView');
@@ -11994,6 +12166,8 @@ ${subjectLine}
             if (lobby) lobby.classList.toggle('hidden', _boardGameView !== 'lobby');
             if (play) play.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'gomoku'));
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
+            const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
+            if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
         }
 
         function gomokuAiRoomView() {
@@ -12156,10 +12330,14 @@ ${subjectLine}
             if (!room || room.status !== 'finished') return;
             const me = boardGameSelfId();
             if (!me || !window.playerState || window.playerState.isGuest) return;
-            const type = room.gameType === 'chess' ? 'chess' : 'gomoku';
+            if (room.id === 'alkkagi-local') return;
+            const type = room.gameType === 'chess' ? 'chess' : (room.gameType === 'alkkagi' ? 'alkkagi' : 'gomoku');
             let result = '';
             let key = '';
-            if (type === 'chess') {
+            if (type === 'alkkagi') {
+                result = alkkagiRecordResult(room.game, alkkagiSeatColor(roomMemberSeat(room, me)));
+                key = alkkagiResultKey(room, room.game);
+            } else if (type === 'chess') {
                 const myColor = _chessAiSession
                     ? _chessAiSession.human
                     : chessSeatColor(roomMemberSeat(room, me));
@@ -12177,7 +12355,11 @@ ${subjectLine}
             window.playerState.boardGameRecords = after;
             void saveDataToCloud();
             const recEl = document.getElementById('boardgameMyRecord');
-            if (recEl) recEl.textContent = `내 ${type === 'chess' ? '체스' : '오목'} 전적 ${boardGameRecordText(after, type)}`;
+            if (recEl) recEl.textContent = `내 ${boardGameTypeLabel(type)} 전적 ${boardGameRecordText(after, type)}`;
+            if (type === 'alkkagi' && _boardGameView === 'play') {
+                const cur = currentAlkkagiPlayRoom();
+                if (cur) renderAlkkagiChrome(cur);
+            }
         }
 
         async function vacateOtherBoardRooms(exceptRoomId) {
@@ -12191,10 +12373,11 @@ ${subjectLine}
             _boardGameVacating = true;
             try {
                 for (const id of closeHostIds) {
+                    // 정리는 조용히 해요. 실패해도 알림 창을 띄우지 않아요(알림을 기다리는 동안 정리가 멈추던 문제).
                     const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => closeBoardRoom(cur, {
                         actorId: me,
                         now: Date.now(),
-                    })));
+                    }), { silent: true }));
                     if (closed) {
                         try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 목록 필터로도 빠집니다 */ }
                     }
@@ -12203,14 +12386,24 @@ ${subjectLine}
                     await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => cancelJoinBoardRoom(cur, {
                         studentId: me,
                         now: Date.now(),
-                    })));
+                    }), { silent: true }));
                 }
             } finally {
                 _boardGameVacating = false;
             }
         }
 
+        function boardGameTypeLabel(type) {
+            if (type === 'chess') return '체스';
+            if (type === 'alkkagi') return '알까기';
+            return '오목';
+        }
+
         function renderBoardGamePanel() {
+            if (_alkLocal) {
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
             if (_chessAiSession) {
                 renderChessPlay(chessAiRoomView());
                 return;
@@ -12221,13 +12414,17 @@ ${subjectLine}
             }
             if (_boardGameView === 'play') {
                 const room = currentBoardGameRoom();
-                if (!room || room.status === 'closed') {
+                // 알까기 방이 새 대기 방으로 바뀌었거나 내가 더는 그 방 사람이 아니면 방 목록으로 돌아가요.
+                const alkGone = room && room.gameType === 'alkkagi'
+                    && (room.status === 'waiting' || !isRoomMember(room, boardGameSelfId()));
+                if (!room || room.status === 'closed' || alkGone) {
                     _boardGameActiveId = '';
                     showBoardGameView('lobby');
                     renderBoardGameLobby();
                     return;
                 }
                 if (room.gameType === 'chess') renderChessPlay(room);
+                else if (room.gameType === 'alkkagi') renderAlkkagiPlay(room);
                 else renderGomokuPlay(room);
                 return;
             }
@@ -12241,13 +12438,16 @@ ${subjectLine}
 
         function syncBoardGameLobbyChrome() {
             const chess = _boardGameType === 'chess';
+            const alk = _boardGameType === 'alkkagi';
             const kicker = document.querySelector('#boardgameLobbyView .boardgame-kicker');
             const title = document.querySelector('#boardgameLobbyView .boardgame-title');
             const lead = document.getElementById('boardgameLobbyLead');
-            if (kicker) kicker.textContent = chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY';
-            if (title) title.textContent = chess ? '체스 방' : '오목 방';
+            if (kicker) kicker.textContent = alk ? 'ALKKAGI LOBBY' : (chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY');
+            if (title) title.textContent = alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
             if (lead) {
-                lead.textContent = chess
+                lead.textContent = alk
+                    ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 하다가 나가면 져요.'
+                    : chess
                     ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.'
                     : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.';
             }
@@ -12261,23 +12461,29 @@ ${subjectLine}
             if (bBtn) bBtn.classList.toggle('is-on', _chessAiHumanColor === CHESS_BLACK);
             const lobby = document.getElementById('boardgameLobbyView');
             if (lobby) lobby.classList.toggle('is-chess-theme', chess);
+            const localBtn = document.getElementById('boardgameLocalBtn');
+            if (localBtn) localBtn.classList.toggle('hidden', !alk);
+            const alkAiRow = document.getElementById('boardgameAlkAiRow');
+            if (alkAiRow) alkAiRow.classList.toggle('hidden', !alk);
+            document.querySelectorAll('#boardgameLobbyView .boardgame-ai-row[aria-label="AI 난이도"]').forEach((row) => {
+                row.classList.toggle('hidden', alk);
+            });
         }
 
         function renderBoardGameLobby() {
             syncBoardGameLobbyChrome();
             const recEl = document.getElementById('boardgameMyRecord');
-            const label = _boardGameType === 'chess' ? '체스' : '오목';
+            const label = boardGameTypeLabel(_boardGameType);
             if (recEl) recEl.textContent = `내 ${label} 전적 ${myBoardGameRecordText(_boardGameType)}`;
             const box = document.getElementById('boardgameRoomList');
             if (!box) return;
             const me = boardGameSelfId();
             const now = Date.now();
-            const rooms = listVisibleBoardRooms(
-                _boardGameRooms.filter((r) => r.gameType === _boardGameType),
-                now
-            );
+            const rooms = listLobbyBoardRooms(_boardGameRooms, { gameType: _boardGameType, now });
             if (!rooms.length) {
-                box.innerHTML = '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI 고수」「AI 초인」으로 시작하세요.</p>';
+                box.innerHTML = _boardGameType === 'alkkagi'
+                    ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>'
+                    : '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI 고수」「AI 초인」으로 시작하세요.</p>';
                 return;
             }
             box.innerHTML = rooms.map((room) => {
@@ -12291,6 +12497,9 @@ ${subjectLine}
                 let action = '';
                 if (mine && (room.status === 'playing' || room.status === 'finished')) {
                     action = `<button type="button" class="boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
+                } else if (host && room.status === 'waiting' && room.gameType === 'alkkagi') {
+                    // 내가 만든 알까기 대기 방은 여기서 바로 지울 수 있어요.
+                    action = `<div class="boardgame-room-actions"><span class="boardgame-room-meta">방장</span><button type="button" class="boardgame-mini-btn boardgame-room-delete" data-delete-room="${escapeBoardGameText(room.id)}">방 지우기</button></div>`;
                 } else if (host && room.status === 'waiting') {
                     action = `<span class="boardgame-room-meta">방장</span>`;
                 } else if (pending) {
@@ -12310,10 +12519,10 @@ ${subjectLine}
                             <button type="button" class="boardgame-mini-btn" data-reject="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">거절</button>
                         </div>`).join('')
                     : '';
-                return `<article class="boardgame-room-card">
+                return `<article class="boardgame-room-card" data-room-id="${escapeBoardGameText(room.id)}">
                     <div>
                         <p class="boardgame-room-title">${escapeBoardGameText(room.hostName)}의 방</p>
-                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left} · 방장 ${escapeBoardGameText(boardGameRecordText(lookupBoardGameRecords(room.hostId)))}</p>
+                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left} · 방장 ${escapeBoardGameText(boardGameRecordText(lookupBoardGameRecords(room.hostId), room.gameType))}</p>
                         <span class="boardgame-room-status${room.status === 'playing' ? ' is-playing' : ''}">${status}</span>
                     </div>
                     <div>${action}</div>
@@ -12332,6 +12541,23 @@ ${subjectLine}
             box.querySelectorAll('[data-reject]').forEach((btn) => {
                 btn.addEventListener('click', () => { void window.rejectBoardGameJoin(btn.getAttribute('data-reject'), btn.getAttribute('data-sid')); });
             });
+            box.querySelectorAll('[data-delete-room]').forEach((btn) => {
+                btn.disabled = _boardGameDeleting;
+                btn.addEventListener('click', () => { void window.deleteMyBoardGameRoom(btn.getAttribute('data-delete-room')); });
+            });
+        }
+
+        /** 방 목록에서 내 방 카드를 잠깐 반짝여 어디 있는지 알려 줘요. */
+        function flashBoardGameRoomCard(roomId) {
+            const box = document.getElementById('boardgameRoomList');
+            if (!box) return;
+            const card = Array.from(box.querySelectorAll('[data-room-id]')).find((el) => el.getAttribute('data-room-id') === roomId);
+            if (!card) return;
+            card.classList.remove('is-flash');
+            void card.offsetWidth;
+            card.classList.add('is-flash');
+            try { card.scrollIntoView({ block: 'nearest' }); } catch (_) { /* 무시 */ }
+            setTimeout(() => card.classList.remove('is-flash'), 1800);
         }
 
         function memberNameBySeat(room, seat) {
@@ -12743,7 +12969,10 @@ ${subjectLine}
                 const room = currentBoardGameRoom();
                 if (!room || _boardGameView !== 'play') return;
                 if (room.timerEnabled && room.status === 'playing') {
-                    const timerEl = document.getElementById(room.gameType === 'chess' ? 'chessHudTimer' : 'gomokuHudTimer');
+                    const timerEl = room.gameType === 'alkkagi'
+                        ? null
+                        : document.getElementById(room.gameType === 'chess' ? 'chessHudTimer' : 'gomokuHudTimer');
+                    if (room.gameType === 'alkkagi') updateAlkkagiTimer(room);
                     if (timerEl) {
                         const sec = Math.ceil(turnRemainingMs(room, Date.now()) / 1000);
                         timerEl.hidden = false;
@@ -12765,11 +12994,12 @@ ${subjectLine}
             return _boardGameWriteChain;
         }
 
-        async function mutateBoardRoom(roomId, mutator) {
+        async function mutateBoardRoom(roomId, mutator, opts = {}) {
             if (!db) return null;
+            const silent = !!(opts && opts.silent);
             const authOk = await ensureAnonAuthReady();
             if (!authOk) {
-                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                if (!silent) await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return null;
             }
             const ref = boardGameRoomRef(roomId);
@@ -12785,12 +13015,19 @@ ${subjectLine}
                 });
             } catch (e) {
                 const code = e && e.message;
+                if (silent) {
+                    console.warn('mutateBoardRoom', roomId, code);
+                    return null;
+                }
                 const roomLabel = boardRoomErrorText(code);
                 const moveLabel = gomokuErrorText(code);
                 const chessLabel = chessErrorText(code);
+                const room = _boardGameRooms.find((r) => r.id === roomId);
                 const shown = roomLabel !== '처리할 수 없습니다.'
                     ? roomLabel
-                    : (moveLabel !== '둘 수 없습니다.' ? moveLabel : chessLabel);
+                    : (room && room.gameType === 'alkkagi'
+                        ? alkkagiErrorText(code)
+                        : (moveLabel !== '둘 수 없습니다.' ? moveLabel : chessLabel));
                 await window.customAlert(shown);
                 return null;
             }
@@ -13134,6 +13371,7 @@ ${subjectLine}
         function enterBoardGameTable(roomId) {
             clearGomokuAiSession();
             clearChessAiSession();
+            clearAlkkagiLocal();
             _boardGameActiveId = String(roomId || '');
             _gomokuPending = null;
             _gomokuNeedFit = true;
@@ -13142,8 +13380,10 @@ ${subjectLine}
             _chessPromo = null;
             const room = currentBoardGameRoom();
             if (room && room.gameType === 'chess') _boardGameType = 'chess';
+            if (room && room.gameType === 'alkkagi') _boardGameType = 'alkkagi';
             showBoardGameView('play');
             if (room && room.gameType === 'chess') renderChessPlay(room);
+            else if (room && room.gameType === 'alkkagi') renderAlkkagiPlay(room);
             else if (room) renderGomokuPlay(room);
         }
 
@@ -13159,9 +13399,28 @@ ${subjectLine}
             renderBoardGameLobby();
         };
 
+        /** 방장이 알까기 방 목록을 떠나면, 아무도 받지 않은 내 대기 방을 닫아요(목록에 빈 방이 남지 않게). */
+        async function closeMyWaitingAlkkagiRooms() {
+            const me = boardGameSelfId();
+            if (!me || !db) return;
+            const mine = _boardGameRooms.filter((r) => r.gameType === 'alkkagi' && r.status === 'waiting' && isRoomHost(r, me));
+            for (const room of mine) {
+                const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => deleteWaitingBoardRoom(cur, {
+                    actorId: me,
+                    now: Date.now(),
+                }), { silent: true }));
+                if (closed) {
+                    try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 닫힌 방은 목록에서 빠져요 */ }
+                }
+            }
+        }
+
         window.backBoardGameHome = function () {
+            if (_boardGameView === 'lobby' && _boardGameType === 'alkkagi') void closeMyWaitingAlkkagiRooms();
             clearGomokuAiSession();
             clearChessAiSession();
+            clearAlkkagiLocal();
+            saveAlkkagiResume('');
             _boardGameActiveId = '';
             _gomokuPending = null;
             showBoardGameView('home');
@@ -13181,6 +13440,7 @@ ${subjectLine}
         };
 
         window.startBoardGameAi = function (level) {
+            if (_boardGameType === 'alkkagi') return window.startAlkkagiAi(level === 'choin' ? 'hard' : 'normal');
             if (_boardGameType === 'chess') {
                 if (window.playerState && window.playerState.isGuest) {
                     return window.customAlert('👀 게스트는 이용할 수 없어요.');
@@ -13295,30 +13555,122 @@ ${subjectLine}
             }));
         }
 
+        function setBoardGameCreateBusy(busy) {
+            const btn = document.getElementById('boardgameCreateBtn');
+            if (!btn) return;
+            btn.disabled = !!busy;
+            btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+            btn.textContent = busy ? '만드는 중…' : '방 만들기';
+        }
+
+        /** 알까기: 방장마다 정해진 id 하나에 트랜잭션으로 써서, 여러 번 눌러도·창이 여러 개여도 방이 하나만 생겨요. */
+        async function createHostBoardRoomOnce(def, me, roomId) {
+            const ref = boardGameRoomRef(roomId);
+            return runTransaction(db, async (tx) => {
+                const snap = await tx.get(ref);
+                const now = Date.now();
+                const existing = snap.exists() ? sanitizeBoardRoom({ id: snap.id, ...snap.data() }, now) : null;
+                const decision = decideBoardRoomCreate(existing, { hostId: me, now });
+                if (decision.action === 'create') {
+                    const made = createBoardRoom({ gameType: def.id, hostId: me, hostName: boardGameSelfName(), now, id: roomId });
+                    if (!made.ok) return { action: 'error', error: made.error };
+                    tx.set(ref, boardRoomToDoc(made.room));
+                } else if (decision.action === 'reuse') {
+                    // 이미 있는 내 방은 방금 쓴 것으로 표시해, 곧바로 10분 정리에 걸리지 않게 해요.
+                    tx.set(ref, boardRoomToDoc({ ...existing, lastActivityAt: now, updatedAt: now }));
+                }
+                return decision;
+            });
+        }
+
         window.createBoardGameRoom = async function (gameType) {
             if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
             const me = boardGameSelfId();
             if (!me) return window.customAlert('로그인한 학생만 방을 만들 수 있습니다.');
             const def = getBoardGameDef(gameType || _boardGameType);
             if (!def || !db) return;
-            await vacateOtherBoardRooms('');
-            const made = createBoardRoom({
-                gameType: def.id,
-                hostId: me,
-                hostName: boardGameSelfName(),
-                now: Date.now(),
-            });
-            if (!made.ok) return window.customAlert(boardRoomErrorText(made.error));
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            // 만드는 중에 다시 누르면(더블클릭·연타) 아무것도 하지 않아요.
+            if (_boardGameCreating) return;
+            _boardGameCreating = true;
+            setBoardGameCreateBusy(true);
+            let outcome = null;
             try {
-                await setDoc(boardGameRoomRef(made.room.id), boardRoomToDoc(made.room));
-                _boardGameActiveId = made.room.id;
-                showBoardGameView('lobby');
+                const fixedId = hostBoardRoomId(def.id, me);
+                await vacateOtherBoardRooms(fixedId);
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) {
+                    outcome = { action: 'alert', text: '인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.' };
+                } else if (fixedId) {
+                    const decision = await createHostBoardRoomOnce(def, me, fixedId);
+                    outcome = decision.action === 'error'
+                        ? { action: 'alert', text: boardRoomErrorText(decision.error) }
+                        : { ...decision, roomId: fixedId };
+                } else {
+                    const made = createBoardRoom({
+                        gameType: def.id,
+                        hostId: me,
+                        hostName: boardGameSelfName(),
+                        now: Date.now(),
+                    });
+                    if (!made.ok) {
+                        outcome = { action: 'alert', text: boardRoomErrorText(made.error) };
+                    } else {
+                        await setDoc(boardGameRoomRef(made.room.id), boardRoomToDoc(made.room));
+                        outcome = { action: 'create', roomId: made.room.id };
+                    }
+                }
             } catch (e) {
                 console.error('createBoardGameRoom', e);
-                await window.customAlert('방을 만들지 못했습니다.');
+                outcome = { action: 'alert', text: '방을 만들지 못했습니다.' };
+            } finally {
+                _boardGameCreating = false;
+                setBoardGameCreateBusy(false);
             }
+            if (!outcome) return;
+            if (outcome.action === 'alert') {
+                await window.customAlert(outcome.text);
+                return;
+            }
+            if (outcome.action === 'enter') {
+                enterBoardGameTable(outcome.roomId);
+                return;
+            }
+            _boardGameActiveId = outcome.roomId;
+            showBoardGameView('lobby');
+            if (outcome.action === 'reuse') {
+                renderBoardGameLobby();
+                flashBoardGameRoomCard(outcome.roomId);
+                await alkkagiDialog('이미 만든 방이 있어요.<br>새로 만들지 않고 그 방에서 친구를 기다려요.', [
+                    { label: '알겠어요', value: true, main: true },
+                ], '', { scope: 'lobby' });
+            }
+        };
+
+        window.deleteMyBoardGameRoom = async function (roomId) {
+            const id = String(roomId || '');
+            const me = boardGameSelfId();
+            const room = _boardGameRooms.find((r) => r.id === id);
+            if (!id || !me || !room || !isRoomHost(room, me) || _boardGameDeleting) return;
+            const ok = await alkkagiDialog('내 방을 지울까요?<br>친구가 보낸 참가 신청도 함께 사라져요.', [
+                { label: '그대로 둘래요', value: false, main: true, cancel: true },
+                { label: '지울게요', value: true, danger: true },
+            ], '', { scope: 'lobby' });
+            if (!ok) return;
+            _boardGameDeleting = true;
+            try {
+                const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => deleteWaitingBoardRoom(cur, {
+                    actorId: me,
+                    now: Date.now(),
+                })));
+                if (closed) {
+                    try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 닫힌 방은 목록에서 빠져요 */ }
+                    if (_boardGameActiveId === id) _boardGameActiveId = '';
+                    _boardGameRooms = _boardGameRooms.filter((r) => r.id !== id);
+                }
+            } finally {
+                _boardGameDeleting = false;
+            }
+            if (_boardGameView === 'lobby') renderBoardGameLobby();
         };
 
         window.requestJoinBoardGameRoom = async function (roomId) {
@@ -13406,7 +13758,9 @@ ${subjectLine}
                 if (!isTurnTimedOut(cur, Date.now())) return { ok: true, room: cur };
                 const timed = cur.gameType === 'chess'
                     ? applyChessTimeout(cur.game, { now: Date.now() })
-                    : applyGomokuTimeout(cur.game, { now: Date.now() });
+                    : (cur.gameType === 'alkkagi'
+                        ? applyAlkkagiTimeout(cur.game, { now: Date.now() })
+                        : applyGomokuTimeout(cur.game, { now: Date.now() }));
                 if (!timed.ok) return { ok: false, error: timed.error };
                 return { ok: true, room: applyBoardRoomGame(cur, { game: timed.game, now: Date.now(), finished: true }) };
             }));
@@ -13479,9 +13833,677 @@ ${subjectLine}
             renderBoardGameLobby();
         };
 
+        /* ---------- 알까기 ---------- */
+
+        function alkkagiLocalName(color) {
+            const ai = _alkLocal && _alkLocal.ai;
+            if (ai) return color === ai.color ? alkkagiAiLevelLabel(ai.level) : '나';
+            return color === ALKKAGI_WHITE ? '흰 알' : '검은 알';
+        }
+
+        function alkkagiHumanColor() {
+            const ai = _alkLocal && _alkLocal.ai;
+            if (!ai) return '';
+            return ai.color === ALKKAGI_WHITE ? ALKKAGI_BLACK : ALKKAGI_WHITE;
+        }
+
+        // ── 새로고침 뒤 하던 판으로 돌아가기(같은 탭 sessionStorage) ──
+        function readAlkkagiResume() {
+            try { return parseAlkkagiResume(sessionStorage.getItem(ALKKAGI_RESUME_KEY), Date.now()); } catch (_) { return null; }
+        }
+        // 화면이 처음 뜰 때 한 번만 읽어 둬요. 로그인·방 목록이 오면 그때 돌아가요.
+        const _alkResumeBoot = readAlkkagiResume();
+
+        function saveAlkkagiResume(value) {
+            try {
+                if (value) sessionStorage.setItem(ALKKAGI_RESUME_KEY, value);
+                else sessionStorage.removeItem(ALKKAGI_RESUME_KEY);
+            } catch (_) { /* 저장이 막혀 있으면 그냥 넘어가요 */ }
+        }
+
+        function rememberAlkkagiResume(room) {
+            if (_alkLocal) {
+                const ai = _alkLocal.ai ? { level: _alkLocal.ai.level, seed: _alkLocal.ai.seed } : null;
+                saveAlkkagiResume(buildAlkkagiResume({ game: _alkLocal.game, ai }, Date.now()));
+                return;
+            }
+            if (room && room.id && room.status === 'playing') saveAlkkagiResume(buildAlkkagiResume({ roomId: room.id }, Date.now()));
+            else saveAlkkagiResume('');
+        }
+
+        function tryResumeAlkkagi(rows) {
+            const saved = _alkResumeBoot;
+            if (!saved || (window.playerState && window.playerState.isGuest)) return;
+            if (_alkLocal || _gomokuAiSession || _chessAiSession) return;
+            const openTool = () => {
+                if (classtoolSub !== 'boardgames' || !isClassToolFullscreenOpen()) window.switchClassTool('boardgames');
+                return classtoolSub === 'boardgames';
+            };
+            if (saved.kind === 'room') {
+                const room = (rows || []).find((r) => r.id === saved.id);
+                const me = boardGameSelfId();
+                if (!room || room.gameType !== 'alkkagi' || room.status !== 'playing' || !isRoomMember(room, me) || _alkLeftRooms.has(boardRoomInstanceKey(room))) {
+                    saveAlkkagiResume('');
+                    return;
+                }
+                _boardGameType = 'alkkagi';
+                if (!openTool()) return;
+                enterBoardGameTable(room.id);
+                return;
+            }
+            if (saved.kind === 'local') {
+                _boardGameType = 'alkkagi';
+                _boardGameActiveId = '';
+                _alkLocal = saved.ai
+                    ? { game: saved.game, ai: newAlkkagiAiState(saved.ai.level, saved.ai.seed) }
+                    : { game: saved.game };
+                _alkSeen = { roomId: '', moveCount: -1 };
+                _alkBusy = false;
+                if (!openTool()) { clearAlkkagiLocal(); return; }
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+            }
+        }
+
+        // ── AI와 하기 ──
+        let _alkAiToken = 0;
+        function newAlkkagiAiState(level, seed) {
+            return {
+                level: sanitizeAlkkagiAiLevel(level),
+                color: ALKKAGI_WHITE, // 사람은 검은 알로 먼저 쏴요.
+                seed: Math.floor(Number(seed) || (Date.now() % 2147483647)) || 1,
+                job: null,
+                thinking: false,
+                pulling: false,
+            };
+        }
+
+        function stopAlkkagiAi() {
+            _alkAiToken += 1;
+            const ai = _alkLocal && _alkLocal.ai;
+            if (ai) {
+                if (ai.job) ai.job.cancel();
+                ai.job = null;
+                ai.thinking = false;
+                ai.pulling = false;
+            }
+            if (_alkBoard) _alkBoard.cancelAiShot();
+        }
+
+        function maybeRunAlkkagiAi() {
+            const s = _alkLocal;
+            const ai = s && s.ai;
+            if (!ai) return;
+            const g = s.game;
+            if (isAlkkagiOver(g) || g.turn !== ai.color || ai.job || ai.thinking || ai.pulling || _alkBusy || _boardGameView !== 'play' || !_alkBoard) return;
+            const token = ++_alkAiToken;
+            const started = Date.now();
+            ai.thinking = true;
+            // 화면이 멈추지 않게 조금씩 나눠서 생각해요.
+            const job = runAlkkagiAiChunked(g.stones, ai.color, { level: ai.level, seed: ai.seed + g.moveCount * 7919 });
+            ai.job = job;
+            const alive = () => token === _alkAiToken && _alkLocal === s;
+            job.promise.then((r) => {
+                if (!alive()) return;
+                // 너무 빨리 쏘면 사람이 따라가기 어려워서 조금은 생각하는 척해요.
+                const wait = Math.max(0, 450 - (Date.now() - started));
+                setTimeout(() => {
+                    if (!alive()) return;
+                    ai.job = null;
+                    ai.thinking = false;
+                    if (!r || !r.ok) {
+                        const done = applyAlkkagiForfeit(s.game, { color: ai.color, now: Date.now() });
+                        if (done.ok) s.game = done.game;
+                        renderAlkkagiPlay(alkkagiLocalRoomView());
+                        return;
+                    }
+                    ai.pulling = true;
+                    renderAlkkagiChrome(alkkagiLocalRoomView());
+                    const ok = _alkBoard && _alkBoard.playAiShot(r, {
+                        onRelease: (res) => {
+                            if (!alive()) return;
+                            ai.pulling = false;
+                            if (!res || !res.ok) {
+                                renderAlkkagiChrome(alkkagiLocalRoomView());
+                                return;
+                            }
+                            void submitAlkkagiShot(res);
+                        },
+                    });
+                    if (!ok) {
+                        ai.pulling = false;
+                        setTimeout(() => { if (alive()) maybeRunAlkkagiAi(); }, 300);
+                    }
+                }, wait);
+            }).catch((e) => {
+                console.warn('alkkagiAi', e);
+                if (!alive()) return;
+                ai.job = null;
+                ai.thinking = false;
+            });
+        }
+
+        function alkkagiGuideSeen() {
+            return _alkGuideDone;
+        }
+
+        function markAlkkagiGuideSeen() {
+            _alkGuideDone = true;
+        }
+
+        function alkkagiLocalRoomView() {
+            const s = _alkLocal;
+            if (!s) return null;
+            const over = isAlkkagiOver(s.game);
+            return {
+                id: 'alkkagi-local',
+                gameType: 'alkkagi',
+                status: over ? 'finished' : 'playing',
+                hostId: boardGameSelfId(),
+                timerEnabled: false,
+                members: [
+                    { id: 'local-b', name: alkkagiLocalName(ALKKAGI_BLACK), seat: 'black', role: 'host' },
+                    { id: 'local-w', name: alkkagiLocalName(ALKKAGI_WHITE), seat: 'white', role: 'player' },
+                ],
+                game: s.game,
+            };
+        }
+
+        function currentAlkkagiPlayRoom() {
+            if (_alkLocal) return alkkagiLocalRoomView();
+            const room = currentBoardGameRoom();
+            return room && room.gameType === 'alkkagi' ? room : null;
+        }
+
+        function alkkagiMyColor(room) {
+            if (_alkLocal) return _alkLocal.ai ? alkkagiHumanColor() : _alkLocal.game.turn;
+            return alkkagiSeatColor(roomMemberSeat(room, boardGameSelfId()));
+        }
+
+        function ensureAlkkagiBoard() {
+            if (_alkBoard) return _alkBoard;
+            const canvas = document.getElementById('alkkagiCanvas');
+            if (!canvas) return null;
+            loadAlkkagiFontsOnce();
+            _alkBoard = createAlkkagiBoard(canvas, {
+                onShot: (shot) => {
+                    markAlkkagiGuideSeen();
+                    void submitAlkkagiShot(shot);
+                },
+                onEvent: (e) => {
+                    if (e.type !== 'out') return;
+                    const room = currentAlkkagiPlayRoom();
+                    if (room) renderAlkkagiChrome(room);
+                },
+                onBusyChange: (busy) => {
+                    _alkBusy = busy;
+                    const room = currentAlkkagiPlayRoom();
+                    if (room) renderAlkkagiChrome(room);
+                },
+            });
+            const view = document.getElementById('boardgameAlkkagiPlayView');
+            if (view) view.addEventListener('pointerdown', () => { if (_alkBoard) _alkBoard.ensureSound(); }, { passive: true });
+            try { localStorage.removeItem(ALKKAGI_GUIDE_OLD_KEY); } catch (_) { /* 무시 */ }
+            if (window.__sambongE2E) window.__alkkagiQA = _alkBoard;
+            return _alkBoard;
+        }
+
+        function renderAlkkagiDots(el, alive) {
+            if (!el) return;
+            let html = '';
+            for (let i = 0; i < ALKKAGI_STONES_PER_SIDE; i += 1) {
+                html += `<i class="alk-mini ${el.id === 'alkkagiDotsBlack' ? 'b' : 'w'}${i < alive ? '' : ' gone'}"></i>`;
+            }
+            el.innerHTML = html;
+        }
+
+        function renderAlkkagiChrome(room) {
+            const game = room.game || emptyAlkkagiGame();
+            const me = boardGameSelfId();
+            const local = !!_alkLocal;
+            const myColor = alkkagiMyColor(room);
+            const over = room.status === 'finished' || isAlkkagiOver(game);
+            const host = !local && isRoomHost(room, me);
+            // 알이 움직이는 동안에는 화면에 보이는 알 수를 따라가요.
+            const live = _alkBusy && _alkBoard;
+            const aliveB = live ? _alkBoard.aliveCount(ALKKAGI_BLACK) : alkkagiAliveCount(game, ALKKAGI_BLACK);
+            const aliveW = live ? _alkBoard.aliveCount(ALKKAGI_WHITE) : alkkagiAliveCount(game, ALKKAGI_WHITE);
+            const ai = local && _alkLocal.ai ? _alkLocal.ai : null;
+            const aiTurn = !!ai && !over && game.turn === ai.color;
+            const mySeatColor = local ? (ai ? myColor : '') : myColor;
+            [['Black', ALKKAGI_BLACK, aliveB, 'black'], ['White', ALKKAGI_WHITE, aliveW, 'white']].forEach(([k, color, alive, seat]) => {
+                const card = document.getElementById(`alkkagiCard${k}`);
+                const nameEl = document.getElementById(`alkkagiName${k}`);
+                const left = document.getElementById(`alkkagiLeft${k}`);
+                if (card) {
+                    card.classList.toggle('on', !over && game.turn === color);
+                    card.classList.toggle('is-win', over && !_alkBusy && game.winner === color);
+                }
+                if (nameEl) {
+                    nameEl.textContent = memberNameBySeat(room, seat);
+                    const badge = nameEl.parentElement && nameEl.parentElement.querySelector('.alk-me');
+                    if (mySeatColor === color && !badge) nameEl.insertAdjacentHTML('afterend', '<span class="alk-me">나</span>');
+                    if (mySeatColor !== color && badge) badge.remove();
+                }
+                if (left) left.textContent = `${alive}개`;
+                renderAlkkagiDots(document.getElementById(`alkkagiDots${k}`), alive);
+            });
+            const pill = document.getElementById('alkkagiTurn');
+            const pillDot = document.getElementById('alkkagiTurnDot');
+            const pillText = document.getElementById('alkkagiTurnText');
+            const tip = document.getElementById('alkkagiTip');
+            const turnName = memberNameBySeat(room, game.turn === ALKKAGI_WHITE ? 'white' : 'black');
+            let pillLine = '';
+            let endCard = null;
+            // 판마다 첫 발을 쏘기 전까지는 둘째 줄에 '세게 당기면 떨려요' 안내를 보여 줘요.
+            // 늘 두 줄 자리 안에 들어가서 판 크기는 그대로예요.
+            let tipHtml = alkkagiGuideSeen()
+                ? '알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.'
+                : `알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<span class="alk-guide">${ALKKAGI_GUIDE_SHORT}</span>`;
+            const waiting = (!local && game.turn !== myColor) || aiTurn;
+            if (over && !_alkBusy) {
+                pillLine = '판이 끝났어요';
+                const endLine = ai
+                    ? alkkagiAiEndText(game, { humanColor: myColor, level: ai.level })
+                    : alkkagiEndText(game, {
+                        blackName: memberNameBySeat(room, 'black'),
+                        whiteName: memberNameBySeat(room, 'white'),
+                        honor: !local,
+                    });
+                endCard = { line: endLine };
+                tipHtml = local ? '한 판 더 하거나 그만할 수 있어요.' : `내 알까기 전적 ${escapeBoardGameText(myBoardGameRecordText('alkkagi'))}`;
+            } else if (_alkBusy) {
+                pillLine = '알이 미끄러지는 중';
+                tipHtml = '알이 멈출 때까지 잠깐 기다려요.';
+            } else if (aiTurn) {
+                const aiName = alkkagiAiLevelLabel(ai.level);
+                pillLine = `${aiName} 차례`;
+                tipHtml = ai.pulling
+                    ? `${escapeBoardGameText(alkkagiSubject(aiName))} 알을 당기고 있어요.`
+                    : `${escapeBoardGameText(alkkagiSubject(aiName))} 알을 고르고 있어요.<br>잠깐만 기다려요.`;
+            } else if (ai) {
+                pillLine = '내 차례예요';
+            } else if (local) {
+                pillLine = `${turnName} 차례`;
+            } else if (waiting) {
+                pillLine = `${turnName}님 차례`;
+                tipHtml = '친구가 알을 고르고 있어요.<br>내 차례가 되면 알을 당겨요.';
+            } else {
+                pillLine = '내 차례예요';
+            }
+            if (pill) {
+                pill.classList.toggle('is-end', over && !_alkBusy);
+                pill.classList.toggle('is-wait', !over && !_alkBusy && waiting);
+                pill.classList.toggle('is-busy', _alkBusy);
+            }
+            if (pillDot) pillDot.className = `alk-mini ${(over && !_alkBusy ? game.winner || ALKKAGI_BLACK : game.turn) === ALKKAGI_WHITE ? 'w' : 'b'}`;
+            if (pillText) pillText.textContent = pillLine;
+            if (tip) tip.innerHTML = tipHtml;
+            const resultEl = document.getElementById('alkkagiResult');
+            if (resultEl) {
+                resultEl.classList.toggle('hidden', !endCard);
+                if (endCard) {
+                    const draw = game.endReason === 'draw';
+                    const winColor = game.winner === ALKKAGI_WHITE ? ALKKAGI_WHITE : ALKKAGI_BLACK;
+                    const loseColor = winColor === ALKKAGI_WHITE ? ALKKAGI_BLACK : ALKKAGI_WHITE;
+                    const nameOf = (c) => memberNameBySeat(room, c === ALKKAGI_WHITE ? 'white' : 'black');
+                    const aliveOf = (c) => (c === ALKKAGI_WHITE ? aliveW : aliveB);
+                    const key = `${room.id}:${game.moveCount}:${game.endReason}:${game.winner}`;
+                    // 같은 결과로 다시 그릴 때는 반짝임을 되풀이하지 않아요.
+                    if (resultEl.dataset.key !== key) {
+                        resultEl.dataset.key = key;
+                        const cardEl = resultEl.querySelector('.alk-result-card');
+                        if (cardEl) { cardEl.style.animation = 'none'; void cardEl.offsetWidth; cardEl.style.animation = ''; }
+                    }
+                    resultEl.classList.toggle('is-draw', draw);
+                    const stoneEl = document.getElementById('alkkagiResultStone');
+                    if (stoneEl) stoneEl.className = `alk-result-stone ${draw ? 'draw' : winColor === ALKKAGI_WHITE ? 'w' : 'b'}`;
+                    const titleEl = document.getElementById('alkkagiResultTitle');
+                    if (titleEl) titleEl.textContent = ai
+                        ? alkkagiAiResultTitle(game, { humanColor: myColor, level: ai.level })
+                        : draw ? '비겼어요' : `${nameOf(winColor)} 승리!`;
+                    const lineEl = document.getElementById('alkkagiResultLine');
+                    if (lineEl) lineEl.textContent = endCard.line;
+                    const leftEl = document.getElementById('alkkagiResultLeft');
+                    if (leftEl) leftEl.textContent = draw
+                        ? `남은 알 ${nameOf(ALKKAGI_BLACK)} ${aliveB}개 · ${nameOf(ALKKAGI_WHITE)} ${aliveW}개`
+                        : `남은 알 ${nameOf(winColor)} ${aliveOf(winColor)}개 · ${nameOf(loseColor)} ${aliveOf(loseColor)}개`;
+                }
+            }
+            const playActs = document.getElementById('alkkagiPlayActions');
+            const resultActs = document.getElementById('alkkagiResultActions');
+            const showResult = over && !_alkBusy;
+            if (playActs) playActs.classList.toggle('hidden', showResult);
+            if (resultActs) resultActs.classList.toggle('hidden', !showResult);
+            const closeLabel = document.getElementById('alkkagiCloseLabel');
+            if (closeLabel) closeLabel.textContent = local ? '그만할래요' : '방 닫을게요';
+            const toggleWrap = document.getElementById('alkkagiTimerToggleWrap');
+            const toggle = document.getElementById('alkkagiTimerToggle');
+            if (toggleWrap) {
+                const hide = local || !host || over;
+                toggleWrap.classList.toggle('hidden', hide);
+            }
+            if (toggle) toggle.checked = !!room.timerEnabled;
+            const timerEl = document.getElementById('alkkagiHudTimer');
+            if (timerEl) {
+                const show = !local && room.timerEnabled && room.status === 'playing';
+                timerEl.hidden = !show;
+                if (show) updateAlkkagiTimer(room);
+            }
+            if (_alkBoard) {
+                _alkBoard.setView({
+                    canShoot: room.status === 'playing' && !over && !_alkWriting && (local || game.turn === myColor)
+                        && !(ai && (game.turn !== myColor || ai.thinking || ai.pulling)),
+                    myColor,
+                });
+            }
+            if (aiTurn && !_alkBusy && !ai.job && !ai.thinking && !ai.pulling) setTimeout(maybeRunAlkkagiAi, 0);
+        }
+
+        function updateAlkkagiTimer(room) {
+            const timerEl = document.getElementById('alkkagiHudTimer');
+            if (!timerEl) return;
+            const cap = Math.max(1, Number(room.timerSec) || 30);
+            const sec = Math.min(cap, Math.ceil(turnRemainingMs(room, Date.now()) / 1000));
+            timerEl.hidden = false;
+            timerEl.textContent = `${sec}초`;
+            timerEl.classList.toggle('is-low', sec <= 5);
+        }
+
+        function renderAlkkagiPlay(room) {
+            showBoardGameView('play');
+            const board = ensureAlkkagiBoard();
+            const game = room.game || emptyAlkkagiGame();
+            const myColor = alkkagiMyColor(room);
+            const flip = !_alkLocal && myColor === ALKKAGI_WHITE;
+            if (board) {
+                board.resize();
+                const seen = _alkSeen;
+                const shot = game.lastShot;
+                const isNewRoom = seen.roomId !== room.id;
+                if (isNewRoom || game.moveCount < seen.moveCount) {
+                    // 새 판·새 화면: 안내는 다시 보이고, 가벼운 모드 판단도 이 판에서 새로 해요.
+                    _alkGuideDone = false;
+                    board.startPerfCheck();
+                    board.setView({ stones: game.stones, flip, myColor });
+                } else if (game.moveCount > seen.moveCount) {
+                    const replay = !_alkLocal && shot && shot.shot && shot.seq === game.moveCount
+                        && shot.by !== myColor && Array.isArray(shot.from) && shot.from.length
+                        && game.moveCount === seen.moveCount + 1;
+                    if (replay && !board.isBusy()) {
+                        board.setView({ flip, myColor });
+                        board.playShot({ from: shot.from, shot: shot.shot, final: game.stones });
+                    } else {
+                        board.setView({ stones: game.stones, flip, myColor });
+                    }
+                } else {
+                    board.setView({ stones: game.stones, flip, myColor });
+                }
+            }
+            _alkSeen = { roomId: room.id, moveCount: game.moveCount };
+            rememberAlkkagiResume(room);
+            if (room.status === 'finished' && !_alkLocal) maybeRecordBoardGameResult(room);
+            renderAlkkagiChrome(room);
+            if (!_alkLocal) startGomokuTick();
+        }
+
+        async function submitAlkkagiShot({ shot, finalStones, steps }) {
+            const replayMs = Math.round((Number(steps) || 0) / 120 * 1000);
+            if (_alkLocal) {
+                if (_alkLocal.ai && _alkLocal.ai.color !== _alkLocal.game.turn) markAlkkagiGuideSeen();
+                const done = applyAlkkagiShotTurn(_alkLocal.game, {
+                    color: _alkLocal.game.turn,
+                    shot,
+                    finalStones,
+                    now: Date.now(),
+                    replayMs,
+                });
+                if (!done.ok) {
+                    await alkkagiDialog(alkkagiErrorText(done.error));
+                    return;
+                }
+                _alkLocal.game = done.game;
+                _alkSeen = { roomId: 'alkkagi-local', moveCount: done.game.moveCount };
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room || room.gameType !== 'alkkagi') return;
+            const color = alkkagiSeatColor(roomMemberSeat(room, boardGameSelfId()));
+            _alkWriting = true;
+            _alkSeen = { roomId: room.id, moveCount: (room.game && room.game.moveCount || 0) + 1 };
+            const next = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const done = applyAlkkagiShotTurn(cur.game, { color, shot, finalStones, now: Date.now(), replayMs });
+                if (!done.ok) return { ok: false, error: done.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: done.game, now: Date.now(), finished: isAlkkagiOver(done.game) }) };
+            }));
+            _alkWriting = false;
+            const latest = currentBoardGameRoom();
+            if (!next && latest && latest.gameType === 'alkkagi') {
+                // 저장이 안 됐으면 저장된 판으로 되돌려요.
+                _alkSeen = { roomId: latest.id, moveCount: latest.game.moveCount };
+                if (_alkBoard) _alkBoard.setView({ stones: latest.game.stones });
+            }
+            if (latest && latest.gameType === 'alkkagi' && _boardGameView === 'play') renderAlkkagiChrome(latest);
+        }
+
+        /** 한지 느낌의 확인 창이에요. buttons: [{label, value, main, danger, cancel}]
+         *  cancel: Esc·바깥으로 닫을 때 돌려줄 버튼(처음 초점도 여기), danger: 지는 쪽 버튼(옅은 색). */
+        // 열린 알까기 확인 창 목록이에요. 화면을 떠나거나 전체 화면을 닫으면 모두 '취소'로 닫아요.
+        const _alkDialogs = new Set();
+        function closeAlkkagiDialogs(keepScope = '') {
+            Array.from(_alkDialogs).forEach((close) => { if (!keepScope || close.scope !== keepScope) close(); });
+            if (keepScope !== 'play') document.querySelectorAll('#boardgameAlkkagiPlayView .alk-modal').forEach((el) => el.remove());
+        }
+
+        function alkkagiDialog(message, buttons = [{ label: '알겠어요', value: true, main: true }], title = '', opts = {}) {
+            return new Promise((resolve) => {
+                // scope 'lobby'는 방 목록 위에 띄우는 창이에요(방 지우기·이미 만든 방 안내).
+                const scope = opts && opts.scope === 'lobby' ? 'lobby' : 'play';
+                const host = (scope === 'lobby' ? document.getElementById('boardgameLobbyView') : document.getElementById('boardgameAlkkagiPlayView')) || document.body;
+                const cancelBtn = buttons.find((b) => b.cancel) || buttons.find((b) => !b.main && !b.danger) || buttons[buttons.length - 1];
+                const cancelValue = cancelBtn ? cancelBtn.value : false;
+                const wrap = document.createElement('div');
+                wrap.className = scope === 'lobby' ? 'alk-modal is-lobby' : 'alk-modal';
+                wrap.setAttribute('role', 'dialog');
+                wrap.setAttribute('aria-modal', 'true');
+                wrap.innerHTML = `<div class="alk-modal-card alk-hanji">
+                    ${title ? `<p class="alk-modal-title">${escapeBoardGameText(title)}</p>` : ''}
+                    <div class="alk-modal-text">${message}</div>
+                    <div class="alk-btns">${buttons.map((b, i) => `<button type="button" class="alk-btn ${b.main ? 'main' : b.danger ? 'sub danger alk-hanji' : 'sub alk-hanji'}" data-i="${i}"><span>${escapeBoardGameText(b.label)}</span></button>`).join('')}</div>
+                </div>`;
+                host.appendChild(wrap);
+                const before = document.activeElement;
+                let done = false;
+                // Esc는 창만 닫아요. 전체 화면 닫기(document keydown)까지 가지 않게 window 캡처에서 멈춰요.
+                const onKey = (e) => {
+                    if (done || (e.key !== 'Escape' && e.key !== 'Tab')) return;
+                    const all = Array.from(_alkDialogs);
+                    if (all[all.length - 1] !== cancel) return;
+                    if (e.key === 'Tab') {
+                        // Tab은 창 안에서만 돌아요(뒤 화면으로 초점이 빠지지 않게).
+                        const items = Array.from(wrap.querySelectorAll('button, a[href], [tabindex]:not([tabindex="-1"])'))
+                            .filter((el) => !el.disabled);
+                        if (!items.length) return;
+                        const at = items.indexOf(document.activeElement);
+                        const next = e.shiftKey
+                            ? (at <= 0 ? items.length - 1 : at - 1)
+                            : (at < 0 || at >= items.length - 1 ? 0 : at + 1);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        items[next].focus({ preventScroll: true });
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    finish(cancelValue);
+                };
+                const finish = (v) => {
+                    if (done) return;
+                    done = true;
+                    _alkDialogs.delete(cancel);
+                    window.removeEventListener('keydown', onKey, true);
+                    wrap.remove();
+                    if (before && typeof before.focus === 'function' && document.contains(before)) {
+                        try { before.focus({ preventScroll: true }); } catch (_) { /* 무시 */ }
+                    }
+                    resolve(v);
+                };
+                const cancel = () => finish(cancelValue);
+                cancel.scope = scope;
+                _alkDialogs.add(cancel);
+                window.addEventListener('keydown', onKey, true);
+                wrap.querySelectorAll('[data-i]').forEach((btn) => {
+                    btn.addEventListener('click', () => finish(buttons[Number(btn.getAttribute('data-i'))].value));
+                });
+                // 처음 초점은 안전한 쪽(계속할래요 같은 취소 버튼)에 둬요.
+                const first = wrap.querySelector(`.alk-btn[data-i="${Math.max(0, buttons.indexOf(cancelBtn))}"]`) || wrap.querySelector('.alk-btn');
+                if (first) first.focus({ preventScroll: true });
+            });
+        }
+
+        window.startAlkkagiLocal = function () {
+            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            clearGomokuAiSession();
+            clearChessAiSession();
+            _boardGameActiveId = '';
+            _boardGameType = 'alkkagi';
+            closeAlkkagiDialogs();
+            stopAlkkagiAi();
+            _alkLocal = { game: emptyAlkkagiGame({ now: Date.now() }) };
+            _alkSeen = { roomId: '', moveCount: -1 };
+            _alkBusy = false;
+            renderAlkkagiPlay(alkkagiLocalRoomView());
+        };
+
+        /** AI와 하기: 나는 검은 알로 먼저 쏘고, AI는 흰 알이에요. level: easy | normal | hard */
+        window.startAlkkagiAi = function (level) {
+            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            void vacateOtherBoardRooms('');
+            clearGomokuAiSession();
+            clearChessAiSession();
+            _boardGameActiveId = '';
+            _boardGameType = 'alkkagi';
+            closeAlkkagiDialogs();
+            stopAlkkagiAi();
+            _alkLocal = { game: emptyAlkkagiGame({ now: Date.now() }), ai: newAlkkagiAiState(level) };
+            _alkSeen = { roomId: '', moveCount: -1 };
+            _alkBusy = false;
+            renderAlkkagiPlay(alkkagiLocalRoomView());
+        };
+
+        function clearAlkkagiLocal() {
+            stopAlkkagiAi();
+            if (_alkLocal) saveAlkkagiResume('');
+            _alkLocal = null;
+            _alkSeen = { roomId: '', moveCount: -1 };
+            _alkBusy = false;
+        }
+
+        window.showAlkkagiRules = function () {
+            return alkkagiDialog(
+                '내 알을 꾹 잡고 반대쪽으로 당겼다가 놓으면 알이 튕겨 나가요.<br>많이 당길수록 세게 나가요.<br>'
+                + '상대 알을 판 밖으로 밀어내요. 내 알이 떨어져도 다시 못 돌아와요.<br>'
+                + '상대 알을 먼저 모두 떨어뜨리면 이겨요.<br>알 가까이로 돌아오거나 화면 밖에서 놓으면 안 쏘고 취소돼요.'
+                + `<span class="alk-guide">${ALKKAGI_GUIDE_TEXT}</span>`
+                + alkkagiFontCreditHtml(),
+                [{ label: '알겠어요', value: true, main: true }],
+                '알까기 규칙',
+            );
+        };
+
+        function alkkagiFontCreditHtml() {
+            const tpl = document.getElementById('alkkagiFontCredit');
+            return tpl ? tpl.innerHTML.trim() : '';
+        }
+
+        window.showAlkkagiFontCredit = function () {
+            return alkkagiDialog(alkkagiFontCreditHtml(), [{ label: '알겠어요', value: true, main: true }], '글꼴 정보');
+        };
+
+        window.forfeitAlkkagi = async function () {
+            const room = currentAlkkagiPlayRoom();
+            if (!room || room.status !== 'playing') return;
+            const aiLocal = _alkLocal && _alkLocal.ai;
+            const ok = await alkkagiDialog(
+                aiLocal ? `기권하면 ${escapeBoardGameText(alkkagiSubject(alkkagiAiLevelLabel(aiLocal.level)))} 이겨요.<br>기권할까요?`
+                : _alkLocal ? `${escapeBoardGameText(alkkagiSubject(alkkagiLocalName(_alkLocal.game.turn)))} 기권하면<br>${escapeBoardGameText(alkkagiSubject(alkkagiLocalName(_alkLocal.game.turn === ALKKAGI_WHITE ? ALKKAGI_BLACK : ALKKAGI_WHITE)))} 이겨요. 기권할까요?` : '기권하면 지는 걸로 기록돼요.<br>정말 기권할까요?',
+                [{ label: '계속할래요', value: false, main: true, cancel: true }, { label: '기권할게요', value: true, danger: true }],
+            );
+            if (!ok) return;
+            await forfeitAlkkagiNow();
+        };
+
+        async function forfeitAlkkagiNow() {
+            if (_alkLocal) {
+                const color = _alkLocal.ai ? alkkagiHumanColor() : _alkLocal.game.turn;
+                stopAlkkagiAi();
+                const done = applyAlkkagiForfeit(_alkLocal.game, { color, now: Date.now() });
+                if (done.ok) _alkLocal.game = done.game;
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room || room.gameType !== 'alkkagi') return;
+            const color = alkkagiSeatColor(roomMemberSeat(room, boardGameSelfId()));
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const done = applyAlkkagiForfeit(cur.game, { color, now: Date.now() });
+                if (!done.ok) return { ok: false, error: done.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
+            }));
+        }
+
+        window.continueAlkkagi = async function () {
+            if (_alkLocal) {
+                stopAlkkagiAi();
+                if (_alkLocal.ai) _alkLocal.ai = newAlkkagiAiState(_alkLocal.ai.level);
+                _alkLocal.game = emptyAlkkagiGame({ now: Date.now() });
+                _alkSeen = { roomId: '', moveCount: -1 };
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => continueBoardRoom(cur, {
+                actorId: boardGameSelfId(),
+                now: Date.now(),
+            })));
+        };
+
+        window.closeAlkkagi = async function () {
+            if (_alkLocal) {
+                clearAlkkagiLocal();
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            const ok = await alkkagiDialog('방을 닫을까요?<br>목록에서도 사라져요.', [
+                { label: '그대로 둘래요', value: false, main: true, cancel: true },
+                { label: '닫을게요', value: true, danger: true },
+            ]);
+            if (!ok) return;
+            const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => closeBoardRoom(cur, {
+                actorId: boardGameSelfId(),
+                now: Date.now(),
+            })));
+            if (closed) {
+                try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 목록 필터로도 빠져요 */ }
+            }
+            _boardGameActiveId = '';
+            saveAlkkagiResume('');
+            showBoardGameView('lobby');
+            renderBoardGameLobby();
+        };
+
         async function forfeitCurrentGomoku() {
             const me = boardGameSelfId();
             _gomokuPending = null;
+            if (_alkLocal || (currentBoardGameRoom() && currentBoardGameRoom().gameType === 'alkkagi')) {
+                await forfeitAlkkagiNow();
+                return;
+            }
             if (_chessAiSession) {
                 const done = applyChessForfeit(_chessAiSession.game, { color: _chessAiSession.human, now: Date.now() });
                 if (done.ok) _chessAiSession.game = done.game;
@@ -13516,6 +14538,42 @@ ${subjectLine}
         }
 
         window.leaveBoardGameTable = async function () {
+            const alkRoom = currentAlkkagiPlayRoom();
+            if (alkRoom) {
+                if (_alkLocal) {
+                    if (alkRoom.status === 'playing' && !isAlkkagiOver(_alkLocal.game)) {
+                        const ok = await alkkagiDialog('지금 나가면 이 판은 끝나요.<br>그래도 나갈까요?', [
+                            { label: '계속할래요', value: false, main: true, cancel: true },
+                            { label: '나갈게요', value: true, danger: true },
+                        ]);
+                        if (!ok || !_alkLocal) return;
+                    }
+                    clearAlkkagiLocal();
+                    showBoardGameView('lobby');
+                    renderBoardGameLobby();
+                    return;
+                }
+                if (alkRoom.status === 'playing') {
+                    const ok = await alkkagiDialog('지금 나가면 지는 걸로 기록돼요.<br>그래도 나갈까요?', [
+                        { label: '계속할래요', value: false, main: true, cancel: true },
+                        { label: '나갈게요', value: true, danger: true },
+                    ]);
+                    if (!ok) return;
+                    await forfeitAlkkagiNow();
+                    // 나간 사람은 결과 카드 대신 방 목록으로 가요. 이 방으로는 저절로 다시 들어가지 않아요.
+                    _alkLeftRooms.add(boardRoomInstanceKey(alkRoom));
+                    _boardGameActiveId = '';
+                    saveAlkkagiResume('');
+                    showBoardGameView('lobby');
+                    renderBoardGameLobby();
+                    return;
+                }
+                _boardGameActiveId = '';
+                saveAlkkagiResume('');
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                return;
+            }
             const room = currentChessPlayRoom() || currentGomokuPlayRoom();
             if (room && room.status === 'playing') {
                 const ok = await window.customConfirm('나가면 패배로 기록됩니다. 나갈까요?');
@@ -14747,7 +15805,7 @@ ${subjectLine}
                 : value < 0
                     ? 'text-red-200 border-red-400/40 bg-red-950/60'
                     : 'text-slate-300 border-slate-500/40 bg-slate-900/60';
-            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP">🌡 ${value >= 0 ? '+' : ''}${value}</span>`;
+            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP"><span class="plaza-therm-ico" aria-hidden="true">🌡</span>${value >= 0 ? '+' : ''}${value}</span>`;
         }
 
         function isLearningThermometerLocallyBusy() {
@@ -19960,6 +21018,8 @@ ${subjectLine}
                             window.allStudentsData = students; 
                             window.gmData = gmD; 
                             window.gmaData = gmaD;
+                            // 로비 방 카드의 '방장 전적'이 새 값으로 바뀌게 다시 그려요.
+                            if (classtoolSub === 'boardgames' && _boardGameView === 'lobby') renderBoardGameLobby();
                             
                             const myId = localStorage.getItem('sambong_student_id');
                             if (myId && !window.playerState.isGuest) {
@@ -20237,17 +21297,29 @@ ${subjectLine}
 
                         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
                             if(snap.exists()) {
-                                window.estateState = normalizeEstateState(snap.data());
-                                if (Array.isArray(window.estateState.seats)) {
-                                    window.estateState.seats.forEach((s) => {
-                                        if (s.owner || s.locked || isEstateSeatDisabled(s)) {
-                                            s.assignee = null;
-                                        }
-                                    });
-                                }
-                                if (isLoggedInSession()) {
-                                    window.ensureEstateSeokRestore();
-                                    window.ensureEstateHwangRestore();
+                                const raw = snap.data() || {};
+                                rememberEstateServer(raw);
+                                const serverSeats = Array.isArray(raw.seats) && raw.seats.length > 0;
+                                if (serverSeats) {
+                                    window.estateState = normalizeEstateState(raw);
+                                    if (Array.isArray(window.estateState.seats)) {
+                                        window.estateState.seats.forEach((s) => {
+                                            if (s.owner || s.locked || isEstateSeatDisabled(s)) {
+                                                s.assignee = null;
+                                            }
+                                        });
+                                    }
+                                    if (isLoggedInSession()) {
+                                        window.ensureEstateSeokRestore();
+                                        window.ensureEstateHwangRestore();
+                                    }
+                                } else {
+                                    // 좌석 필드가 없으면 빈 교실을 만들어 저장하지 않습니다. 광장은 기존 5열로 그립니다.
+                                    window.estateState = {
+                                        ...raw,
+                                        seats: [],
+                                        purchaseHistory: Array.isArray(raw.purchaseHistory) ? raw.purchaseHistory : [],
+                                    };
                                 }
                                 window.renderEstate(); 
                             } else if (isLoggedInSession()) {
@@ -20263,11 +21335,12 @@ ${subjectLine}
                                 initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
                                 initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
                                 const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
-                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                                rememberEstateServer({});
+                                void commitEstateState({
                                     seats: initialSeats,
                                     layout: built.layout,
                                     purchaseHistory: ph,
-                                });
+                                }, { allowCreateSeats: true }).catch((e) => console.warn('estate create', e));
                             } else {
                                 const built = buildEstateSeatsFromLayout(4, 4, {
                                     defaultPrice: ESTATE_DEFAULT_PRICE,
@@ -20529,10 +21602,8 @@ ${subjectLine}
             if (typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 void window.checkAndDistributeSalary();
             }
-            // 수업 종료 XP: 마스터 J 접속 시에만(기존 설계 유지)
-            if (window.playerState && window.playerState.isGM && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
-                void window.checkAndDistributeClassXP();
-            }
+            // 수업 종료 XP: 마스터 J 화면에서 다음 종 타이머를 한 번만 걸어요. 이미 걸렸으면 서버 요청 없이 바로 끝나요.
+            armClassXpBellTimer();
             // 학습 온도계: 15:00 이후 마스터 접속 상태에서 하루 1회 실제 XP 반영 및 초기화
             if (window.playerState && window.playerState.isAdmin && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 checkLearningThermometerAutoSettlement();
@@ -20824,10 +21895,30 @@ ${subjectLine}
             return Math.max(0, Math.floor(Number(storedCount) || 0));
         }
 
+        function plazaDislikeCount(studentId) {
+            const today = getLocalDateStr();
+            if (window._classOpsReady) return dislikeCountForToday(window._dislikeBoard, studentId, today);
+            if (!window._classOpsLoading && typeof db !== 'undefined' && db) {
+                void ensureClassOpsLoaded().then(() => {
+                    if (typeof window.renderPlaza === 'function') {
+                        window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                    }
+                });
+            }
+            return 0;
+        }
+
+        function plazaDislikeReason(studentId) {
+            if (!window._classOpsReady) return '';
+            return latestDislikeReason(window._dislikeBoard, studentId);
+        }
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
+            // 카드 이름표의 쨈 제목 글꼴은 여기서 부르지 않아요. renderPlaza 는 앱 시작 때(광장이 안 보여도) 불리므로,
+            // 글꼴은 switchTab('plaza') 에서만 불러와요. 글꼴이 오기 전에는 Noto Sans KR로 보여요.
 
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
@@ -20858,17 +21949,23 @@ ${subjectLine}
                         statusMessage: window.playerState.statusMessage || data.statusMessage,
                     }
                     : data;
-                const lv = getLevelInfo(displayData.xp || 0);
-                const exactLv = calculateExactLevel(displayData.xp || 0);
+                // Lv 표시: 대시보드(#79)와 같은 계산. 경험치가 없거나 0 이하이면 0으로 보고 그려요(Lv.NaN 방지, 표시만).
+                const lvXp = levelXpForDisplay(displayData.xp);
+                const lv = getLevelInfo(lvXp);
+                const exactLv = calculateExactLevel(lvXp);
 
                 const aura = applyEquippedAura(displayData, lv.info.borderColor, 'shadow-md');
                 let border = aura.border;
                 let glow = aura.glow;
+                // 등급별 보석 채움. 오라 스킨을 끼면 plaza-tier-aura로 표시해 오라 테두리·빛을 덮지 않습니다.
+                const hasAuraSkin = border !== lv.info.borderColor || glow !== 'shadow-md';
+                const tierClass = ` plaza-tier plaza-tier-${lv.info.ring}${hasAuraSkin ? ' plaza-tier-aura' : ''}`;
                 const face = buildCharacterAvatarHtml({
                     studentId: targetId,
                     data: displayData,
                     isStaff: !!isGMCard,
                     showRankBg: !isGMCard,
+                    rankFrame: !isGMCard,
                 });
                 const overlays = '';
                 
@@ -20956,10 +22053,18 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
+                const dislikeCount = plazaDislikeCount(targetId);
+                const dislikeReason = plazaDislikeReason(targetId);
+                const dislikeReasonHtml = dislikeReason
+                    ? `<div class="plaza-dislike-reason" title="${escapeHtmlAttr(dislikeReason)}">${escapeConvenienceHtml(dislikeReason)}</div>`
+                    : '';
+                const praiseBtn = `<div class="praise-pair" onclick="event.stopPropagation();">
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉"><img src="nav/thumbs-up.svg" alt="따봉" width="16" height="16"><span>${praiseCount}</span></button>
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerDislike('${targetId}')" title="비추천"><img src="nav/thumbs-up.svg" alt="비추천" width="16" height="16" class="praise-thumb-down"><span>${dislikeCount}</span></button>
+                </div>${dislikeReasonHtml}`;
 
                 return `
-                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
+                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${tierClass}${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
                     <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">
@@ -20981,7 +22086,7 @@ ${subjectLine}
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
+                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400 bong-neg' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
                 </div>`;
             };
@@ -21122,7 +22227,7 @@ ${subjectLine}
                         <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
+                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400 bong-neg' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
@@ -22792,6 +23897,8 @@ ${subjectLine}
             const regularBal = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             w.textContent = `${formatBongAmount(walletBal)}`;
             s.textContent = `${formatBongAmount(regularBal)}`;
+            applyBongTone(w, walletBal);
+            applyBongTone(s, regularBal);
             r.textContent = `${rate.toFixed(1)}`;
             const limitEl = document.getElementById('bankLoanLimitDisplay');
             if (limitEl) limitEl.textContent = String(getClassLoanLimit());
@@ -22893,9 +24000,9 @@ ${subjectLine}
                         const defTxt = studentIsCreditDefault(stu) ? '신용불량' : '';
                         rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
-                            <div class="text-right text-sky-300 tabular-nums">${formatBongAmount(regular)}</div>
-                            <div class="text-right text-amber-200 tabular-nums">${formatBongAmount(termTotal)}</div>
+                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400 bong-neg' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
+                            <div class="text-right text-sky-300 tabular-nums ${bongToneClass(regular)}">${formatBongAmount(regular)}</div>
+                            <div class="text-right text-amber-200 tabular-nums ${bongToneClass(termTotal)}">${formatBongAmount(termTotal)}</div>
                             <div class="text-right text-rose-200 tabular-nums">${loanTxt}</div>
                             <div class="text-right text-red-300 font-bold">${defTxt}</div>
                         </div>`);
@@ -22958,9 +24065,11 @@ ${subjectLine}
             const delta = Number(row.delta) || 0;
             const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
             const deltaTxt = delta > 0 ? `+${formatBongAmount(delta)}` : formatBongAmount(delta);
+            const deltaHtml = delta < 0 ? `<span class="bong-neg">${deltaTxt}</span>` : deltaTxt;
+            const payoutHtml = Number(row.payout) < 0 ? `<span class="bong-neg">${formatBongAmount(row.payout)}</span>` : formatBongAmount(row.payout);
             return `<div class="text-right leading-tight">
                 <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
-                <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
+                <div class="${cls} text-[9px] tabular-nums">${payoutHtml} (${deltaHtml})</div>
                 <div class="text-[8px] text-slate-400 tabular-nums">매수 ${formatIndexPrice(row.buyIndex)}</div>
             </div>`;
         }
@@ -22987,6 +24096,8 @@ ${subjectLine}
                 const name = STUDENT_NAMES[String(sid)] || sid;
                 const totalCls = sum.delta > 0 ? 'text-rose-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const totalDelta = sum.delta > 0 ? `+${formatBongAmount(sum.delta)}` : formatBongAmount(sum.delta);
+                const totalDeltaHtml = sum.delta < 0 ? `<span class="bong-neg">${totalDelta}</span>` : totalDelta;
+                const totalPayoutHtml = Number(sum.payout) < 0 ? `<span class="bong-neg">${formatBongAmount(sum.payout)}</span>` : formatBongAmount(sum.payout);
                 const kospi = sum.markets.find((m) => m.id === 'kospi');
                 const kosdaq = sum.markets.find((m) => m.id === 'kosdaq');
                 const nasdaq = sum.markets.find((m) => m.id === 'nasdaq');
@@ -22997,7 +24108,7 @@ ${subjectLine}
                     ${formatBankAdminInvestCell(nasdaq)}
                     <div class="text-right leading-tight">
                         <div class="text-white font-bold tabular-nums">${sum.held ? formatBongAmount(sum.principal) : '—'}</div>
-                        ${sum.held ? `<div class="${totalCls} text-[9px] tabular-nums">${formatBongAmount(sum.payout)} (${totalDelta})</div>` : '<div class="text-slate-600 text-[9px]">미보유</div>'}
+                        ${sum.held ? `<div class="${totalCls} text-[9px] tabular-nums">${totalPayoutHtml} (${totalDeltaHtml})</div>` : '<div class="text-slate-600 text-[9px]">미보유</div>'}
                     </div>
                 </div>`);
             });
@@ -23026,6 +24137,8 @@ ${subjectLine}
                 }
                 const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
                 const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
+                const deltaHtml = settled.delta < 0 ? `<span class="bong-neg">${deltaTxt}</span>` : deltaTxt;
+                const payoutHtml = Number(settled.payout) < 0 ? `<span class="bong-neg">${formatBongAmount(settled.payout)}</span>` : formatBongAmount(settled.payout);
                 const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
                 const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
@@ -23038,7 +24151,7 @@ ${subjectLine}
                         <div class="min-w-0">
                             <div class="text-amber-100 font-bold text-sm">${m.name}</div>
                             <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
-                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
+                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${payoutHtml} (${deltaHtml} · ${retTxt})</div>
                             <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
                     </div>
@@ -23564,14 +24677,16 @@ ${subjectLine}
             if (window._classOpsReady && !force) return;
             window._classOpsLoading = (async () => {
                 try {
-                    const [att, checks, praise] = await Promise.all([
+                    const [att, checks, praise, dislikes] = await Promise.all([
                         getDoc(classOpsRef('attendance')),
                         getDoc(classOpsRef('checklists')),
                         getDoc(classOpsRef('praise')),
+                        getDoc(classOpsRef('dislikes')),
                     ]);
                     window._attendanceDays = (att.exists() && att.data() && att.data().days) || {};
                     window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
                     window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
+                    window._dislikeBoard = sanitizeDislikeBoard(dislikes.exists() ? dislikes.data() : {});
                     window._classOpsReady = true;
                     await maybeRollPraiseAtMidnight();
                 } finally {
@@ -23619,34 +24734,34 @@ ${subjectLine}
             if (writes) await batch.commit();
         }
 
+        const praiseRollState = { running: false, lastRollDate: null };
         async function maybeRollPraiseAtMidnight() {
-            if (typeof db === 'undefined' || !db || window._praiseRollRunning || !window._classOpsReady) return;
+            if (typeof db === 'undefined' || !db || praiseRollState.running || !window._classOpsReady) return;
             const today = getLocalDateStr();
             const local = rollPraiseDay(window._praiseBoard, today);
             if (!local.reset && !local.changed && !window._praiseCountsNeedSync) return;
-            window._praiseRollRunning = true;
             try {
-                const praiseRef = classOpsRef('praise');
-                const outcome = await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(praiseRef);
-                    const rolled = rollPraiseDay(snap.exists() ? snap.data() : {}, today);
-                    if (!rolled.changed) return { reset: false, board: rolled.board };
-                    tx.set(praiseRef, rolled.board, { merge: false });
-                    return { reset: rolled.reset, board: rolled.board };
+                await runPraiseMidnightRollOnce(praiseRollState, { loggedIn: isLoggedInSession(), today }, async () => {
+                    const praiseRef = classOpsRef('praise');
+                    const outcome = await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(praiseRef);
+                        const rolled = rollPraiseDay(snap.exists() ? snap.data() : {}, today);
+                        if (!rolled.changed) return { reset: false, board: rolled.board };
+                        tx.set(praiseRef, rolled.board, { merge: false });
+                        return { reset: rolled.reset, board: rolled.board };
+                    });
+                    window._praiseBoard = outcome.board;
+                    if (outcome.reset) window._praiseCountsNeedSync = true;
+                    if (window._praiseCountsNeedSync) {
+                        await syncStoredPraiseCounts(outcome.board);
+                        window._praiseCountsNeedSync = false;
+                    }
                 });
-                window._praiseBoard = outcome.board;
-                if (outcome.reset) window._praiseCountsNeedSync = true;
-                if (window._praiseCountsNeedSync) {
-                    await syncStoredPraiseCounts(outcome.board);
-                    window._praiseCountsNeedSync = false;
-                }
                 if (typeof window.renderPlaza === 'function') {
                     window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
                 }
             } catch (e) {
                 console.error('maybeRollPraiseAtMidnight', e);
-            } finally {
-                window._praiseRollRunning = false;
             }
         }
 
@@ -23868,6 +24983,59 @@ ${subjectLine}
             } catch (e) {
                 console.error('givePeerPraise', e);
                 await window.customAlert('따봉을 저장하지 못했습니다.');
+            }
+        };
+
+        window.givePeerDislike = async function(toId) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('로그인 후 비추천할 수 있습니다.');
+            const fromId = String(localStorage.getItem('sambong_student_id') || '');
+            if (!fromId) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            await ensureClassOpsLoaded();
+            const today = getLocalDateStr();
+            const gate = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: '확인' });
+            if (!gate.ok) return window.customAlert(dislikeFailMessage(gate.reason));
+            const typed = await window.customPrompt('비추천 사유를 적어 주세요.\n누르면 내 경험치가 10 줄어듭니다.', 'text');
+            if (typed == null) return;
+            const plan = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: typed });
+            if (!plan.ok) return window.customAlert(dislikeFailMessage(plan.reason));
+            if ((Number(window.playerState.xp) || 0) < plan.xpCost) return window.customAlert(dislikeFailMessage('xp'));
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const dislikeRef = classOpsRef('dislikes');
+            try {
+                const result = await runTransaction(db, async (tx) => {
+                    const boardSnap = await tx.get(dislikeRef);
+                    const fresh = planPeerDislike(boardSnap.exists() ? boardSnap.data() : {}, {
+                        fromId,
+                        toId: String(toId),
+                        today,
+                        reason: typed,
+                    });
+                    if (!fresh.ok) return fresh;
+                    const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+                    const fromSnap = await tx.get(fromRef);
+                    if (!fromSnap.exists()) return { ok: false, reason: 'who' };
+                    const data = fromSnap.data() || {};
+                    const before = Math.max(0, Math.floor(Number(data.xp) || 0));
+                    if (before < fresh.xpCost) return { ok: false, reason: 'xp' };
+                    const xp = before - fresh.xpCost;
+                    tx.set(fromRef, { xp }, { merge: true });
+                    tx.set(dislikeRef, fresh.board, { merge: false });
+                    return { ok: true, fresh, xp };
+                });
+                if (!result || !result.ok) return window.customAlert(dislikeFailMessage(result && result.reason));
+                window._dislikeBoard = result.fresh.board;
+                mergeStudentDocIntoPlazaCache(fromId, { xp: result.xp, id: fromId });
+                if (window.playerState && fromId === String(localStorage.getItem('sambong_student_id') || '')) {
+                    window.playerState.xp = result.xp;
+                }
+                if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                updateUI();
+                window.showToast && window.showToast(`비추천을 남겼습니다. 내 경험치 -${DISLIKE_XP_COST}.`);
+            } catch (e) {
+                console.error('givePeerDislike', e);
+                await window.customAlert('비추천을 저장하지 못했습니다.');
             }
         };
 
@@ -24393,9 +25561,11 @@ ${subjectLine}
             maybeShowConvenienceOrderPopup();
             maybeShowMusicTimeRequestPopup({ fromCache: false });
             
+            // 경험치가 없거나 0 이하이면 Lv·막대는 0으로 보고 그려요(Lv.NaN 방지, 표시만). 광장 카드와 같은 계산이에요.
             const xp = window.playerState.xp || 0;
-            const lvInfo = getLevelInfo(xp); 
-            const exactLv = calculateExactLevel(xp);
+            const lvXp = levelXpForDisplay(xp);
+            const lvInfo = getLevelInfo(lvXp); 
+            const exactLv = calculateExactLevel(lvXp);
             
             const mySid = localStorage.getItem('sambong_student_id');
             const dashAura = applyEquippedAura(window.playerState, 'border-slate-600', 'shadow-lg');
@@ -24412,26 +25582,72 @@ ${subjectLine}
             const overlays = '';
             
             const dashCard = document.getElementById('dashAvatarCard');
+            const rankRing = (!window.playerState.isAdmin && lvInfo.info && lvInfo.info.ring) ? lvInfo.info.ring : '';
+            const rankSpec = dashRankSpec(rankRing);
             if (dashCard) {
-                dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
+                dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible ${cardGlow} border-2 ${cardBorder} transition duration-300`;
+                if (rankSpec) {
+                    dashCard.classList.add('dash-rank', `dash-rank-${rankRing}`);
+                    if (rankSpec.statsGold) dashCard.classList.add('dash-stats-gold');
+                }
                 dashCard.classList.toggle('is-credit-default', studentIsCreditDefault(window.playerState));
             }
             const dashStamp = document.getElementById('dashCreditStamp');
             if (dashStamp) dashStamp.classList.toggle('hidden', !studentIsCreditDefault(window.playerState));
             const dashRankBg = document.getElementById('dashRankBg');
             if (dashRankBg) {
-                // 등급 그림은 원형 캐릭터 뒤에만 두고, 카드 배경은 원래 그라데이션을 유지합니다.
-                dashRankBg.innerHTML = '';
-                dashRankBg.classList.remove('is-on');
+                if (rankSpec && rankSpec.art) {
+                    dashRankBg.innerHTML = `<img src="${rankSpec.art}" alt="">`;
+                    dashRankBg.classList.add('is-on');
+                } else {
+                    dashRankBg.innerHTML = '';
+                    dashRankBg.classList.remove('is-on');
+                }
             }
+            const dashFrame = document.getElementById('dashRankFrame');
+            if (dashFrame) {
+                const frameSrc = dashRankFrameSrc(rankRing);
+                dashFrame.hidden = !frameSrc;
+                if (frameSrc) dashFrame.src = frameSrc;
+            }
+            const dashAuraEl = document.getElementById('dashRankAura');
+            if (dashAuraEl) {
+                const auraSrc = dashRankAuraSrc(rankRing);
+                const motionKey = auraSrc && rankSpec && rankSpec.motion ? `${rankRing}:${rankSpec.motion}` : '';
+                dashAuraEl.hidden = !auraSrc;
+                if (auraSrc && dashAuraEl.getAttribute('src') !== auraSrc) dashAuraEl.src = auraSrc;
+                if (dashAuraEl.dataset.motion !== motionKey) {
+                    dashAuraEl.dataset.motion = motionKey;
+                    dashAuraEl.classList.remove('is-soft', 'is-halo', 'is-rays', 'is-particles', 'is-flame');
+                    if (motionKey) dashAuraEl.classList.add(`is-${rankSpec.motion}`);
+                }
+            }
+            const dashFx = document.getElementById('dashRankFx');
+            if (dashFx) {
+                dashFx.hidden = true;
+                dashFx.classList.remove('is-once', 'is-slow', 'is-legend');
+            }
+            const dashStars = document.getElementById('dashRankStars');
+            if (dashStars) dashStars.innerHTML = dashRankStarHtml(rankRing);
             
+            const dashFront = document.getElementById('dashRankFront');
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>`;
+            const dashStack = document.querySelector('#dashAvatar .char-avatar-stack');
+            if (dashFrame && dashStack) {
+                const portraitFrame = dashStack.querySelector('.char-portrait-frame');
+                if (portraitFrame) portraitFrame.after(dashFrame);
+                else dashStack.appendChild(dashFrame);
+                if (dashFront) dashFrame.after(dashFront);
+            }
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();
             if (window.playerState && window.playerState.isAdmin) {
                 void runAdminOneShotMigrations();
             }
-            document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
+            const dashNameEl = document.getElementById('dashName');
+            dashNameEl.innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
+            dashNameEl.classList.remove('dash-name-white', 'dash-name-silver', 'dash-name-gold', 'dash-name-rainbow', 'text-white');
+            dashNameEl.classList.add(rankSpec ? `dash-name-${rankSpec.name}` : 'text-white');
             const dashChangePinBtn = document.getElementById('dashChangePinBtn');
             if (dashChangePinBtn) {
                 const canChangePin = !!(window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin);
@@ -24445,6 +25661,7 @@ ${subjectLine}
                 dashBongEl.innerText = formatBongDisplay(bBal);
                 dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
                 dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
+                applyBongTone(dashBongEl, bBal);
             }
 
             const hp = shieldHpOf(window.playerState);
@@ -24467,8 +25684,8 @@ ${subjectLine}
             }
 
             let prevMax = lvInfo.index > 0 ? LEVEL_DATA[lvInfo.index-1].max : 0;
-            let curMax = lvInfo.info.max === Infinity ? xp : lvInfo.info.max;
-            let progress = exactLv >= 100 ? 100 : ((xp - prevMax) / (curMax - prevMax)) * 100;
+            let curMax = lvInfo.info.max === Infinity ? lvXp : lvInfo.info.max;
+            let progress = exactLv >= 100 ? 100 : ((lvXp - prevMax) / (curMax - prevMax)) * 100;
             
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);
@@ -25711,6 +26928,38 @@ ${subjectLine}
         // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
 
+        function rememberEstateServer(raw) {
+            const data = raw && typeof raw === 'object' ? raw : {};
+            window._estateServerState = {
+                seats: Array.isArray(data.seats) ? data.seats.map((seat) => ({ ...seat })) : null,
+                layout: data.layout && typeof data.layout === 'object' ? { ...data.layout } : null,
+                purchaseHistory: Array.isArray(data.purchaseHistory) ? data.purchaseHistory.map((row) => ({ ...row })) : null,
+            };
+        }
+
+        /**
+         * 자리표는 문서 전체를 교체하지 않고, 넘긴 필드만 merge 합니다.
+         * 좌석이 없거나 앉은 학생을 빈 값으로 지우면 저장하지 않습니다.
+         */
+        async function commitEstateState(patch, opts = {}) {
+            if (!db) return false;
+            const plan = planEstateMerge(window._estateServerState, patch, { requireSeats: true, ...opts });
+            if (!plan.write) {
+                console.warn('estate write skipped', plan.seatsSkipped);
+                return false;
+            }
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), plan.patch, { merge: true });
+            const prev = window._estateServerState || {};
+            window._estateServerState = {
+                seats: plan.patch.seats !== undefined ? plan.patch.seats.map((seat) => ({ ...seat })) : prev.seats,
+                layout: plan.patch.layout !== undefined ? { ...plan.patch.layout } : prev.layout,
+                purchaseHistory: plan.patch.purchaseHistory !== undefined
+                    ? plan.patch.purchaseHistory.map((row) => ({ ...row }))
+                    : prev.purchaseHistory,
+            };
+            return true;
+        }
+
         /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구 — 시드(데모) 학급·기본 4×4 전용 */
         window.ensureEstateSeokRestore = async function() {
             if (!isSeedDemoClass()) return;
@@ -25728,7 +26977,10 @@ ${subjectLine}
                 note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
             });
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                await commitEstateState({
+                    seats: window.estateState.seats,
+                    purchaseHistory: window.estateState.purchaseHistory,
+                });
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
 
@@ -25744,7 +26996,7 @@ ${subjectLine}
             if (!seat || isEstateSeatDisabled(seat) || seat.locked || seat.owner || seat.noAutoRestore) return;
             seat.owner = '12';
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                await commitEstateState({ seats: window.estateState.seats });
             } catch (e) { console.warn('ensureEstateHwangRestore', e); }
         };
         
@@ -25779,7 +27031,11 @@ ${subjectLine}
                 price: price,
                 at: Date.now()
             });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+            const wrote = await commitEstateState({
+                seats: window.estateState.seats,
+                purchaseHistory: window.estateState.purchaseHistory,
+            });
+            if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 기존 자리가 비어 있어 빈 값으로 덮지 않았습니다.');
             window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
         };
 
@@ -25792,7 +27048,8 @@ ${subjectLine}
             if(ok) {
                 seat.locked = !seat.locked;
                 if (seat.locked) seat.assignee = null;
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                const wrote = await commitEstateState({ seats: window.estateState.seats });
+                if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 기존 자리가 비어 있어 빈 값으로 덮지 않았습니다.');
                 window.renderEstate();
             }
         };
@@ -25918,7 +27175,14 @@ ${subjectLine}
                 if (priceChanged) seat.price = newPrice;
 
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                    const wrote = await commitEstateState({
+                        seats: window.estateState.seats,
+                        purchaseHistory: window.estateState.purchaseHistory,
+                    }, { allowClearOccupants: true });
+                    if (!wrote) {
+                        await window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
+                        return;
+                    }
                     window.renderEstate();
                     await window.customAlert(`✅ ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
                 } catch (e) {
@@ -25979,7 +27243,11 @@ ${subjectLine}
             }
 
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                const wrote = await commitEstateState({ seats: window.estateState.seats });
+                if (!wrote) {
+                    await window.customAlert('자리표를 저장하지 못했습니다. 앉은 학생이 있는 자리를 빈 값으로 덮지 않았습니다.');
+                    return;
+                }
                 window.renderEstate();
                 let tail = '';
                 if (shuffledStudents.length > placeCount) {
@@ -26036,11 +27304,12 @@ ${subjectLine}
                     built.seats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
                 }
             }
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+            const wrote = await commitEstateState({
                 seats: built.seats,
                 layout: built.layout,
                 purchaseHistory: prevHistory,
-            });
+            }, { allowClearOccupants: true, allowCreateSeats: true });
+            if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
             window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록·배열 설정은 보존되었습니다.)");
         };
 
@@ -26179,11 +27448,15 @@ ${subjectLine}
                     note: `자리 배열 변경 → ${draftRows}×${draftCols} (사용 ${total - draftHidden.size})`,
                 });
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                    const wrote = await commitEstateState({
                         seats: built.seats,
                         layout: built.layout,
                         purchaseHistory: prevHistory,
-                    });
+                    }, { allowClearOccupants: true, allowCreateSeats: true });
+                    if (!wrote) {
+                        await window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
+                        return;
+                    }
                     d.remove();
                     await window.customAlert(`✅ 자리 배열을 저장했습니다.\n${draftRows}행 × ${draftCols}열`);
                 } catch (e) {
@@ -27179,7 +28452,7 @@ ${subjectLine}
         };
 
         window.saveShopPricesAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
+            if (!pinMasterCanEditShopPrices({ isGM: !!(window.playerState && window.playerState.isGM) })) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const shopPrices = {};
             getAllShopItems().forEach((s) => {
@@ -29604,91 +30877,180 @@ ${subjectLine}
             return match ? classEndAutoXpAnnouncement(match[1]) : '';
         }
 
-        let _classXpWriteNoticeKey = '';
+        /**
+         * 수업 종료 XP는 단순하게 줘요.
+         * 마스터 J 화면이 다음 종 시각(+20초)에 타이머를 한 번 걸고, 종이 치면 학급 학생과 autoXp 공지를 한 번에 묶어 저장해요.
+         * 서버를 미리 읽지 않아요. 순서·재시도 규칙은 lib/classXpGrant.js에 있어요.
+         * - '이 기기에서 줬음' 표시는 저장이 끝난 뒤에 남겨요(그 사이 새로고침되면 다시 열 때 이어서 줘요).
+         * - 같은 종을 두 번 쓰면 autoXp 규칙이 통째로 거절해서 기기 여러 대가 동시에 줘도 한 번만 들어가요.
+         * - 409는 잠깐 뒤 최대 2번, 403은 서버 시각을 확인해 한 번만 다시 보내요. 429는 더 보내지 않아요.
+         * 알림은 실패했을 때만 토스트로, 이유별로 이 기기에서 하루 한 번 띄워요.
+         */
+        let _classXpTimer = 0;
+        let _classXpArmed = false;
+        let _classXpGivenMemo = '';
+        let _classXpLastIssue = '';
+        let _classXpBusy = false;
+        let _classXpSkewMs = null;
 
-        function classXpWriteDenied(error) {
-            const code = String((error && error.code) || '');
-            return code === 'permission-denied' || code.endsWith('/permission-denied');
+        function classXpGivenStorageKey() {
+            return `sambong_classxp_given_${appId}`;
         }
 
-        /** 평일 KST. 오늘 가장 최근 종을 학생마다 따로 지급합니다. 중복은 lastClassXpSlot으로 판단합니다. */
-        window.checkAndDistributeClassXP = async function() {
-            if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
-            const now = new Date();
-            const slot = classXpCatchupSlot(now);
-            if (!slot) return;
-            if (isVacationAutomationPaused('classXp', slot.ymd)) return;
+        function classXpSkewStorageKey() {
+            return `sambong_classxp_skew_${appId}`;
+        }
 
-            const { key: todayKey, slotMs, timeStr } = slot;
-            const autoXpRef = getAutoXpDocRef();
-            const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
-            const announcement = classEndAutoXpAnnouncement(timeStr);
-            const skipped = [];
-            let grantedCount = 0;
-            let attempted = 0;
-            let permissionDenied = 0;
-
-            await Promise.all(stuList.map(async (stu) => {
-                if (studentIsCreditDefault(stu)) return;
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
-                attempted += 1;
+        /** 기기 시계가 서버보다 빠른 만큼(ms). 403 뒤에 한 번 재서 저장소에 12시간 남겨요. */
+        function classXpSkewMs() {
+            if (_classXpSkewMs == null) {
                 try {
-                    const result = await runTransaction(db, async (transaction) => {
-                        const snap = await transaction.get(ref);
-                        if (!snap.exists()) return 'missing';
-                        const data = snap.data() || {};
-                        const decision = classXpGrantDecision(data.xp, data.lastClassXpSlot, todayKey);
-                        if (decision !== 'grant') return decision;
-                        transaction.set(ref, {
-                            xp: increment(5),
-                            lastClassXpSlot: todayKey,
-                            xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, data.xp, data.xp + 5, { source: 'class-end-auto' })),
-                        }, { merge: true });
-                        return 'granted';
-                    });
-                    if (result === 'granted') grantedCount += 1;
-                    else if (result === 'invalid-xp') skipped.push({ id: stu.id, reason: 'xp' });
-                } catch (e) {
-                    console.warn('checkAndDistributeClassXP', stu.id, e);
-                    skipped.push({ id: stu.id, reason: 'write' });
-                    if (classXpWriteDenied(e)) permissionDenied += 1;
+                    _classXpSkewMs = classXpStoredSkew(localStorage.getItem(classXpSkewStorageKey()), Date.now());
+                } catch (_) {
+                    _classXpSkewMs = 0;
                 }
-            }));
-
-            skipped.sort((a, b) => String(a.id).localeCompare(String(b.id), 'ko'));
-            const skippedLabel = skipped.map((row) => String(row.id)).join(', ');
-
-            if (!grantedCount) {
-                if (attempted > 0 && permissionDenied === attempted && _classXpWriteNoticeKey !== todayKey) {
-                    _classXpWriteNoticeKey = todayKey;
-                    await window.customAlert(
-                        '수업 종료 경험치를 기록하지 못했습니다.\n\n' +
-                        '지급은 오늘 한국 표준시로 이미 지난 가장 최근 종 시각에만 기록됩니다.\n' +
-                        '이 기기 시계나 시간대가 한국 표준시와 다르면 서버가 거절합니다.\n' +
-                        '시간대를 서울로 맞추고 시각을 자동으로 설정한 뒤 이 화면을 다시 열어 주세요.'
-                    );
-                } else if (skipped.length) {
-                    await window.customAlert(
-                        `⏰ [${timeStr}] 수업 종료 경험치를 넘긴 학생이 있습니다.\n` +
-                        `건너뛴 학생: ${skippedLabel}\n` +
-                        '경험치가 숫자가 아니거나 그 학생 기록만 거절된 경우입니다.'
-                    );
-                }
-                return;
             }
+            return _classXpSkewMs || 0;
+        }
 
+        function setClassXpSkew(skew) {
+            _classXpSkewMs = Number.isFinite(skew) ? skew : 0;
             try {
-                await setDoc(autoXpRef, { lastAutoXpTime: todayKey, slotMs });
-            } catch (e) {
-                console.warn('autoXp advisory', e);
+                localStorage.setItem(classXpSkewStorageKey(), JSON.stringify({ skew: _classXpSkewMs, at: Date.now() }));
+            } catch (_) { /* 저장소를 못 쓰면 이 화면에서만 기억해요 */ }
+        }
+
+        /** 서버 기준으로 고친 지금 시각 */
+        function classXpNowMs() {
+            return Date.now() - classXpSkewMs();
+        }
+
+        /** 이 페이지 주소의 HTTP Date 헤더로 서버 시각을 봐요. Firestore 읽기가 아니에요. 모르면 null이에요. */
+        async function measureClassXpSkew() {
+            try {
+                const sent = Date.now();
+                const res = await fetch(`${location.pathname}?classxp-clock=${sent}`, { method: 'HEAD', cache: 'no-store' });
+                const received = Date.now();
+                return classXpSkewFromDateHeader(res.headers.get('date'), sent, received);
+            } catch (_) {
+                return null;
             }
+        }
+
+        function classXpGivenHere(slotKey) {
+            if (classXpGivenOnDevice(_classXpGivenMemo, slotKey)) return true;
+            try {
+                return classXpGivenOnDevice(localStorage.getItem(classXpGivenStorageKey()), slotKey);
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function markClassXpGivenHere(slotKey) {
+            _classXpGivenMemo = slotKey;
+            try {
+                localStorage.setItem(classXpGivenStorageKey(), slotKey);
+            } catch (_) { /* 저장소를 못 쓰면 이 화면에서만 기억해요 */ }
+        }
+
+        function scheduleClassXpBell() {
+            clearTimeout(_classXpTimer);
+            const nowMs = classXpNowMs();
+            _classXpTimer = setTimeout(() => {
+                void window.checkAndDistributeClassXP();
+                scheduleClassXpBell();
+            }, classXpTimerDelay(nowMs, classXpNextFireMs(nowMs)));
+        }
+
+        /** 화면을 연 뒤 한 번만: 오늘 가장 최근 종을 아직 이 기기가 안 줬으면 한 번 주고, 다음 종 타이머를 걸어요. */
+        function armClassXpBellTimer() {
+            if (_classXpArmed) return;
+            if (!window.playerState || !window.playerState.isGM || typeof db === 'undefined' || !db) return;
+            if (!window.allStudentsData || window.allStudentsData.length === 0) return;
+            _classXpArmed = true;
+            void window.checkAndDistributeClassXP();
+            scheduleClassXpBell();
+        }
+
+        function noteClassXpIssue(ymd, slotKey, kind, message) {
+            const issueKey = `${slotKey}|${kind}|${message}`;
+            if (!message || _classXpLastIssue === issueKey) return;
+            _classXpLastIssue = issueKey;
+            console.warn('checkAndDistributeClassXP', slotKey, kind, message);
+            try {
+                localStorage.setItem(`sambong_classxp_last_issue_${appId}`, JSON.stringify({ at: Date.now(), slot: slotKey, kind, message }));
+            } catch (_) { /* 기록을 못 남겨도 알림은 계속 봐요 */ }
+            if (!classXpNoticeFirstToday(localStorage, appId, kind, ymd)) return;
+            if (typeof window.showToast === 'function') window.showToast(message, 8000, { tone: 'warn' });
+        }
+
+        function classXpLabelOf(sid) {
+            const s = String(sid);
+            const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
+            const roster = window.classMeta?.roster || fallback;
+            const entry = roster.find((r) => String(r.id) === s);
+            const name = String((entry ? entry.name : STUDENT_NAMES[s]) || '').trim();
+            return classXpStudentLabel(s, name ? getStudentDisplayLabel(s) : '');
+        }
+
+        /** 묶음 저장 1번: 학생마다 +5와 이번 종 키, 첫 묶음에는 autoXp 공지까지. 읽기 없이 한 번만 보내요(maxAttempts 1). */
+        async function commitClassXpChunk(slot, ids, withAutoXp) {
+            const xpById = new Map(window.allStudentsData.map((stu) => [String(stu && stu.id), stu && stu.xp]));
+            await runTransaction(db, async (transaction) => {
+                for (const sid of ids) {
+                    const beforeXp = xpById.get(sid);
+                    transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), {
+                        xp: increment(5),
+                        lastClassXpSlot: slot.key,
+                        xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${slot.timeStr})`, beforeXp, beforeXp + 5, { source: 'class-end-auto' })),
+                    });
+                }
+                // 같은 종을 두 번 쓰면 autoXp 규칙(40분 간격)이 이 저장 전체를 거절해요. 기기 여러 대가 겹쳐도 한 번만 들어가요.
+                if (withAutoXp) transaction.set(getAutoXpDocRef(), { lastAutoXpTime: slot.key, slotMs: slot.slotMs });
+            }, { maxAttempts: 1 });
+        }
+
+        /** 평일 KST. 오늘 가장 최근 종을 이 기기에서 한 번만, 읽기 없이 한 번에 저장해요. */
+        window.checkAndDistributeClassXP = async function() {
+            if (!window.playerState || !window.playerState.isGM || typeof db === 'undefined' || !db) return;
+            if (!window.allStudentsData || window.allStudentsData.length === 0) return;
+            if (_classXpBusy) return;
+            _classXpBusy = true;
+            const skewBefore = classXpSkewMs();
+            let outcome = null;
+            try {
+                outcome = await runClassXpGrant({
+                    now: classXpNowMs,
+                    students: () => window.allStudentsData || [],
+                    lastAutoXpKey: () => (window.globalSettings && window.globalSettings.lastAutoXpTime) || '',
+                    isGiven: classXpGivenHere,
+                    markGiven: markClassXpGivenHere,
+                    isPaused: (ymd) => isVacationAutomationPaused('classXp', ymd),
+                    skipStudent: studentIsCreditDefault,
+                    commit: commitClassXpChunk,
+                    measureSkew: measureClassXpSkew,
+                    setSkew: setClassXpSkew,
+                    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+                    notify: (kind, slot, invalidIds) => {
+                        const labels = (invalidIds || []).slice().sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })).map(classXpLabelOf);
+                        noteClassXpIssue(slot.ymd, slot.key, kind, classXpIssueMessage(kind, slot.timeStr, labels));
+                    },
+                });
+            } catch (e) {
+                console.warn('checkAndDistributeClassXP', e);
+            } finally {
+                _classXpBusy = false;
+            }
+            // 시계 차이를 새로 알았으면 다음 종 타이머도 서버 기준으로 다시 걸어요.
+            if (_classXpArmed && classXpSkewMs() !== skewBefore) scheduleClassXpBell();
+            if (!outcome || !outcome.granted) return;
+            const slotKey = outcome.slotKey;
+            const announcement = classEndAutoXpAnnouncement(slotKey.slice(-5));
             if (!window.globalSettings) window.globalSettings = {};
             window.globalSettings.autoXpAnnouncement = announcement;
-            window.globalSettings.lastAutoXpTime = todayKey;
+            window.globalSettings.lastAutoXpTime = slotKey;
             const npcEl = document.getElementById('npcText');
             if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
-            const skipLine = skipped.length ? `\n\n건너뛴 학생: ${skippedLabel}\n(경험치가 숫자가 아니거나 기록에 실패한 학생입니다.)` : '';
-            window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${grantedCount}명에게 경험치 +5 자동 지급을 완료했습니다.${skipLine}`);
         };
 
         window.checkAndDistributeSalary = async function() {

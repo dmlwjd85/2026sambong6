@@ -22937,7 +22937,7 @@ ${subjectLine}
 
             if (!(window.estateState.seats || []).length) {
                 grid.style.gridTemplateColumns = '1fr';
-                grid.innerHTML = `<div class="estate-empty-notice rounded-xl border border-dashed border-slate-500 bg-slate-900/60 p-4 text-center text-xs font-bold text-slate-200">${estateAdmin ? '아직 자리가 없어요. 위의 배열 버튼에서 행·열을 정해 자리를 만들어 주세요.' : '선생님이 자리를 아직 만들지 않았어요.'}</div>`;
+                grid.innerHTML = `<div class="estate-empty-notice rounded-xl border border-dashed border-slate-500 bg-slate-900/60 p-4 text-center text-xs font-bold text-slate-200">${estateAdmin ? '아직 자리가 없어요. 「자리 배열」에서 행·열을 정해 자리를 만들어 주세요.' : '선생님이 자리를 아직 만들지 않았어요.'}</div>`;
                 if (typeof window.renderPlaza === 'function') {
                     window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
                 }

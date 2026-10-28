@@ -551,7 +551,7 @@ import { learningThermometerAutoNote, learningThermometerStudentControls, master
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
 import { levelXpForDisplay } from './lib/levelDisplay.js';
-import { chooseOxRecord } from './lib/oxQuiz.js';
+import { chooseOxRecord, planOxQuestionWrite } from './lib/oxQuiz.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
@@ -9959,17 +9959,29 @@ ${subjectLine}
 
         const oxQuizUi = bindOxQuiz(document.getElementById('oxQuizStage'), {
             load: async () => {
-                if (!db) return {};
+                if (!db) throw new Error('데이터베이스에 연결되지 않았습니다.');
                 const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'));
                 return snap.exists() ? (snap.data() || {}) : {};
             },
-            saveQuestions: async (questions) => {
+            saveQuestions: async (questions, mode = 'append') => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
-                    questions,
-                    updatedAt: Date.now(),
-                }, { merge: true });
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank');
+                let outcome = { questions: [], error: '문제 은행을 저장하지 못했습니다.' };
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const data = snap.exists() ? (snap.data() || {}) : {};
+                    const existing = Array.isArray(data.questions) ? data.questions : [];
+                    const plan = planOxQuestionWrite(existing, questions, mode);
+                    outcome = plan;
+                    if (plan.error) return;
+                    tx.set(ref, {
+                        questions: plan.questions,
+                        updatedAt: Date.now(),
+                    }, { merge: true });
+                });
+                if (outcome.error) throw new Error(outcome.error);
+                return outcome.questions;
             },
             saveSettings: async (settings) => {
                 const authOk = await ensureAnonAuthReady();

@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
 import {
     canArchiveManagedClass,
@@ -8,6 +10,7 @@ import {
     classDirectoryStatusLabel,
     directoryEntriesForViewer,
     mergeClassDirectory,
+    pinForResetMasterDoc,
     safeManagedClassId,
     sanitizeClassDirectoryEntry,
     shouldRotateMasterPinOnReset,
@@ -29,6 +32,19 @@ describe('학급 관리 목록', () => {
         assert.equal(canArchiveManagedClass(gm, SEED_MASTER_CLASS_ID, SEED_MASTER_CLASS_ID), false);
         assert.equal(shouldRotateMasterPinOnReset('test-class'), true);
         assert.equal(shouldRotateMasterPinOnReset(SEED_MASTER_CLASS_ID), false);
+        assert.equal(pinForResetMasterDoc('2468', { rotate: false, newPin: '' }), '2468');
+        assert.equal(pinForResetMasterDoc('2468', { rotate: true, newPin: '1357' }), '1357');
+        assert.equal(pinForResetMasterDoc('', { rotate: false }), '');
+    });
+
+    it('시드 반 초기화 코드는 마스터 PIN 필드를 문서에서 빼지 않는다', () => {
+        const src = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const start = src.indexOf('async function resetClassWorkspaceById');
+        const end = src.indexOf('window.openManagedClass', start);
+        const body = src.slice(start, end);
+        assert.ok(start >= 0 && end > start);
+        assert.match(body, /pinForResetMasterDoc\(data\.pin/);
+        assert.equal(body.includes('delete payload.pin'), false);
     });
 
     it('다른 반 마스터는 지금 반만 초기화한다', () => {

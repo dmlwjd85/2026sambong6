@@ -5226,6 +5226,11 @@ function redrawPlazaGrantsUi() {
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'learningThermometer', 'votes', String(studentId));
         }
 
+        // 부모 문서 규칙은 settlementPending 을 허용하지 않습니다. 잠글 때의 값은 별도 문서에 둡니다.
+        function getLearningThermometerSnapshotRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'learning_thermometer_settlement_snapshot');
+        }
+
         function getLearningThermometerVotesCol() {
             return collection(db, 'artifacts', appId, 'public', 'data', 'settings', 'learningThermometer', 'votes');
         }
@@ -16248,6 +16253,7 @@ ${subjectLine}
                     activeIds: getActiveStudentIds(),
                     voteRefFor: (sid) => getLearningThermometerVoteRef(sid),
                     studentRefFor: (sid) => doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                    snapshotRef: getLearningThermometerSnapshotRef(),
                     today,
                     owner: _thermometerLockOwner,
                     leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,

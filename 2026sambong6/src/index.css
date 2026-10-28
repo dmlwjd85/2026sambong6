@@ -649,6 +649,8 @@
             white-space: nowrap;
             overflow: hidden;
         }
+        /* 온도계 아이콘과 숫자 사이 띄움(예전 '🌡 +0'의 빈칸 자리) */
+        .plaza-learning-thermometer .plaza-therm-ico { margin-right: 0.25em; }
 
         /* 광장 학생 카드 배열: 크게 4명 / 중간 5명 / 작게 6명 (한 줄, 넓은 화면) */
         .plaza-cards {
@@ -714,6 +716,39 @@
             flex: 0 0 auto;
         }
         .praise-thumb-down { transform: rotate(180deg); }
+        /* 좁은 광장 카드(폰 6칸 자리표 등): 따봉·역따봉을 카드 폭 안에 반씩 나눠 넣고,
+           아이콘 아래에 숫자를 두어 세 자리 숫자(120)도 넘치거나 이웃 카드와 겹치지 않게 합니다.
+           터치 영역은 버튼마다 최소 약 24×25px을 지킵니다. */
+        @container (max-width: 6rem) {
+            .praise-pair { gap: 0.1rem; }
+            .praise-btn {
+                flex: 1 1 0;
+                min-width: 0;
+                max-width: 2.6rem;
+                flex-direction: column;
+                gap: 0.05rem;
+                padding: 0.1rem 0;
+                border-radius: 0.55rem;
+                font-size: 8px;
+                letter-spacing: -0.03em;
+            }
+            .praise-btn img { width: 0.72rem; height: 0.72rem; }
+        }
+        /* 아주 좁은 카드(320·360px 폰 자리표): 경험치는 윗줄, 온도계·봉은 아랫줄 — 두 줄 안에 들어가요.
+           온도계는 아이콘을 작게, 글자 간격을 살짝 좁혀 봉과 한 줄에 놓아요. 숫자가 아주 길면(예: -20과 네 자리 봉)
+           옆 카드로 넘치지 않게 셋째 줄로 내려가요. */
+        @container (max-width: 5.2rem) {
+            .plaza-card-stats { flex-wrap: wrap; justify-content: center; column-gap: 0.08rem; row-gap: 0.05rem; }
+            .plaza-card-stats .plaza-stat-xp { flex: 0 0 100%; text-align: center; }
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer { min-width: 0; max-width: none; padding: 0 0.08rem; font-size: 7px !important; letter-spacing: -0.03em; }
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer .plaza-therm-ico { font-size: 6px !important; margin-right: 0.05em; }
+            .plaza-card .plaza-card-stats .plaza-stat-bong { letter-spacing: -0.03em; }
+            .plaza-cards .plaza-card .plaza-card-stats { padding-left: 0.06rem !important; padding-right: 0.06rem !important; }
+        }
+        /* 320px 폰처럼 카드가 더 좁으면 온도계 아이콘은 빼고 색 테두리와 숫자만 보여요(눌러 보면 '학습 온도계' 설명이 떠요). */
+        @container (max-width: 2.9rem) {
+            .plaza-card .plaza-card-stats .plaza-learning-thermometer .plaza-therm-ico { display: none; }
+        }
         .plaza-dislike-reason {
             max-width: 100%;
             margin-top: 0.12rem;
@@ -902,9 +937,25 @@
                 padding: 0.22rem 0 !important;
                 min-height: 0;
             }
-            /* 스마트폰: 방패·직업·컨디션·등급이름은 숨기고 얼굴·이름·수치만 남깁니다. */
+            /* 스마트폰: 직업·컨디션·등급이름은 숨기고 얼굴·이름·수치만 남깁니다. */
             .plaza-card-extra { display: none !important; }
             .plaza-rank-name { display: none; }
+            /* 방패는 폰에서도 보여요: 카드 오른쪽 위 안쪽에 작게 붙여 옆 카드와 겹치지 않아요(깜빡임 없음). */
+            .plaza-card .plaza-card-extra.plaza-hp-badge {
+                display: flex !important;
+                align-items: center;
+                top: 0.12rem;
+                right: 0.12rem;
+                font-size: 0.68rem;
+                line-height: 1;
+                animation: none;
+                filter: drop-shadow(0 1px 1px rgba(2, 6, 23, 0.8));
+            }
+            .plaza-card .plaza-hp-badge > span {
+                font-size: 7px !important;
+                line-height: 1.1;
+                margin-left: -0.15rem;
+            }
 
             /* 자리표 연동: 부동산과 같은 열을 유지하고 크게 보이게 함 */
             .plaza-cards.plaza-cards-seating {
@@ -2284,6 +2335,12 @@
         .avatar-flex { animation: flex-muscle 1.5s infinite ease-in-out; }
         .avatar-float { animation: float-magic 3s infinite ease-in-out; }
         .avatar-legend { animation: legend-glow 2s infinite alternate; }
+        @media (prefers-reduced-motion: reduce) {
+            .avatar-bounce,
+            .avatar-flex,
+            .avatar-float,
+            .avatar-legend { animation: none !important; }
+        }
 
         /* 등급 배지: 원만 남기고 네모 모서리(흰/검)는 잘라냅니다. 테두리 색은 등급 클래스에서 옵니다. */
         .rank-badge-clip {
@@ -4604,16 +4661,361 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .dash-figure {
             display: flex;
-            flex-direction: row;
-            align-items: flex-end;
-            justify-content: center;
-            gap: 0.55rem;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0;
             width: 100%;
-            margin: 1rem 0 0.35rem;
+            margin: 0.15rem 0 0.2rem;
             overflow: visible;
         }
-        .dash-figure #dashAvatar { margin: 0; }
-        .dash-figure #dashLevelName { margin: 0 0 0.35rem; white-space: nowrap; }
+        .dash-portrait-slot {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            overflow: visible;
+        }
+        .dash-figure #dashAvatar {
+            margin: 0;
+            padding: 0;
+        }
+        .dash-portrait-slot { min-height: 8.8rem; }
+        .dash-rank-frame {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 8.8rem;
+            height: 8.8rem;
+            max-width: none;
+            max-height: none;
+            aspect-ratio: 1 / 1;
+            transform: translate(-50%, -50%);
+            object-fit: contain;
+            pointer-events: none;
+            /* 얼굴보다 뒤. 구멍 밖 수정·날개·루비는 초상 원 바깥에 남습니다. */
+            z-index: 6;
+        }
+        #dashAvatar .char-portrait-frame { z-index: 8; }
+        .dash-rank-aura {
+            position: absolute;
+            left: 50%;
+            top: 42%;
+            width: 10.4rem;
+            height: 10.4rem;
+            aspect-ratio: 1 / 1;
+            transform: translate(-50%, -50%);
+            object-fit: contain;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .dash-rank-fx {
+            position: absolute;
+            left: 50%;
+            top: 0.8rem;
+            width: 7.2rem;
+            height: 7.2rem;
+            transform: translateX(-50%);
+            object-fit: cover;
+            pointer-events: none;
+            z-index: 11;
+            opacity: 0;
+            border-radius: 50%;
+        }
+        .dash-name {
+            max-width: 100%;
+            text-align: center;
+            line-height: 1.25;
+            overflow: visible;
+        }
+        .dash-rank-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.28rem;
+            width: 100%;
+            margin-top: 0.35rem;
+        }
+        .dash-rank-stars {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.12rem;
+            max-width: 100%;
+        }
+        .dash-rank-star {
+            width: 1.15rem;
+            height: 1.15rem;
+            object-fit: contain;
+            display: block;
+        }
+        /* 별이 둘인 초보·중수는 초록 캡슐과 은색 테로 구분합니다. */
+        #dashAvatarCard.dash-rank-chobo .dash-rank-stars,
+        #dashAvatarCard.dash-rank-jungsu .dash-rank-stars {
+            border-radius: 999px;
+            padding: 0.08rem 0.32rem 0.1rem;
+        }
+        #dashAvatarCard.dash-rank-chobo .dash-rank-stars {
+            background: rgba(21, 128, 61, 0.78);
+            box-shadow: inset 0 0 0 1.5px #4ade80;
+        }
+        #dashAvatarCard.dash-rank-jungsu .dash-rank-stars {
+            background: rgba(15, 23, 42, 0.78);
+            box-shadow: inset 0 0 0 1.5px #e2e8f0;
+        }
+        #dashAvatarCard.dash-rank-jungsu .dash-rank-star { width: 1.28rem; height: 1.28rem; }
+        #dashLevelName { white-space: normal; text-align: center; max-width: 100%; }
+        #dashAvatarCard.dash-rank-saenaegi { background: #3f3f46; border-color: transparent; }
+        #dashAvatarCard.dash-rank-chobo {
+            background: linear-gradient(180deg, #166534 0%, #14532d 100%);
+            border-color: transparent;
+        }
+        #dashAvatarCard.dash-rank-jungsu {
+            background: linear-gradient(180deg, #0c4a6e 0%, #1e3a8a 100%);
+            border-color: transparent;
+        }
+        #dashAvatarCard.dash-rank-gosu {
+            background: radial-gradient(circle at 50% 28%, #fbbf24 0%, #92400e 42%, #451a03 100%);
+            border-color: transparent;
+        }
+        #dashAvatarCard.dash-rank-guardian { border-color: transparent; }
+        #dashAvatarCard.dash-rank-legend { border-color: transparent; }
+        #dashAvatarCard.dash-rank-guardian .dash-rank-bg.is-on { opacity: 0.5; }
+        #dashAvatarCard.dash-rank-legend .dash-rank-bg.is-on { opacity: 0.88; }
+        #dashAvatarCard .dash-name-white { color: #f8fafc; }
+        #dashAvatarCard .dash-name-silver { color: #e2e8f0; text-shadow: 0 0 0 #0f172a, 0 1px 0 #0f172a; }
+        #dashAvatarCard .dash-name-gold { color: #fde68a; text-shadow: 0 1px 0 #451a03; }
+        #dashAvatarCard .dash-name-rainbow {
+            background-image: linear-gradient(90deg, #fb7185, #fbbf24, #4ade80, #38bdf8, #e879f9);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-stroke: 0.6px #0f172a;
+            paint-order: stroke fill;
+            filter: drop-shadow(0 1px 0 #0f172a);
+        }
+        #dashAvatarCard.dash-stats-gold .dash-stat-cell {
+            background: linear-gradient(180deg, rgba(120, 53, 15, 0.55), rgba(69, 26, 3, 0.8));
+            border: 1px solid #fbbf24;
+            border-radius: 0.8rem;
+            padding: 0.35rem 0.2rem;
+        }
+        #dashAvatarCard.dash-stats-gold #dashXp,
+        #dashAvatarCard.dash-stats-gold #dashBong:not(.bong-neg) { color: #fde68a; }
+        #dashAvatarCard .dash-rank-aura.is-soft { animation: dash-aura-soft 3.6s ease-in-out infinite; }
+        #dashAvatarCard .dash-rank-aura.is-halo { animation: dash-aura-halo 3.8s ease-in-out infinite; }
+        #dashAvatarCard .dash-rank-aura.is-rays { animation: dash-aura-rays 3.6s ease-in-out infinite; }
+        #dashAvatarCard .dash-rank-aura.is-particles { animation: dash-aura-particles 3.4s ease-in-out infinite; }
+        #dashAvatarCard .dash-rank-aura.is-flame { animation: dash-aura-flame 3.6s ease-in-out infinite; }
+        #dashAvatarCard.dash-rank .dash-shine { animation: dash-shine 3.8s ease-in-out infinite; }
+        #dashAvatarCard.dash-rank-saenaegi .dash-shine { animation: dash-shine-soft 4s ease-in-out infinite; }
+        #dashAvatarCard.dash-rank-chobo .dash-gem.g1,
+        #dashAvatarCard.dash-rank-jungsu .dash-gem.g1,
+        #dashAvatarCard.dash-rank-gosu .dash-gem.g1,
+        #dashAvatarCard.dash-rank-guardian .dash-gem.g1,
+        #dashAvatarCard.dash-rank-legend .dash-gem.g1 { animation: dash-gem 3.6s ease-in-out infinite; }
+        #dashAvatarCard.dash-rank-jungsu .dash-gem.g2,
+        #dashAvatarCard.dash-rank-gosu .dash-gem.g2,
+        #dashAvatarCard.dash-rank-guardian .dash-gem.g2,
+        #dashAvatarCard.dash-rank-legend .dash-gem.g2 { animation: dash-gem 3.6s ease-in-out 0.7s infinite; }
+        #dashAvatarCard.dash-rank-gosu .dash-gem.g3,
+        #dashAvatarCard.dash-rank-guardian .dash-gem.g3 { animation: dash-gem 3.8s ease-in-out 1.3s infinite; }
+        #dashAvatarCard.dash-rank-guardian .dash-mote { animation: dash-mote 3.8s ease-in-out infinite; }
+        #dashAvatarCard.dash-rank-guardian .dash-mote.m2 { animation-delay: 0.8s; }
+        #dashAvatarCard.dash-rank-guardian .dash-mote.m3 { animation-delay: 1.6s; }
+        #dashAvatarCard.dash-rank-guardian .dash-mote.m4 { animation-delay: 2.4s; }
+        #dashAvatarCard.dash-rank-legend .dash-ember { animation: dash-ember 3.6s ease-in-out infinite; }
+        #dashAvatarCard.dash-rank-legend .dash-ember.e2 { animation-delay: 0.6s; }
+        #dashAvatarCard.dash-rank-legend .dash-ember.e3 { animation-delay: 1.2s; }
+        #dashAvatarCard.dash-rank-legend .dash-ember.e4 { animation-delay: 1.9s; }
+        #dashAvatarCard.dash-rank-legend .dash-crown { animation: dash-crown 3.6s ease-in-out infinite; }
+        #dashRankFx.is-once { animation: dash-spark-once 1.15s ease-out 1 both; }
+        #dashRankFx.is-slow { animation: dash-spark-slow 4.8s ease-in-out infinite; }
+        #dashRankFx.is-legend { animation: dash-legend-glow 3.4s ease-in-out infinite; }
+        @keyframes dash-spark-once {
+            0% { opacity: 0; transform: translateX(-50%) scale(0.86); }
+            40% { opacity: 0.95; transform: translateX(-50%) scale(1); }
+            100% { opacity: 0; transform: translateX(-50%) scale(1.06); }
+        }
+        @keyframes dash-spark-slow {
+            0%, 100% { opacity: 0.2; transform: translateX(-50%) scale(1); }
+            50% { opacity: 0.75; transform: translateX(-50%) scale(1.04); }
+        }
+        @keyframes dash-legend-glow {
+            0%, 100% { opacity: 0.28; transform: translateX(-50%) scale(1); }
+            50% { opacity: 0.82; transform: translateX(-50%) scale(1.05); }
+        }
+        @keyframes dash-aura-soft {
+            0%, 100% { opacity: 0.78; transform: translate(-50%, -50%) scale(0.96); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.03); }
+        }
+        @keyframes dash-aura-halo {
+            0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(0.97); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+        }
+        @keyframes dash-aura-rays {
+            0%, 100% { opacity: 0.74; transform: translate(-50%, -50%) scale(0.96); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.045); }
+        }
+        @keyframes dash-aura-particles {
+            0%, 100% { opacity: 0.72; transform: translate(-50%, -50%) scale(0.96); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+        }
+        @keyframes dash-aura-flame {
+            0%, 100% { opacity: 0.72; transform: translate(-50%, -50%) scale(0.96); }
+            28% { opacity: 1; transform: translate(-50%, -50%) scale(1.02); }
+            52% { opacity: 0.82; transform: translate(-50%, -50%) scale(1.045); }
+            74% { opacity: 1; transform: translate(-50%, -50%) scale(1.01); }
+        }
+        .dash-rank-back {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2;
+        }
+        .dash-rank-front {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 8.8rem;
+            height: 8.8rem;
+            max-width: none;
+            max-height: none;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 7;
+            overflow: hidden;
+            -webkit-mask-image: radial-gradient(circle at center, transparent 0 38%, #000 48%, #000 100%);
+            mask-image: radial-gradient(circle at center, transparent 0 38%, #000 48%, #000 100%);
+        }
+        .dash-shine {
+            position: absolute;
+            top: -15%;
+            left: 0;
+            width: 26%;
+            height: 130%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+            opacity: 0;
+            transform: translate3d(-180%, 0, 0) rotate(16deg);
+        }
+        .dash-gem, .dash-mote, .dash-ember, .dash-crown {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 0.42rem;
+            height: 0.42rem;
+            margin: 0;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+        }
+        .dash-gem { background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0.15) 70%); z-index: 2; }
+        .dash-gem.g1 { margin-left: -0.21rem; margin-top: -3.15rem; }
+        .dash-gem.g2 { margin-left: -0.21rem; margin-top: 2.7rem; }
+        .dash-gem.g3 { margin-left: -3.15rem; margin-top: -0.21rem; }
+        #dashAvatarCard.dash-rank-chobo .dash-gem { background: radial-gradient(circle, #fff7d6 0%, rgba(251, 191, 36, 0.2) 72%); }
+        #dashAvatarCard.dash-rank-jungsu .dash-gem { background: radial-gradient(circle, #e0f2fe 0%, rgba(56, 189, 248, 0.15) 72%); }
+        #dashAvatarCard.dash-rank-gosu .dash-gem { background: radial-gradient(circle, #ecfdf5 0%, rgba(52, 211, 153, 0.15) 72%); }
+        #dashAvatarCard.dash-rank-legend .dash-gem { background: radial-gradient(circle, #ffe4e6 0%, rgba(248, 113, 113, 0.15) 72%); }
+        .dash-mote { width: 0.28rem; height: 0.28rem; background: #e9d5ff; z-index: 1; }
+        .dash-mote.m1 { margin-left: -4.5rem; margin-top: -3.2rem; }
+        .dash-mote.m2 { margin-left: 4.1rem; margin-top: -2.4rem; }
+        .dash-mote.m3 { margin-left: -3.6rem; margin-top: 2.5rem; }
+        .dash-mote.m4 { margin-left: 3.8rem; margin-top: 1.6rem; }
+        .dash-ember { width: 0.32rem; height: 0.32rem; background: #fb923c; z-index: 1; }
+        .dash-ember.e1 { margin-left: -4.3rem; margin-top: -1.2rem; }
+        .dash-ember.e2 { margin-left: 4.2rem; margin-top: -2.2rem; }
+        .dash-ember.e3 { margin-left: -3.4rem; margin-top: 2.8rem; }
+        .dash-ember.e4 { margin-left: 3.5rem; margin-top: 2.2rem; }
+        .dash-crown {
+            width: 1.35rem;
+            height: 0.72rem;
+            margin-left: -0.67rem;
+            margin-top: -3.35rem;
+            border-radius: 45%;
+            background: radial-gradient(circle, rgba(255, 236, 170, 0.95), rgba(251, 191, 36, 0) 70%);
+            z-index: 2;
+        }
+        @keyframes dash-shine {
+            0%, 100% { opacity: 0; transform: translate3d(-180%, 0, 0) rotate(16deg); }
+            16% { opacity: 0.85; }
+            40% { opacity: 0; transform: translate3d(430%, 0, 0) rotate(16deg); }
+        }
+        @keyframes dash-shine-soft {
+            0%, 100% { opacity: 0; transform: translate3d(-180%, 0, 0) rotate(16deg); }
+            16% { opacity: 0.4; }
+            40% { opacity: 0; transform: translate3d(430%, 0, 0) rotate(16deg); }
+        }
+        @keyframes dash-gem {
+            0%, 68%, 100% { opacity: 0.15; transform: scale(0.6); }
+            78% { opacity: 1; transform: scale(1); }
+            88% { opacity: 0.2; transform: scale(0.7); }
+        }
+        @keyframes dash-mote {
+            0% { opacity: 0; transform: translate3d(0, 7px, 0); }
+            45% { opacity: 0.9; transform: translate3d(0, -2px, 0); }
+            100% { opacity: 0; transform: translate3d(0, -12px, 0); }
+        }
+        @keyframes dash-ember {
+            0% { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.7); }
+            40% { opacity: 0.95; transform: translate3d(0, -2px, 0) scale(1); }
+            100% { opacity: 0; transform: translate3d(0, -14px, 0) scale(0.6); }
+        }
+        @keyframes dash-crown {
+            0%, 100% { opacity: 0.4; transform: scale(0.92); }
+            50% { opacity: 1; transform: scale(1.06); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #dashAvatarCard .dash-rank-fx { animation: none !important; opacity: 0.28; transform: translateX(-50%); }
+            #dashAvatarCard .dash-rank-aura { animation: none !important; opacity: 1; transform: translate(-50%, -50%); }
+            #dashAvatarCard .dash-shine,
+            #dashAvatarCard .dash-gem,
+            #dashAvatarCard .dash-mote,
+            #dashAvatarCard .dash-ember,
+            #dashAvatarCard .dash-crown { animation: none !important; opacity: 0; transform: none; }
+        }
+        /* 대시보드 초상만 구멍보다 조금 크게 해 테두리 앞에 앉힙니다. 광장 크기는 그대로입니다. */
+        #dashAvatar .char-portrait-lg { width: 5.1rem; height: 5.1rem; }
+        #dashAvatarCard.dash-rank-saenaegi #dashAvatar .char-portrait-lg { width: 5.63rem; height: 5.63rem; }
+        #dashAvatarCard.dash-rank-chobo #dashAvatar .char-portrait-lg { width: 5.1rem; height: 5.1rem; }
+        #dashAvatarCard.dash-rank-jungsu #dashAvatar .char-portrait-lg { width: 5.46rem; height: 5.46rem; }
+        #dashAvatarCard.dash-rank-gosu #dashAvatar .char-portrait-lg { width: 4.58rem; height: 4.58rem; }
+        #dashAvatarCard.dash-rank-guardian #dashAvatar .char-portrait-lg { width: 4.4rem; height: 4.4rem; }
+        #dashAvatarCard.dash-rank-legend #dashAvatar .char-portrait-lg { width: 4.22rem; height: 4.22rem; }
+        /* 원형 등급 링·등급 그림은 대시보드에서 그림 테두리로 바꿉니다. 별·이름 색은 유지합니다. */
+        #dashAvatarCard .char-avatar-has-rank .char-portrait-clip { box-shadow: none; }
+        #dashAvatarCard .char-rank-bg { display: none; }
+        @media (max-width: 420px) {
+            #dashAvatarCard { padding: 0.9rem 0.7rem 1rem; }
+            .dash-portrait-slot { min-height: 7.6rem; }
+            .dash-rank-frame { width: 7.6rem; height: 7.6rem; }
+            .dash-rank-front { width: 7.6rem; height: 7.6rem; }
+            .dash-rank-aura { width: 9rem; height: 9rem; }
+            #dashAvatar .char-portrait-lg { width: 4.4rem; height: 4.4rem; }
+            #dashAvatarCard.dash-rank-saenaegi #dashAvatar .char-portrait-lg { width: 4.86rem; height: 4.86rem; }
+            #dashAvatarCard.dash-rank-chobo #dashAvatar .char-portrait-lg { width: 4.41rem; height: 4.41rem; }
+            #dashAvatarCard.dash-rank-jungsu #dashAvatar .char-portrait-lg { width: 4.71rem; height: 4.71rem; }
+            #dashAvatarCard.dash-rank-gosu #dashAvatar .char-portrait-lg { width: 3.95rem; height: 3.95rem; }
+            #dashAvatarCard.dash-rank-guardian #dashAvatar .char-portrait-lg { width: 3.8rem; height: 3.8rem; }
+            #dashAvatarCard.dash-rank-legend #dashAvatar .char-portrait-lg { width: 3.65rem; height: 3.65rem; }
+            .dash-rank-star { width: 1rem; height: 1rem; }
+            #dashAvatarCard.dash-rank-jungsu .dash-rank-star { width: 1.12rem; height: 1.12rem; }
+        }
+        @media (min-width: 1600px) {
+            .dash-portrait-slot { min-height: 9.6rem; }
+            .dash-rank-frame { width: 9.6rem; height: 9.6rem; }
+            .dash-rank-front { width: 9.6rem; height: 9.6rem; }
+            .dash-rank-aura { width: 11.4rem; height: 11.4rem; }
+            #dashAvatar .char-portrait-lg { width: 5.55rem; height: 5.55rem; }
+            #dashAvatarCard.dash-rank-saenaegi #dashAvatar .char-portrait-lg { width: 6.14rem; height: 6.14rem; }
+            #dashAvatarCard.dash-rank-chobo #dashAvatar .char-portrait-lg { width: 5.57rem; height: 5.57rem; }
+            #dashAvatarCard.dash-rank-jungsu #dashAvatar .char-portrait-lg { width: 5.95rem; height: 5.95rem; }
+            #dashAvatarCard.dash-rank-gosu #dashAvatar .char-portrait-lg { width: 4.99rem; height: 4.99rem; }
+            #dashAvatarCard.dash-rank-guardian #dashAvatar .char-portrait-lg { width: 4.8rem; height: 4.8rem; }
+            #dashAvatarCard.dash-rank-legend #dashAvatar .char-portrait-lg { width: 4.61rem; height: 4.61rem; }
+        }
+        .bong-neg { color: #f87171 !important; }
         /* 초상은 원형 클립만 남기고, 네모 흰 모서리·흰 테두리는 안쪽에서 확대해 가립니다. */
         .char-portrait-clip {
             display: block;
@@ -5521,6 +5923,19 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             align-items: center;
             gap: 0.4rem;
         }
+        .boardgame-ai-label {
+            font-size: 12px;
+            font-weight: 900;
+            color: #fde68a;
+            padding-right: 0.1rem;
+        }
+        .boardgame-alk-ai {
+            flex-basis: 100%;
+        }
+        /* 알까기 로비에서 오목·체스용 'AI 고수/초인' 줄이 가려지지 않던 문제: hidden이 flex에 밀렸어요. */
+        .boardgame-ai-row.hidden {
+            display: none;
+        }
         .boardgame-room-list {
             display: flex;
             flex-direction: column;
@@ -5556,6 +5971,31 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             flex-wrap: wrap;
             gap: 0.35rem;
             grid-column: 1 / -1;
+        }
+        /* 내 알까기 대기 방: '방장' 표시 아래 '방 지우기'. 되돌릴 수 없는 버튼이라 옅은 붉은 색으로 덜 눈에 띄게 해요. */
+        .boardgame-room-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.35rem;
+        }
+        .boardgame-room-delete {
+            background: rgba(41, 37, 36, 0.6);
+            color: #f3b8a6;
+            border-color: rgba(248, 113, 113, 0.35);
+        }
+        .boardgame-room-delete:disabled,
+        #boardgameCreateBtn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+        .boardgame-room-card.is-flash {
+            border-color: #fde68a;
+            box-shadow: 0 0 0 3px rgba(253, 230, 138, 0.45);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .boardgame-room-card.is-flash { transition: none; }
         }
         .boardgame-play {
             height: 100%;
@@ -6160,4 +6600,254 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .ox-mark { min-height: 36vh; }
             .ox-mark img { height: 32vh; }
             .ox-choice, .ox-go { font-size: 1.5rem; }
+        }
+
+        /* 광장 학생 카드: 대시보드와 같은 등급 그림 테두리·오라. 캐릭터(초상)는 테두리 앞, 바깥 장식은 초상 밖에 남습니다.
+           테두리(날개·왕관 포함)와 오라 전체가 카드 폭 안에 들어가도록 카드 폭(cqi) 비율로 초상 크기를 정하고,
+           위아래에는 테두리가 초상 밖으로 나오는 만큼 여백을 둡니다. 고정 px 오프셋은 쓰지 않습니다.
+           움직임은 오라 opacity만 씁니다. 줄인 모션이면 멈춥니다. */
+        .plaza-rank-framed {
+            --pr-scale: 1.72;
+            --pr-base: 3.15rem;
+            /* 초상은 원래 크기를 지키고, 날개·왕관이 있는 테두리 그림만 카드 폭(cqi) 안에 맞춰 줄입니다.
+               1.2: 캐릭터 감정 모션(크기·기울기) 여유, 1.7rem: 옆에 붙는 Lv 표시만큼 초상이 비켜난 거리 */
+            --pr-w: var(--pr-base);
+            --pr-f: min(calc(var(--pr-w) * var(--pr-scale)), calc((100cqi - 1.7rem) / 1.2));
+            --pr-pad: max(0px, calc((var(--pr-f) * 1.2 - var(--pr-w)) * 0.5));
+        }
+        @media (max-width: 639px) {
+            .plaza-rank-framed { --pr-base: 2.35rem; }
+        }
+        .plaza-rank-framed.plaza-rank-saenaegi { --pr-scale: 1.56; }
+        .plaza-rank-framed.plaza-rank-chobo { --pr-scale: 1.72; }
+        .plaza-rank-framed.plaza-rank-jungsu { --pr-scale: 1.61; }
+        .plaza-rank-framed.plaza-rank-gosu { --pr-scale: 1.92; }
+        .plaza-rank-framed.plaza-rank-guardian { --pr-scale: 2; }
+        .plaza-rank-framed.plaza-rank-legend { --pr-scale: 2.08; }
+        .plaza-card-face .char-avatar-stack.plaza-rank-framed,
+        .plaza-cards-seating .plaza-card-face .char-avatar-stack.plaza-rank-framed {
+            padding-top: var(--pr-pad);
+            padding-bottom: var(--pr-pad);
+        }
+        .plaza-rank-framed .char-portrait-clip,
+        .plaza-rank-framed.char-avatar-has-rank .char-portrait-clip { box-shadow: none; background: transparent; }
+        .plaza-cards-seating .plaza-rank-framed .char-portrait-clip,
+        .plaza-rank-framed .char-portrait-clip { width: var(--pr-w); height: var(--pr-w); max-width: none; }
+        .plaza-rank-frame,
+        .plaza-rank-aura {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: var(--pr-f);
+            height: auto;
+            aspect-ratio: 1 / 1;
+            max-width: none;
+            max-height: none;
+            transform: translate(-50%, -50%);
+            object-fit: contain;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .plaza-rank-aura {
+            opacity: 0.85;
+            will-change: opacity;
+            animation: plaza-aura-breathe 4s ease-in-out infinite;
+        }
+        @keyframes plaza-aura-breathe {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .plaza-rank-aura { animation: none !important; opacity: 0.85; }
+        }
+        /* 430px 이하: 등급 테두리(날개·왕관)가 초상보다 1.5배 이상 크게 보이도록 카드 폭을 넓히고,
+           옆의 Lv 표시를 테두리 오른쪽 아래에 살짝 겹쳐 초상이 카드 가운데에 오게 합니다. 열 수는 그대로입니다. */
+        @media (max-width: 430px) {
+            .plaza-classroom.glass-panel { padding-left: 0.15rem; padding-right: 0.15rem; }
+            .plaza-cards.plaza-cards-seating { gap: 0.1rem; }
+            .plaza-cards-seating .plaza-card { padding-left: 0.05rem !important; padding-right: 0.05rem !important; }
+            .plaza-card-figure:has(.plaza-rank-framed) .plaza-card-lv { margin-left: -1.2rem; }
+            .plaza-rank-framed {
+                --pr-f: min(calc(var(--pr-w) * var(--pr-scale)), calc(var(--pr-w) * 1.56), calc((100cqi - 0.6rem) / 1.14));
+            }
+        }
+
+        /* ── 광장 학생 카드: 등급별 보석 채움 ──
+           새내기 원석 → 초보 비취 → 중수 사파이어 → 고수 토파즈 → 수호자 자수정 → 전설 루비.
+           위쪽은 캐릭터 뒤로 퍼지는 빛살 면(::before), 아래쪽은 깎인 면 타일(::after). 둘 다 내용 뒤(z-index:-1)라
+           캐릭터·이름·수치를 가리지 않습니다. 등급이 오를수록 빛살 수·면 밀도·반짝임이 늘고, 고수부터 안쪽 금선.
+           오라 스킨(.plaza-tier-aura)과 신용불량 카드는 기존 테두리·빛을 그대로 둡니다. */
+        .plaza-card.plaza-tier {
+            isolation: isolate;
+            background-color: var(--pt-g2);
+            background-image:
+                var(--pt-spark, linear-gradient(transparent, transparent)),
+                radial-gradient(120% 72% at 50% 24%, var(--pt-g1) 0%, var(--pt-g2) 50%, var(--pt-g3) 100%);
+        }
+        .plaza-card.plaza-tier:not(.plaza-tier-aura) { border-color: var(--pt-edge); }
+        /* --pt-rim-sh: 고수·수호자·전설의 안쪽 금선(아래 등급 묶음에서 정해요). 없으면 빈 그림자예요. */
+        .plaza-card.plaza-tier:not(.plaza-tier-aura):not(.is-credit-default) {
+            box-shadow: var(--pt-rim-sh, 0 0 0 0 transparent), inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 0 var(--pt-deep), 0 4px 8px -2px rgba(2, 6, 23, 0.45);
+        }
+        .plaza-card.plaza-tier:not(.plaza-tier-aura):not(.is-credit-default):active {
+            box-shadow: var(--pt-rim-sh, 0 0 0 0 transparent), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 var(--pt-deep), 0 1px 3px rgba(2, 6, 23, 0.4);
+        }
+        .plaza-card.plaza-tier::before,
+        .plaza-card.plaza-tier::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .plaza-card.plaza-tier::before {
+            background:
+                radial-gradient(circle at 50% 30%, rgba(var(--pt-ray-rgb, 255, 255, 255), var(--pt-core)) 0, transparent 34%),
+                repeating-conic-gradient(from 4deg at 50% 30%,
+                    rgba(var(--pt-ray-rgb, 255, 255, 255), var(--pt-ray-a)) 0 var(--pt-ray),
+                    rgba(0, 0, 0, var(--pt-ray-b)) var(--pt-ray) calc(var(--pt-ray) * 2));
+            -webkit-mask-image: radial-gradient(95% 62% at 50% 30%, #000 25%, transparent 100%);
+            mask-image: radial-gradient(95% 62% at 50% 30%, #000 25%, transparent 100%);
+        }
+        .plaza-card.plaza-tier::after {
+            background:
+                conic-gradient(from -45deg,
+                    rgba(255, 255, 255, var(--pt-fa)) 0 90deg,
+                    rgba(0, 0, 0, calc(var(--pt-fb) * 0.45)) 0 180deg,
+                    rgba(0, 0, 0, var(--pt-fb)) 0 270deg,
+                    rgba(255, 255, 255, calc(var(--pt-fa) * 0.45)) 0)
+                0 0 / var(--pt-fs) var(--pt-fs);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 38%, #000 74%);
+            mask-image: linear-gradient(to bottom, transparent 38%, #000 74%);
+        }
+        /* 이름표·Lv·수치 줄은 짙은 판 위에 — 어떤 무늬 위에서도 글자가 또렷하고, 수치 줄 아래로 무늬가 비치지 않게 불투명 */
+        .plaza-tier .plaza-card-name {
+            font-family: 'JJAEM Title', 'Noto Sans KR', sans-serif;
+            font-weight: 400;
+            background-color: var(--pt-plate);
+            border-color: var(--pt-plate-edge);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(0, 0, 0, 0.35);
+        }
+        .plaza-tier .plaza-card-lv {
+            font-family: 'JJAEM Title', 'Noto Sans KR', sans-serif;
+            font-weight: 400;
+            background-color: rgba(2, 6, 23, 0.72);
+            color: var(--pt-ink);
+            box-shadow: inset 0 0 0 1px var(--pt-plate-edge);
+        }
+        .plaza-tier .plaza-card-stats {
+            background-color: var(--pt-plate);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        /* 안쪽 금선(고수·수호자·전설): outline 대신 안쪽 그림자 두 겹(짙은 틈 1px + 금선 1px)으로 그려요.
+           outline 은 내용 위에 그려져 움직이는 캐릭터와 겹치면 카드마다 그림 층이 더 생겨, CPU 4배 느린 폰에서
+           광장을 열 때 그리기(래스터)가 크게 늘었어요(C-2). 안쪽 그림자는 배경과 같이 한 번에 그려져요.
+           금선 그림자(--pt-rim-sh)는 아래 고수·수호자·전설 색 묶음에 있어요.
+           신용불량 카드는 그림자를 따로 쓰므로 예전처럼 outline 을 써요. */
+        .plaza-card.plaza-tier-gosu.is-credit-default:not(.plaza-tier-aura),
+        .plaza-card.plaza-tier-guardian.is-credit-default:not(.plaza-tier-aura),
+        .plaza-card.plaza-tier-legend.is-credit-default:not(.plaza-tier-aura) {
+            outline: 1px solid var(--pt-rim);
+            outline-offset: -3px;
+        }
+        .plaza-card.plaza-tier-legend:not(.plaza-tier-aura):not(.is-credit-default):not(:active) {
+            box-shadow: var(--pt-rim-sh), inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 4px rgba(252, 211, 77, 0.12), 0 2px 0 var(--pt-deep), 0 4px 10px -2px rgba(244, 63, 94, 0.45);
+        }
+        /* 1 새내기 — 회색 원석: 면이 크고 성기며 반짝임 없음 */
+        .plaza-tier-saenaegi {
+            --pt-g1: #6b7585; --pt-g2: #3d4553; --pt-g3: #1f242d;
+            --pt-edge: #a8b3c2; --pt-deep: #141920; --pt-ink: #e2e8f0;
+            --pt-plate: #0f141c; --pt-plate-edge: rgba(203, 213, 225, 0.22);
+            --pt-ray: 22.5deg; --pt-ray-a: 0.035; --pt-ray-b: 0.05; --pt-core: 0.07;
+            --pt-fs: 36px; --pt-fa: 0.05; --pt-fb: 0.09;
+        }
+        /* 2 초보 — 비취: 또렷한 초록, 반짝임 1개 */
+        .plaza-tier-chobo {
+            --pt-g1: #3cc283; --pt-g2: #148150; --pt-g3: #07402a;
+            --pt-edge: #6ee7a8; --pt-deep: #04251a; --pt-ink: #a7f3c8;
+            --pt-plate: #061f16; --pt-plate-edge: rgba(134, 239, 172, 0.3);
+            --pt-ray: 15deg; --pt-ray-a: 0.07; --pt-ray-b: 0.08; --pt-core: 0.15;
+            --pt-fs: 26px; --pt-fa: 0.09; --pt-fb: 0.14;
+            --pt-spark:
+                radial-gradient(2.6px 0.7px at 20% 16%, rgba(255, 255, 255, 0.8) 99%, transparent),
+                radial-gradient(0.7px 2.6px at 20% 16%, rgba(255, 255, 255, 0.8) 99%, transparent);
+        }
+        /* 3 중수 — 사파이어 */
+        .plaza-tier-jungsu {
+            --pt-g1: #3b97d6; --pt-g2: #155f93; --pt-g3: #0a2d50;
+            --pt-edge: #93dcff; --pt-deep: #061d36; --pt-ink: #c9ecff;
+            --pt-plate: #081a2e; --pt-plate-edge: rgba(125, 211, 252, 0.3);
+            --pt-ray: 10deg; --pt-ray-a: 0.09; --pt-ray-b: 0.09; --pt-core: 0.17;
+            --pt-fs: 20px; --pt-fa: 0.12; --pt-fb: 0.18;
+            --pt-spark:
+                radial-gradient(3px 0.8px at 18% 15%, rgba(255, 255, 255, 0.85) 99%, transparent),
+                radial-gradient(0.8px 3px at 18% 15%, rgba(255, 255, 255, 0.85) 99%, transparent),
+                radial-gradient(2.4px 0.7px at 84% 34%, rgba(255, 255, 255, 0.7) 99%, transparent),
+                radial-gradient(0.7px 2.4px at 84% 34%, rgba(255, 255, 255, 0.7) 99%, transparent);
+        }
+        /* 4 고수 — 토파즈 금 + 안쪽 금선 */
+        .plaza-tier-gosu {
+            --pt-rim-sh: inset 0 0 0 1px rgba(2, 6, 23, 0.35), inset 0 0 0 2px var(--pt-rim);
+            --pt-g1: #e6b040; --pt-g2: #9a6510; --pt-g3: #4a2b04;
+            --pt-edge: #fde68a; --pt-deep: #2c1902; --pt-ink: #fde68a; --pt-rim: rgba(253, 230, 138, 0.55);
+            --pt-plate: #1f1405; --pt-plate-edge: rgba(253, 224, 71, 0.4);
+            --pt-ray: 7.5deg; --pt-ray-a: 0.13; --pt-ray-b: 0.11; --pt-core: 0.22;
+            --pt-fs: 15px; --pt-fa: 0.15; --pt-fb: 0.2;
+            --pt-spark:
+                radial-gradient(3.4px 0.9px at 16% 14%, #fff8dc 99%, transparent),
+                radial-gradient(0.9px 3.4px at 16% 14%, #fff8dc 99%, transparent),
+                radial-gradient(2.6px 0.7px at 86% 30%, #fff 99%, transparent),
+                radial-gradient(0.7px 2.6px at 86% 30%, #fff 99%, transparent),
+                radial-gradient(2px 0.6px at 24% 46%, #fff 99%, transparent),
+                radial-gradient(0.6px 2px at 24% 46%, #fff 99%, transparent);
+        }
+        /* 5 수호자 — 자수정 + 라일락 안쪽선 */
+        .plaza-tier-guardian {
+            --pt-rim-sh: inset 0 0 0 1px rgba(2, 6, 23, 0.35), inset 0 0 0 2px var(--pt-rim);
+            --pt-g1: #b46ae6; --pt-g2: #6c22a3; --pt-g3: #2a0a47;
+            --pt-edge: #f0c4ff; --pt-deep: #1c0632; --pt-ink: #f5d0fe; --pt-rim: rgba(240, 171, 252, 0.6);
+            --pt-plate: #1a0a2c; --pt-plate-edge: rgba(240, 171, 252, 0.42);
+            --pt-ray: 6deg; --pt-ray-a: 0.15; --pt-ray-b: 0.12; --pt-core: 0.26;
+            --pt-fs: 13px; --pt-fa: 0.16; --pt-fb: 0.22;
+            --pt-spark:
+                radial-gradient(3.6px 0.9px at 15% 13%, #fff 99%, transparent),
+                radial-gradient(0.9px 3.6px at 15% 13%, #fff 99%, transparent),
+                radial-gradient(3px 0.8px at 86% 24%, #fbe8ff 99%, transparent),
+                radial-gradient(0.8px 3px at 86% 24%, #fbe8ff 99%, transparent),
+                radial-gradient(2.2px 0.6px at 26% 44%, #fff 99%, transparent),
+                radial-gradient(0.6px 2.2px at 26% 44%, #fff 99%, transparent),
+                radial-gradient(2.2px 0.6px at 78% 52%, #fff 99%, transparent),
+                radial-gradient(0.6px 2.2px at 78% 52%, #fff 99%, transparent);
+        }
+        /* 6 전설 — 루비 + 금빛 빛살 + 두 겹 금선 */
+        .plaza-tier-legend {
+            --pt-rim-sh: inset 0 0 0 1px rgba(2, 6, 23, 0.35), inset 0 0 0 2px var(--pt-rim);
+            --pt-g1: #f0506c; --pt-g2: #a3123a; --pt-g3: #3e0313;
+            --pt-edge: #fcd34d; --pt-deep: #2a020c; --pt-ink: #fde68a; --pt-rim: rgba(252, 211, 77, 0.85);
+            --pt-plate: #24050f; --pt-plate-edge: rgba(252, 211, 77, 0.55);
+            --pt-ray-rgb: 255, 214, 120;
+            --pt-ray: 4.5deg; --pt-ray-a: 0.17; --pt-ray-b: 0.13; --pt-core: 0.3;
+            --pt-fs: 11px; --pt-fa: 0.17; --pt-fb: 0.24;
+            --pt-spark:
+                radial-gradient(4px 1px at 14% 12%, #fff3c4 99%, transparent),
+                radial-gradient(1px 4px at 14% 12%, #fff3c4 99%, transparent),
+                radial-gradient(3.4px 0.9px at 87% 20%, #fff 99%, transparent),
+                radial-gradient(0.9px 3.4px at 87% 20%, #fff 99%, transparent),
+                radial-gradient(2.6px 0.7px at 24% 42%, #fde68a 99%, transparent),
+                radial-gradient(0.7px 2.6px at 24% 42%, #fde68a 99%, transparent),
+                radial-gradient(2.6px 0.7px at 80% 48%, #fff 99%, transparent),
+                radial-gradient(0.7px 2.6px at 80% 48%, #fff 99%, transparent),
+                radial-gradient(1.4px 1.4px at 50% 8%, #fff 99%, transparent);
+        }
+        /* 수호자·전설만 빛살이 천천히 숨쉽니다(opacity만 바꿔 가볍게). 움직임 줄이기 설정이면 멈춥니다.
+           will-change: opacity 로 빛살 층을 따로 떼어, 숨쉴 때마다 빛살·가림막(mask)을 다시 그리지 않고
+           합성만 해요(C-2: CPU 4배 느린 폰에서 프레임이 덜 끊겨요). 숨쉬는 카드에만 붙여 메모리는 조금만 써요. */
+        @media (prefers-reduced-motion: no-preference) {
+            .plaza-card.plaza-tier-guardian::before,
+            .plaza-card.plaza-tier-legend::before { animation: plaza-gem-breathe 3.2s ease-in-out infinite; will-change: opacity; }
+        }
+        @keyframes plaza-gem-breathe {
+            0%, 100% { opacity: 0.78; }
+            50% { opacity: 1; }
         }

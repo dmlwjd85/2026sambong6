@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { applyAlkkagiForfeit, emptyAlkkagiGame } from './alkkagiGame.js';
 import {
+    alkkagiRecordResult,
+    alkkagiResultKey,
     applyBoardGameRecord,
     boardGameRecordText,
     chessRecordResult,
@@ -74,5 +77,23 @@ describe('오목 나가기 패배', () => {
         assert.equal(r.game.winner, GOMOKU_WHITE);
         const again = applyGomokuForfeit(r.game, { color: GOMOKU_WHITE, now: 30 });
         assert.equal(again.ok, false);
+    });
+});
+
+describe('알까기 전적', () => {
+    it('알까기는 따로 세고, 합칠 때도 남는다', () => {
+        const done = applyAlkkagiForfeit(emptyAlkkagiGame({ now: 1 }), { color: 'white', now: 2 }).game;
+        assert.equal(alkkagiRecordResult(done, 'black'), 'win');
+        assert.equal(alkkagiRecordResult(done, 'white'), 'loss');
+        assert.equal(alkkagiRecordResult(done, ''), '');
+        const key = alkkagiResultKey({ id: 'r9', game: done });
+        assert.match(key, /^r9:alkkagi:/);
+        let rec = applyBoardGameRecord(null, { gameType: 'alkkagi', result: 'win', key });
+        rec = applyBoardGameRecord(rec, { gameType: 'alkkagi', result: 'win', key });
+        assert.equal(rec.alkkagi.wins, 1);
+        assert.equal(rec.gomoku.wins, 0);
+        assert.equal(boardGameRecordText(rec, 'alkkagi'), '1승 0패 0무');
+        const merged = mergeBoardGameRecords(rec, sanitizeBoardGameRecords({}));
+        assert.equal(merged.alkkagi.wins, 1);
     });
 });

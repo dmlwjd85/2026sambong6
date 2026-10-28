@@ -1,9 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    applyThermometerLegacySeeds,
     pickThermometerDisplayValues,
     planThermometerLegacyVoteWrites,
     resolveThermometerSettlementValue,
+    retainThermometerPendingIds,
+    thermometerVoteValue,
     thermometerVotesShouldReplaceValues,
 } from './learningThermometerVotes.js';
 
@@ -100,5 +103,36 @@ describe('학습 온도계 예전 값', () => {
             min: -20,
             max: 20,
         }), 4);
+    });
+});
+
+describe('학습 온도계 저장 대기', () => {
+    it('서버에 쓴 값과 화면 값이 같으면 대기에서 뺀다', () => {
+        assert.deepEqual(retainThermometerPendingIds({
+            pendingIds: ['4', '7'],
+            writtenValues: { '4': 5, '7': 8 },
+            currentValues: { '4': 5, '7': 8 },
+            min: -20,
+            max: 20,
+        }), []);
+    });
+
+    it('저장 중에 바뀐 학생과 아직 안 쓴 학생은 대기에 남긴다', () => {
+        assert.deepEqual(retainThermometerPendingIds({
+            pendingIds: ['4', '7', '9'],
+            writtenValues: { '4': 5 },
+            currentValues: { '4': 12, '7': 8 },
+            min: -20,
+            max: 20,
+        }), ['4', '7', '9']);
+        assert.equal(thermometerVoteValue({ '7': 8 }, '7', -20, 20), 8);
+        assert.equal(thermometerVoteValue({}, '9', -20, 20), 0);
+    });
+
+    it('예전 시드는 저장 중에 이미 있는 학생 값을 덮지 않는다', () => {
+        assert.deepEqual(applyThermometerLegacySeeds(
+            { '4': 12 },
+            { '4': 5, '7': 8 },
+        ), { '4': 12, '7': 8 });
     });
 });

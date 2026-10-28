@@ -20808,7 +20808,7 @@ ${subjectLine}
                     <div class="bg-amber-50 w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden border border-white/70">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-sm sm:text-base truncate text-white">${skin.name}</div>
-                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
+                        <div class="text-[11px] sm:text-xs text-slate-100 leading-snug break-keep" title="${escapeHtmlAttr(skin.desc || '')}">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">${buildSkinShopPriceHtml(skin)}</div>
                 </div>`).join('');
@@ -22161,7 +22161,7 @@ ${subjectLine}
                 if (kind === 'hidden') {
                     return `<div class="plaza-seat plaza-seat-hidden" aria-hidden="true"><span>통로</span></div>`;
                 }
-                return `<div class="plaza-seat plaza-seat-empty" aria-label="${num} 빈 자리"><span>${num}</span></div>`;
+                return `<div class="plaza-seat plaza-seat-empty" aria-label="${num} 빈 자리"><span>${num}</span><span class="plaza-seat-empty-label">빈자리</span></div>`;
             };
 
             let html = '';
@@ -22935,6 +22935,15 @@ ${subjectLine}
                 hint.textContent = `${layout.rows}행 × ${layout.cols}열 · 사용 ${active}칸 / 전체 ${window.estateState.seats.length}칸`;
             }
 
+            if (!(window.estateState.seats || []).length) {
+                grid.style.gridTemplateColumns = '1fr';
+                grid.innerHTML = `<div class="estate-empty-notice rounded-xl border border-dashed border-slate-500 bg-slate-900/60 p-4 text-center text-xs font-bold text-slate-200">${estateAdmin ? '아직 자리가 없어요. 「자리 배열」에서 행·열을 정해 자리를 만들어 주세요.' : '선생님이 자리를 아직 만들지 않았어요.'}</div>`;
+                if (typeof window.renderPlaza === 'function') {
+                    window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                }
+                return;
+            }
+
             grid.innerHTML = window.estateState.seats.map((seat) => {
                 if (isEstateSeatDisabled(seat)) {
                     const adminClick = estateAdmin ? `onclick="window.openEstateSeatAdmin(${seat.id})"` : '';
@@ -22949,8 +22958,8 @@ ${subjectLine}
                 if (seat.owner) {
                     const ownerName = STUDENT_NAMES[seat.owner] || '학생';
                     return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-2 sm:p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)] ${estateAdmin ? 'cursor-pointer transition hover:border-amber-400' : ''}" ${adminClick}>
-                        <div class="text-teal-400 font-bold text-xs mb-1">구매 완료</div>
-                        <div class="text-white text-[10px]">${ownerName}</div>
+                        <div class="estate-seat-name text-teal-400 font-bold text-xs mb-1">구매 완료</div>
+                        <div class="estate-seat-name text-white text-[10px]">${ownerName}</div>
                         ${estateAdmin ? `<div class="text-[9px] text-slate-400 mt-1">${formatBongAmount(seat.price)} · 관리</div>` : ''}
                     </div>`;
                 }
@@ -22960,8 +22969,8 @@ ${subjectLine}
                         ? adminClick
                         : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
                     return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-2 sm:p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
-                        <div class="text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
-                        <div class="text-white text-[10px]">${assignName}</div>
+                        <div class="estate-seat-name text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
+                        <div class="estate-seat-name text-white text-[10px]">${assignName}</div>
                         <div class="text-sb-gold text-[9px] mt-1">${formatBongAmount(seat.price)}</div>
                     </div>`;
                 }
@@ -27518,6 +27527,8 @@ ${subjectLine}
             if (shouldIgnoreAccidentalPointer()) return;
             if (window._questActionRunning) return;
             applyDailyQuestResetIfNewDay({ silent: true });
+            // quests 필드가 없는 학생 문서도 완료 처리되게 빈 객체로 시작해요.
+            if (!window.playerState.quests || typeof window.playerState.quests !== 'object') window.playerState.quests = {};
 
             const todayStr = getLocalDateStr();
             const week = weekRangeMondaySunday();

@@ -716,6 +716,17 @@
             flex: 0 0 auto;
         }
         .praise-thumb-down { transform: rotate(180deg); }
+        /* 자리표 카드(폰 65~70px): 따봉·비추천 두 버튼이 카드 폭 안에 반씩 들어가게 합니다. */
+        .plaza-cards-seating .praise-pair { max-width: 100%; min-width: 0; }
+        /* 폰 폭에서만 버튼을 반씩 나눠요. PC에서는 버튼 크기를 그대로 둡니다. */
+        @media (max-width: 640px) {
+            .plaza-cards-seating .praise-btn {
+                flex: 1 1 0;
+                min-width: 0;
+                padding: 0.15rem;
+            }
+            .plaza-cards-seating .praise-btn img { width: 0.75rem; height: 0.75rem; }
+        }
         /* 좁은 광장 카드(폰 6칸 자리표 등): 따봉·역따봉을 카드 폭 안에 반씩 나눠 넣고,
            아이콘 아래에 숫자를 두어 세 자리 숫자(120)도 넘치거나 이웃 카드와 겹치지 않게 합니다.
            터치 영역은 버튼마다 최소 약 24×25px을 지킵니다. */
@@ -990,7 +1001,9 @@
             }
             .plaza-cards-seating .plaza-learning-thermometer {
                 min-width: 1.25rem;
-                max-width: 1.6rem;
+                max-width: none;
+                flex: 0 0 auto;
+                padding: 0 0.12rem;
                 height: 0.78rem;
                 font-size: 7px;
             }
@@ -6851,3 +6864,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             0%, 100% { opacity: 0.78; }
             50% { opacity: 1; }
         }
+
+        /* 폰에서 광장 맨 아래 줄 카드가 하단 앱 독에 가리지 않게 여백을 둡니다. */
+        @media (max-width: 767px) {
+            #plazaSection { padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px)); }
+        }
+
+        /* 광장 빈자리: 번호 아래 '빈자리' 안내 */
+        .plaza-seat-empty { flex-direction: column; gap: 0.1rem; }
+        .plaza-seat-empty-label { font-size: 8px; font-weight: 700; opacity: 0.85; line-height: 1.1; }
+        /* 부동산 자리표 이름: 글자 중간에서 끊지 않고, 너무 길 때만 줄을 바꿔 모두 보여요. */
+        .estate-seat-name { word-break: keep-all; overflow-wrap: anywhere; line-height: 1.2; min-width: 0; }

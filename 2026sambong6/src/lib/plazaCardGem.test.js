@@ -117,6 +117,27 @@ describe('광장 카드 보석 등급(시안 A)', () => {
         assert.match(sliceBetween(src, 'function ensureAlkkagiBoard() {', '_alkBoard = createAlkkagiBoard('), /loadAlkkagiFontsOnce\(\);/);
     });
 
+    it('알까기 입체 제목 조각은 광장·알까기 로비에서 한가할 때 한 번만 미리 받아요', () => {
+        const fn = sliceBetween(src, 'function prefetchAlkkagiTitleOnce() {', '\n        }\n');
+        assert.ok(fn.length > 0);
+        // 한 번만 예약해요
+        assert.match(fn, /^function prefetchAlkkagiTitleOnce\(\) \{\s*if \(prefetchAlkkagiTitleOnce\.queued\) return;\s*prefetchAlkkagiTitleOnce\.queued = true;/);
+        // 한가할 때(Safari는 setTimeout), 지금 받는 글꼴이 끝난 뒤에 받아요
+        assert.match(fn, /requestIdleCallback/);
+        assert.match(fn, /setTimeout\(fn, 600\)/);
+        assert.match(fn, /document\.fonts\.ready\.then/);
+        // CSS에 있는 입체 제목 글꼴을 불러요(새 URL을 따로 받지 않아요). '알까기'만 넣어서 ks 조각 하나만 받아요
+        assert.match(fn, /document\.fonts\.load\("48px 'JJAEM Title'", '알까기'\)/);
+        assert.doesNotMatch(fn, /new FontFace|woff2|fetch\(/);
+        assert.equal(src.split('document.fonts.load(').length - 1, 1);
+        // 앱 시작(renderPlaza)에서는 부르지 않고, 광장 탭과 알까기 로비에서만 불러요
+        const body = sliceBetween(src, 'window.renderPlaza = function(studentsData, gmData, gmaData) {', 'const createCard');
+        assert.doesNotMatch(body, /prefetchAlkkagiTitleOnce/);
+        assert.match(src, /if \(tabId === 'plaza'\) prefetchAlkkagiTitleOnce\(\);/);
+        assert.match(sliceBetween(src, 'window.openBoardGameLobby = function (gameType) {', 'renderBoardGameLobby();'), /if \(def\.id === 'alkkagi'\) prefetchAlkkagiTitleOnce\(\);/);
+        assert.equal(src.split('prefetchAlkkagiTitleOnce()').length - 1, 3);
+    });
+
     it('숨쉬기 움직임은 수호자·전설만, 움직임 줄이기에서는 멈춰요', () => {
         const block = sliceBetween(css, '@media (prefers-reduced-motion: no-preference) {\n            .plaza-card.plaza-tier-guardian::before', '}\n        }');
         assert.match(block, /plaza-tier-guardian::before,\s*\.plaza-card\.plaza-tier-legend::before \{ animation: plaza-gem-breathe/);

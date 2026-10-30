@@ -256,6 +256,7 @@ import {
     setBoardRoomTimer,
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
+import { createIdleRoomSweeper } from './lib/boardRoomSweep.js';
 import {
     ALKKAGI_BLACK,
     ALKKAGI_STONES_PER_SIDE,
@@ -12127,17 +12128,29 @@ ${subjectLine}
             if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
         }
 
+        // 오래 쉰 방 정리: 한 번에 하나만 돌고, 이 화면에서 이미 지우기를 시도한 방은 다시 지우지 않아요.
+        // 지우기는 트랜잭션으로 방이 아직 있고 여전히 오래 쉰 방인지 다시 확인한 뒤에만 해요(이미 지워졌으면 쓰기 없음).
+        let _boardIdleSweeper = null;
+        const makeBoardIdleSweeper = () => createIdleRoomSweeper({
+            getRooms: () => _boardGameRooms,
+            removeRoom: async (room) => {
+                const ref = boardGameRoomRef(room.id);
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    if (!snap.exists()) return;
+                    const t = Date.now();
+                    const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, t);
+                    if (cur.status === 'closed' || !isRoomIdleExpired(cur, t)) return;
+                    if (!expireIdleBoardRoom(cur, t).ok) return;
+                    tx.delete(ref);
+                });
+            },
+            onError: (e, room) => console.warn('sweepIdleBoardRooms', room && room.id, e),
+        });
         async function sweepIdleBoardRooms(now = Date.now()) {
             if (!db || !auth || !auth.currentUser) return;
-            const expired = _boardGameRooms.filter((r) => r.status !== 'closed' && isRoomIdleExpired(r, now));
-            for (const room of expired) {
-                try {
-                    const closed = expireIdleBoardRoom(room, now);
-                    if (closed.ok) await deleteDoc(boardGameRoomRef(room.id));
-                } catch (e) {
-                    console.warn('sweepIdleBoardRooms', e);
-                }
-            }
+            if (!_boardIdleSweeper) _boardIdleSweeper = makeBoardIdleSweeper();
+            await _boardIdleSweeper.sweep(now);
         }
 
         function activeBoardPlayKind() {

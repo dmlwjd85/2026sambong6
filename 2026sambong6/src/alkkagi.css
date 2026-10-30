@@ -1,4 +1,17 @@
 /* 알까기 (원목 클래식) — 보드게임 패널 안의 알까기 화면 */
+/*
+ * 쨈 글꼴이 오기 전 잠깐 쓰는 대체 글꼴(JJAEM … Fit). 기기에 이미 있는 글꼴(local)만 써서 따로 받는 파일이 없어요.
+ * 글자 너비(size-adjust)와 위아래 높이(ascent/descent-override)를 쨈 글꼴과 똑같이 맞춰서, 쨈 글꼴로 바뀌어도 글자 자리가 움직이지 않아요(느린 인터넷 CLS).
+ * 쨈 본문은 한글 너비 0.92em·위 1.005em·아래 0.245em, 쨈 제목(입체·평면)은 한글 너비 0.94em·같은 높이예요.
+ * Noto Sans CJK KR(크롬북·안드로이드)은 한글 0.92em·위 1.16em·아래 0.288em, 나눔고딕은 한글 0.94em이에요. 맞춘 값은 직접 재서 상자 크기가 같은 것을 확인했어요.
+ * 크기 보정을 하면 ascent/descent-override도 같은 비율로 커져서, 보정한 만큼 나눈 값을 넣었어요.
+ */
+@font-face { font-family: 'JJAEM Body Fit'; font-weight: 400; src: local('Noto Sans CJK KR'), local('NotoSansCJKkr-Regular'), local('Noto Sans CJK KR Regular'); ascent-override: 100.5%; descent-override: 24.5%; line-gap-override: 0%; }
+@font-face { font-family: 'JJAEM Body Fit'; font-weight: 700; src: local('Noto Sans CJK KR Bold'), local('NotoSansCJKkr-Bold'); ascent-override: 100.5%; descent-override: 24.5%; line-gap-override: 0%; }
+@font-face { font-family: 'JJAEM Body Fit N'; font-weight: 400; src: local('NanumGothic'), local('나눔고딕'); size-adjust: 97.87%; ascent-override: 102.69%; descent-override: 25.03%; line-gap-override: 0%; }
+@font-face { font-family: 'JJAEM Body Fit N'; font-weight: 700; src: local('NanumGothic Bold'), local('NanumGothicBold'), local('나눔고딕 Bold'); size-adjust: 97.87%; ascent-override: 102.69%; descent-override: 25.03%; line-gap-override: 0%; }
+@font-face { font-family: 'JJAEM Title Fit'; src: local('Noto Sans CJK KR'), local('NotoSansCJKkr-Regular'), local('Noto Sans CJK KR Regular'); size-adjust: 102.17%; ascent-override: 98.37%; descent-override: 23.98%; line-gap-override: 0%; }
+@font-face { font-family: 'JJAEM Title Fit N'; src: local('NanumGothic'), local('나눔고딕'); ascent-override: 100.5%; descent-override: 24.5%; line-gap-override: 0%; }
 .boardgame-panel:has(> #boardgameAlkkagiPlayView:not(.hidden)) {
     padding: 0;
     background: #efe2c8;
@@ -22,7 +35,7 @@
     --alk-ink2: #6e4a2c;
     --alk-cream: #f8efdc;
     gap: 0;
-    font-family: 'JJAEM Body', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+    font-family: 'JJAEM Body', 'JJAEM Body Fit', 'JJAEM Body Fit N', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
     color: var(--alk-ink);
 }
 .alk-paper {
@@ -67,10 +80,14 @@
     justify-content: center;
 }
 .alk-title {
-    font-family: 'JJAEM Title', 'JJAEM Body', sans-serif;
+    /* 48px 입체 제목. 쨈 제목이 오기 전에는 크기를 맞춘 대체 글꼴(Fit)로 보여요 */
+    font-family: 'JJAEM Title', 'JJAEM Title Fit', 'JJAEM Title Fit N', 'JJAEM Title Flat', 'JJAEM Body', sans-serif;
     font-weight: 400;
     font-size: 48px;
     line-height: 1;
+    /* 글꼴이 바뀌어도 제목 자리 높이는 그대로예요 */
+    height: 1em;
+    white-space: nowrap;
     color: #7a4a22;
     letter-spacing: 1px;
     text-shadow: 0 1px 0 #fff6e6, 0 3px 6px rgba(90, 50, 20, 0.18);
@@ -345,7 +362,8 @@
 .alk-result-stone.draw { background: linear-gradient(90deg, #202125 50%, #ece6d9 50%); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.3); }
 .alk-result-title {
     margin: 0;
-    font-family: 'JJAEM Title', 'JJAEM Body', sans-serif;
+    /* 36px라 입체(48px 이상) 대신 평면 제목을 써요 */
+    font-family: 'JJAEM Title Flat', 'JJAEM Title Fit', 'JJAEM Title Fit N', 'JJAEM Body', sans-serif;
     font-size: 36px;
     line-height: 1.1;
     color: #7a4a22;
@@ -386,6 +404,7 @@
     .alk-cr br:nth-of-type(2) { display: none; }
 }
 @media (max-height: 640px) {
+    /* 낮은 화면에서도 같은 입체 제목 글꼴(이미 받은 ks 조각)을 40px로 써요. 입체는 36px까지 허용이라 디자인을 그대로 지켜요 */
     .alk-title { font-size: 40px; }
     .alk-head { height: 50px; }
     .alk-back { top: 8px; }
@@ -411,7 +430,7 @@
     --alk-cream: #f8efdc;
     position: fixed;
     z-index: 80;
-    font-family: 'JJAEM Body', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+    font-family: 'JJAEM Body', 'JJAEM Body Fit', 'JJAEM Body Fit N', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
     color: var(--alk-ink);
 }
 .alk-modal-card {
@@ -426,7 +445,8 @@
 }
 .alk-modal-card > * { position: relative; z-index: 1; }
 .alk-modal-title {
-    font-family: 'JJAEM Title', 'JJAEM Body', sans-serif;
+    /* 36px라 입체(48px 이상) 대신 평면 제목을 써요 */
+    font-family: 'JJAEM Title Flat', 'JJAEM Title Fit', 'JJAEM Title Fit N', 'JJAEM Body', sans-serif;
     font-size: 36px;
     line-height: 1.1;
     color: #7a4a22;

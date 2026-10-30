@@ -94,15 +94,23 @@ describe('광장 카드 보석 등급(시안 A)', () => {
         // 글꼴 CSS 는 한 함수에서만, 한 번만 불러와요
         const loader = sliceBetween(src, 'function loadAlkkagiFontsOnce(opts) {', '\n        }');
         assert.match(loader, /^function loadAlkkagiFontsOnce\(opts\) \{\s*if \(loadAlkkagiFontsOnce\.started\) return;/);
-        assert.match(loader, /loadAlkkagiFontsOnce\.started = true;\s*import\('\.\/alkkagiFonts\.css'\)/);
+        assert.match(loader, /loadAlkkagiFontsOnce\.started = true;\s*loadAlkkagiTitleCssOnce\(\);\s*import\('\.\/alkkagiFonts\.css'\)/);
+        // 입체 제목을 먼저 받는 중이면 알까기 판에서도 본문은 제목 뒤에 이어서 받아요(예약만 하고 돌아가요)
+        assert.match(loader, /if \(prefetchAlkkagiTitleOnce\.holdBody\) \{[^}]*loadAlkkagiFontsOnce\.queued = true;\s*loadAlkkagiTitleCssOnce\(\);\s*return;\s*\}\s*loadAlkkagiFontsOnce\.started = true;/);
+        // 입체 제목 글꼴 CSS도 한 함수에서 한 번만 불러와요
+        const titleCss = sliceBetween(src, 'function loadAlkkagiTitleCssOnce() {', '\n        }');
+        assert.match(titleCss, /if \(!loadAlkkagiTitleCssOnce\.p\) loadAlkkagiTitleCssOnce\.p = import\('\.\/alkkagiTitleFont\.css'\)/);
+        assert.equal(src.split("import('./alkkagiTitleFont.css')").length - 1, 1);
+        // 입체 제목을 먼저 받는 중이면 한가할 때 본문 받기는 제목 뒤로 미뤄요
+        assert.match(loader, /const run = \(\) => \{ if \(!prefetchAlkkagiTitleOnce\.holdBody\) loadAlkkagiFontsOnce\(\); \};/);
         // 한가할 때 불러오기는 한 번만 예약해요
         assert.match(loader, /if \(loadAlkkagiFontsOnce\.queued\) return;\s*loadAlkkagiFontsOnce\.queued = true;/);
         assert.match(loader, /requestIdleCallback\(run, \{ timeout: 2000 \}\)/);
         assert.equal(src.split("import('./alkkagiFonts.css')").length - 1, 1, '글꼴 CSS import 는 한 곳에만 있어야 해요');
-        assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Title'/);
+        assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Body'/);
     });
 
-    it('B-1: 쨈 제목 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
+    it('B-1: 쨈 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
         // renderPlaza 는 광장이 숨어 있어도 앱 시작 때 불리므로, 여기서는 글꼴을 부르지 않아요
         const body = sliceBetween(src, 'window.renderPlaza = function(studentsData, gmData, gmaData) {', 'const createCard');
         assert.ok(body.length > 0);
@@ -115,6 +123,38 @@ describe('광장 카드 보석 등급(시안 A)', () => {
         assert.match(afterShow, /if \(tabId === 'plaza'\) loadAlkkagiFontsOnce\(\{ idle: true \}\);/);
         // 알까기 판도 같은 함수로 불러요
         assert.match(sliceBetween(src, 'function ensureAlkkagiBoard() {', '_alkBoard = createAlkkagiBoard('), /loadAlkkagiFontsOnce\(\);/);
+    });
+
+    it('알까기 입체 제목 조각은 광장·알까기 로비에서 첫 화면 직후 한 번만 미리 받아요', () => {
+        const fn = sliceBetween(src, 'function prefetchAlkkagiTitleOnce() {', '\n        }\n');
+        assert.ok(fn.length > 0);
+        // 한 번만 예약해요
+        assert.match(fn, /^function prefetchAlkkagiTitleOnce\(\) \{\s*if \(isSlowConnection\(window\.navigator\)\) return;\s*if \(prefetchAlkkagiTitleOnce\.queued\) return;\s*prefetchAlkkagiTitleOnce\.queued = true;/);
+        // 첫 화면이 그려진 다음 프레임 뒤 바로(Safari는 setTimeout) 시작하고, 본문 글꼴이 끝나기를 기다리지 않아요
+        assert.match(fn, /requestAnimationFrame\(\(\) => soon\(step\)\)/);
+        assert.match(fn, /requestIdleCallback\(fn, \{ timeout: 300 \}\)/);
+        assert.match(fn, /setTimeout\(fn, 50\)/);
+        assert.doesNotMatch(fn, /document\.fonts\.ready/);
+        // 성공·실패는 콘솔에만 가볍게 남겨요(DB에 쓰지 않아요)
+        assert.match(fn, /console\.debug\('alkkagiTitlePrefetch', faces\.length \? 'ok' : 'none'/);
+        assert.match(fn, /console\.debug\('alkkagiTitlePrefetch', 'fail', e\)/);
+        assert.doesNotMatch(fn, /setDoc|updateDoc|addDoc|writeBatch|runTransaction/);
+        // 제목 CSS → 제목 글꼴 순서로 받고, 끝나면(실패해도) 본문을 이어서 받아요. 15초가 넘으면 본문을 먼저 받아요
+        assert.match(fn, /prefetchAlkkagiTitleOnce\.holdBody = true;/);
+        assert.match(fn, /loadAlkkagiTitleCssOnce\(\)\s*\.then\(\(\) => document\.fonts\.load\(/);
+        assert.match(fn, /\.finally\(releaseBody\)/);
+        assert.match(fn, /setTimeout\(releaseBody, 15000\)/);
+        assert.match(fn, /prefetchAlkkagiTitleOnce\.holdBody = false;\s*if \(loadAlkkagiFontsOnce\.queued\) loadAlkkagiFontsOnce\(\);/);
+        // CSS에 있는 입체 제목 글꼴을 불러요(새 URL을 따로 받지 않아요). '알까기'만 넣어서 ks 조각 하나만 받아요
+        assert.match(fn, /document\.fonts\.load\("48px 'JJAEM Title'", '알까기'\)/);
+        assert.doesNotMatch(fn, /new FontFace|woff2|fetch\(/);
+        assert.equal(src.split('document.fonts.load(').length - 1, 1);
+        // 앱 시작(renderPlaza)에서는 부르지 않고, 광장 탭과 알까기 로비에서만 불러요
+        const body = sliceBetween(src, 'window.renderPlaza = function(studentsData, gmData, gmaData) {', 'const createCard');
+        assert.doesNotMatch(body, /prefetchAlkkagiTitleOnce/);
+        assert.match(src, /if \(tabId === 'plaza'\) prefetchAlkkagiTitleOnce\(\);/);
+        assert.match(sliceBetween(src, 'window.openBoardGameLobby = function (gameType) {', 'renderBoardGameLobby();'), /if \(def\.id === 'alkkagi'\) prefetchAlkkagiTitleOnce\(\);/);
+        assert.equal(src.split('prefetchAlkkagiTitleOnce()').length - 1, 3);
     });
 
     it('숨쉬기 움직임은 수호자·전설만, 움직임 줄이기에서는 멈춰요', () => {

@@ -206,6 +206,7 @@ import {
     chessAttackerType,
 } from './lib/chessFx.js';
 import { chessPieceHtml } from './lib/chessPieces.js';
+import { isSlowConnection } from './lib/fontPrefetch.js';
 import {
     CHESS_BLACK,
     CHESS_WHITE,
@@ -10264,6 +10265,7 @@ ${subjectLine}
             if(activeSec) activeSec.classList.remove('hidden');
             // 광장을 열 때 카드 이름표 글꼴을 불러와요. 로그인 화면에서는 받지 않고, 광장을 그린 뒤 한가할 때 받아요.
             if (tabId === 'plaza') loadAlkkagiFontsOnce({ idle: true });
+            if (tabId === 'plaza') prefetchAlkkagiTitleOnce();
             
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
@@ -12034,7 +12036,7 @@ ${subjectLine}
         let _alkSeen = { roomId: '', moveCount: -1 };
         let _alkWriting = false;
         let _alkBusy = false;
-        // 쨈 글꼴 CSS(제목 약 443KB 포함)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요.
+        // 쨈 글꼴 CSS(쨈 폰트 v1.0.5 조각판)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요. 화면에 쓰인 조각만 내려받아요(광장은 본문 약 411KB).
         // 앱을 켤 때 바로 받지 않게 해서 첫 화면이 가벼워요. (함수 선언이라 위쪽 switchTab에서 불러도 안전해요)
         // { idle: true } 이면 첫 화면을 다 그린 뒤 한가할 때(최대 2초 안에) 불러와요. 알까기 판은 바로 불러요.
         function loadAlkkagiFontsOnce(opts) {
@@ -12042,13 +12044,62 @@ ${subjectLine}
             if (opts && opts.idle) {
                 if (loadAlkkagiFontsOnce.queued) return;
                 loadAlkkagiFontsOnce.queued = true;
-                const run = () => loadAlkkagiFontsOnce();
+                // 입체 제목을 먼저 받는 중이면 본문은 제목이 끝난 뒤 이어서 받아요(prefetchAlkkagiTitleOnce가 불러요)
+                const run = () => { if (!prefetchAlkkagiTitleOnce.holdBody) loadAlkkagiFontsOnce(); };
                 if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2000 });
                 else setTimeout(run, 300);
                 return;
             }
+            if (prefetchAlkkagiTitleOnce.holdBody) {
+                // 입체 제목을 먼저 받는 중이면(느린 망에서 나눠 받지 않게) 본문은 제목이 끝나면 바로 이어서 받아요. 그동안 본문은 크기를 맞춘 대체 글꼴로 보여요
+                loadAlkkagiFontsOnce.queued = true;
+                loadAlkkagiTitleCssOnce();
+                return;
+            }
             loadAlkkagiFontsOnce.started = true;
-            import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+            loadAlkkagiTitleCssOnce();
+            import('./alkkagiFonts.css').then(() => { loadAlkkagiFontsOnce.cssReady = true; }).catch((e) => console.warn('alkkagiFonts', e));
+        }
+        // 입체 제목 글꼴 CSS(@font-face 두 줄)만 한 번 불러와요. 글꼴 파일은 화면에 쓰이거나 document.fonts.load를 부를 때 받아요.
+        function loadAlkkagiTitleCssOnce() {
+            if (!loadAlkkagiTitleCssOnce.p) loadAlkkagiTitleCssOnce.p = import('./alkkagiTitleFont.css').catch((e) => console.warn('alkkagiTitleFont', e));
+            return loadAlkkagiTitleCssOnce.p;
+        }
+        // 알까기 48px 입체 제목 조각(JJAEM Title ks) 하나만 미리 받아 둬요. 광장이나 알까기 로비를 열면 시작해요.
+        // 광장 첫 화면이 그려진 다음 프레임에 바로 시작하고, 광장 이름표용 본문 글꼴보다 먼저 받아요(제목이 끝나면 본문을 이어서 받아요).
+        // 느린 4G에서 둘을 나란히 받으면 서로 나눠 받느라 제목이 늦어서, 광장에 잠깐 있다가 알까기에 들어가도 제목이 처음부터 입체로 보이게 순서를 정했어요.
+        // 알까기 판에 바로 들어가도 제목을 먼저 받고 본문은 이어서 받아요. 제목이 15초 넘게 걸리거나 실패해도 본문은 꼭 받아요.
+        // CSS에 이미 있는 글꼴을 document.fonts.load로 불러서 같은 파일을 두 번 받지 않아요. requestIdleCallback이 없는 Safari는 setTimeout으로 해요.
+        // 데이터 절약 모드나 2G처럼 느린 망이면 미리 받지 않고, 알까기에 들어갈 때 받아요(광장 본문 글꼴은 지금처럼 한가할 때 받아요).
+        // 크롬은 3G(지연 약 2초, 0.4Mbps)도 effectiveType '2g'로 알려 줘서 이때도 건너뛰어요. 그때는 제목이 잠깐 대체 글꼴로 보였다가 바뀌는데,
+        // alkkagi.css의 대체 글꼴 크기 맞춤(JJAEM … Fit)과 제목 높이 고정으로 글꼴이 바뀌어도 화면이 밀리지 않게 했어요.
+        function prefetchAlkkagiTitleOnce() {
+            if (isSlowConnection(window.navigator)) return;
+            if (prefetchAlkkagiTitleOnce.queued) return;
+            prefetchAlkkagiTitleOnce.queued = true;
+            if (!document.fonts || typeof document.fonts.load !== 'function') return;
+            prefetchAlkkagiTitleOnce.holdBody = true;
+            const releaseBody = () => {
+                if (!prefetchAlkkagiTitleOnce.holdBody) return;
+                prefetchAlkkagiTitleOnce.holdBody = false;
+                if (loadAlkkagiFontsOnce.queued) loadAlkkagiFontsOnce();
+            };
+            setTimeout(releaseBody, 15000);
+            const soon = (fn) => (typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(fn, { timeout: 300 }) : setTimeout(fn, 50));
+            const t0 = performance.now();
+            const step = () => {
+                loadAlkkagiTitleCssOnce()
+                    .then(() => document.fonts.load("48px 'JJAEM Title'", '알까기'))
+                    // 앱의 다른 기록처럼 콘솔에만 가볍게 남겨요(서버·DB에는 쓰지 않아요)
+                    .then(
+                        (faces) => console.debug('alkkagiTitlePrefetch', faces.length ? 'ok' : 'none', Math.round(performance.now() - t0) + 'ms'),
+                        (e) => console.debug('alkkagiTitlePrefetch', 'fail', e)
+                    )
+                    .finally(releaseBody);
+            };
+            // 첫 화면이 그려진 다음 프레임 뒤 바로 시작해요
+            if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => soon(step));
+            else soon(step);
         }
         let _boardGameActiveId = '';
         let _boardGameWriteChain = Promise.resolve();
@@ -13409,6 +13460,7 @@ ${subjectLine}
             _boardGameType = def.id;
             _boardGameActiveId = '';
             showBoardGameView('lobby');
+            if (def.id === 'alkkagi') prefetchAlkkagiTitleOnce();
             renderBoardGameLobby();
         };
 
@@ -21930,7 +21982,7 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
-            // 카드 이름표의 쨈 제목 글꼴은 여기서 부르지 않아요. renderPlaza 는 앱 시작 때(광장이 안 보여도) 불리므로,
+            // 카드 이름표의 쨈 본문 글꼴은 여기서 부르지 않아요. renderPlaza 는 앱 시작 때(광장이 안 보여도) 불리므로,
             // 글꼴은 switchTab('plaza') 에서만 불러와요. 글꼴이 오기 전에는 Noto Sans KR로 보여요.
 
             const createCard = (data, isGMCard, idLabel) => {

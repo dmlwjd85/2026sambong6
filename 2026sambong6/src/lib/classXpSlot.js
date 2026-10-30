@@ -187,12 +187,46 @@ export function classXpChunks(ids, size = CLASS_XP_CHUNK) {
     return out;
 }
 
-/** 저장 실패를 거절(denied), 사용량 초과(quota), 그 밖(other)으로 나눕니다. */
+/** 저장 실패를 거절(denied), 사용량 초과(quota), 겹침(aborted, 409), 그 밖(other)으로 나눕니다. */
 export function classXpErrorKind(error) {
     const code = String((error && error.code) || '');
     if (code === 'permission-denied' || code.endsWith('/permission-denied')) return 'denied';
     if (code === 'resource-exhausted' || code.endsWith('/resource-exhausted')) return 'quota';
+    if (code === 'aborted' || code.endsWith('/aborted')) return 'aborted';
     return 'other';
+}
+
+/** 실패 토스트를 이유별로 하루 한 번 띄우려고 쓰는 저장소 키예요. 이유가 다르면 키도 달라요. */
+export function classXpNoticeKey(appId, kind) {
+    const safeKind = String(kind || 'other').replace(/[^a-z]/gi, '') || 'other';
+    return `sambong_classxp_notice_${appId}_${safeKind}`;
+}
+
+/**
+ * 이 이유(kind)의 토스트를 오늘 처음 띄우는지 확인하고, 처음이면 오늘 날짜를 남겨요.
+ * storage는 localStorage처럼 getItem/setItem이 있는 것이에요. 저장소를 못 쓰면 false예요.
+ */
+export function classXpNoticeFirstToday(storage, appId, kind, ymd) {
+    try {
+        const key = classXpNoticeKey(appId, kind);
+        if (storage.getItem(key) === ymd) return false;
+        storage.setItem(key, ymd);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * 토스트에 넣을 학생 이름표. 이름이 없어 번호가 두 번 나오는 경우('23. 23')는 '23번'으로 줄여요.
+ */
+export function classXpStudentLabel(id, displayLabel) {
+    const sid = String(id == null ? '' : id).trim();
+    const label = String(displayLabel == null ? '' : displayLabel).trim();
+    if (!label) return sid ? `${sid}번` : '';
+    const dup = `${sid}. ${sid}`;
+    if (sid && (label === dup || label.startsWith(`${dup} `))) return `${sid}번${label.slice(dup.length)}`;
+    return label;
 }
 
 function labelList(labels, max = 5) {
@@ -203,20 +237,20 @@ function labelList(labels, max = 5) {
 
 /**
  * 선생님 화면에 띄울 짧은 알림 한 줄. 알릴 게 없으면 ''입니다.
- * kind: 'quota' | 'denied' | 'other' | 'xp'
+ * kind: 'quota' | 'denied' | 'aborted' | 'other' | 'xp'
  */
 export function classXpIssueMessage(kind, timeStr, labels = []) {
     const when = timeStr ? `${timeStr} ` : '';
     const who = labelList(labels);
     if (kind === 'quota') {
-        return `⏰ ${when}수업 종료 경험치를 못 줬어요. 오늘 서버 사용량이 다 차서 이번 종은 건너뛰어요.`;
+        return `⏰ ${when}수업 종료 경험치를 이번에는 못 드렸어요. 오늘 서버 사용량이 다 차서 이번 종은 쉬어 갈게요. 사용량이 풀리면 다음 종부터 다시 챙길게요.`;
     }
     if (kind === 'denied') {
-        return `⏰ ${when}수업 종료 경험치를 저장하지 못해 이번 종은 건너뛰어요. 이 기기 시계를 한국 시간(서울)으로 자동 설정해 주세요.`;
+        return `⏰ ${when}수업 종료 경험치를 저장하지 못했어요. 이 기기 시계가 한국 시간과 조금 다른 것 같아요. 설정에서 날짜와 시간을 '자동'으로 맞춰 주시면 다음 종부터 잘 챙길게요.`;
     }
-    if (kind === 'other') {
-        return `⏰ ${when}수업 종료 경험치를 저장하지 못해 이번 종은 건너뛰어요. 다음 종에는 다시 줄게요.`;
+    if (kind === 'aborted' || kind === 'other') {
+        return `⏰ ${when}수업 종료 경험치를 저장하지 못했어요. 연결이 잠깐 불안정했나 봐요. 이번 종은 넘기고 다음 종에 다시 챙길게요.`;
     }
     if (!who) return '';
-    return `⏰ ${when}수업 종료 경험치를 못 준 학생이 있어요. 경험치 값이 숫자가 아니에요: ${who}`;
+    return `⏰ ${when}경험치를 못 받은 학생이 있어요. 경험치 값이 숫자가 아니라서 그래요: ${who}. 학생 정보에서 한 번 살펴봐 주세요.`;
 }

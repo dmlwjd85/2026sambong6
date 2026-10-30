@@ -284,6 +284,7 @@ import {
     setBoardRoomTimer,
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
+import { createIdleRoomSweeper } from './lib/boardRoomSweep.js';
 import {
     ALKKAGI_BLACK,
     ALKKAGI_STONES_PER_SIDE,
@@ -12372,45 +12373,52 @@ ${subjectLine}
 
         // 방 목록을 연 기기가 정리 대상 방을 한 번씩 지워요.
         // 30분 지난 방(두는 중이고 10분 안에 활동한 판은 빼요)은 누구나, 10분 쉰 방은 내 방·옛 방만 지워요(규칙과 같은 기준).
-        async function sweepIdleBoardRooms(now = Date.now(), extraRows = null) {
-            if (!db || !auth || !auth.currentUser) return;
-            if (_boardGameView !== 'lobby' || classtoolSub !== 'boardgames') return;
-            let mem = readBoardCleanedMemory(now);
-            // r4 ②: 목록 구독에 오지 않는 오래된 끝난·닫힌 방(가끔 한 번 읽은 것)도 같은 길로 지워요.
-            const extra = new Map((Array.isArray(extraRows) ? extraRows : []).map((r) => [r.id, r]));
-            const pool = extra.size ? [..._boardGameRooms, ...[...extra.values()].filter((r) => !_boardGameRooms.some((x) => x.id === r.id))] : _boardGameRooms;
-            const due = pickBoardRoomsToCleanup(pool, { now, uid: auth.currentUser.uid, memory: mem });
-            if (!due.length) return;
-            // 지우기 전에 먼저 기억해요. 실패해도 이 기기는 다시 시도하지 않아요(다른 기기나 30분 정리가 맡아요).
-            due.forEach((room) => { mem = rememberBoardRoomCleaned(mem, boardRoomCleanupKey(room), now); });
-            writeBoardCleanedMemory(mem);
-            const myUid = auth.currentUser.uid;
-            // 여러 기기가 같은 방을 동시에 지우지 않게 기기마다 다르게 기다린 뒤, 실시간 목록에 그대로 있을 때만 지워요.
-            // r3 R2-6: 방마다 따로(한꺼번에) 기다려요. 방이 여러 개여도 마지막 방이 앞 방들 기다림만큼 밀리지 않아요.
-            await Promise.all(due.map(async (room) => {
+        // #91 정리기(boardRoomSweep.js) 하나로 돌아요: 한 번에 하나만 돌고, 도는 중에 또 부르면 끝난 뒤 한 번만 다시 보고,
+        // 이 화면에서 이미 시도한 방은 다시 지우지 않아요. 기기 기억(localStorage)은 새로고침 뒤에도 다시 지우지 않게 해요.
+        let _boardIdleSweeper = null;
+        let _boardOldSweepRows = new Map(); // r4 ②: 가끔 한 번 읽은 끝난·닫힌 방(목록 구독에 오지 않는 방)
+        const boardSweepPool = () => (_boardOldSweepRows.size
+            ? [..._boardGameRooms, ...[..._boardOldSweepRows.values()].filter((r) => !_boardGameRooms.some((x) => x.id === r.id))]
+            : _boardGameRooms);
+        const makeBoardIdleSweeper = () => createIdleRoomSweeper({
+            getRooms: boardSweepPool,
+            keyOf: boardRoomCleanupKey,
+            parallel: true, // r3 R2-6: 방마다 따로(한꺼번에) 기다려요. 마지막 방이 앞 방들 기다림만큼 밀리지 않아요.
+            pickRooms: (rooms, t) => (auth && auth.currentUser
+                ? pickBoardRoomsToCleanup(rooms, { now: t, uid: auth.currentUser.uid, memory: readBoardCleanedMemory(t) })
+                : []),
+            removeRoom: async (room) => {
                 const key = boardRoomCleanupKey(room);
+                const myUid = auth.currentUser.uid;
+                // 지우기 전에 먼저 기억해요. 실패해도 이 기기는 다시 시도하지 않아요(다른 기기나 30분 정리가 맡아요).
+                const t0 = Date.now();
+                writeBoardCleanedMemory(rememberBoardRoomCleaned(readBoardCleanedMemory(t0), key, t0));
+                // 여러 기기가 같은 방을 동시에 지우지 않게 기기마다 다르게 기다린 뒤, 실시간 목록에 그대로 있을 때만 지워요.
                 const wait = boardRoomCleanupDelayMs(room, myUid);
                 if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-                const live = _boardGameRooms.find((r) => r.id === room.id) || extra.get(room.id);
+                const live = _boardGameRooms.find((r) => r.id === room.id) || _boardOldSweepRows.get(room.id);
                 if (!live || boardRoomCleanupKey(live) !== key) return;
                 if (!auth.currentUser || auth.currentUser.uid !== myUid) return;
                 if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) return;
-                // 기다림을 한꺼번에 하니 두 기기의 기다림이 비슷하게 끝날 수 있어요. 지우기는 트랜잭션으로 해서
-                // 먼저 지운 기기가 있으면 서버가 뒤 기기의 지우기를 받지 않고, 다시 읽어 없는 방이면 건너뛰어요(중복 지우기 0).
+                // 지우기는 트랜잭션으로 해요. 먼저 지운 기기가 있으면 다시 읽어 없는 방이라 건너뛰어요(중복 지우기 0).
                 const ref = boardGameRoomRef(room.id);
-                try {
-                    await runTransaction(db, async (tx) => {
-                        const snap = await tx.get(ref);
-                        if (!snap.exists()) return;
-                        const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
-                        if (boardRoomCleanupKey(cur) !== key) return;
-                        if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
-                        tx.delete(ref);
-                    });
-                } catch (e) {
-                    console.warn('sweepIdleBoardRooms', room.id, e && e.code);
-                }
-            }));
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    if (!snap.exists()) return;
+                    const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                    if (boardRoomCleanupKey(cur) !== key) return;
+                    if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
+                    tx.delete(ref);
+                });
+            },
+            onError: (e, room) => console.warn('sweepIdleBoardRooms', room && room.id, e && e.code),
+        });
+        async function sweepIdleBoardRooms(now = Date.now(), extraRows = null) {
+            if (!db || !auth || !auth.currentUser) return;
+            if (_boardGameView !== 'lobby' || classtoolSub !== 'boardgames') return;
+            if (Array.isArray(extraRows) && extraRows.length) _boardOldSweepRows = new Map(extraRows.map((r) => [r.id, r]));
+            if (!_boardIdleSweeper) _boardIdleSweeper = makeBoardIdleSweeper();
+            await _boardIdleSweeper.sweep(now);
         }
 
         // r4 ②: 끝난 알까기 방·닫힌 방은 목록 질의(대기·두는 중)에 오지 않아서, 같이 둔 사람이 목록을 다시 열지 않으면 남아요.

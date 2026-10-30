@@ -99,10 +99,10 @@ describe('광장 카드 보석 등급(시안 A)', () => {
         assert.match(loader, /if \(loadAlkkagiFontsOnce\.queued\) return;\s*loadAlkkagiFontsOnce\.queued = true;/);
         assert.match(loader, /requestIdleCallback\(run, \{ timeout: 2000 \}\)/);
         assert.equal(src.split("import('./alkkagiFonts.css')").length - 1, 1, '글꼴 CSS import 는 한 곳에만 있어야 해요');
-        assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Title'/);
+        assert.match(css, /\.plaza-tier \.plaza-card-name \{[^}]*font-family: 'JJAEM Body'/);
     });
 
-    it('B-1: 쨈 제목 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
+    it('B-1: 쨈 글꼴은 앱 시작이 아니라 광장이 보일 때만 불러와요', () => {
         // renderPlaza 는 광장이 숨어 있어도 앱 시작 때 불리므로, 여기서는 글꼴을 부르지 않아요
         const body = sliceBetween(src, 'window.renderPlaza = function(studentsData, gmData, gmaData) {', 'const createCard');
         assert.ok(body.length > 0);

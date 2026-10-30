@@ -12033,7 +12033,7 @@ ${subjectLine}
         let _alkSeen = { roomId: '', moveCount: -1 };
         let _alkWriting = false;
         let _alkBusy = false;
-        // 쨈 글꼴 CSS(제목 약 443KB 포함)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요.
+        // 쨈 글꼴 CSS(쨈 폰트 v1.0.5 조각판)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요. 화면에 쓰인 조각만 내려받아요(광장은 본문 약 411KB).
         // 앱을 켤 때 바로 받지 않게 해서 첫 화면이 가벼워요. (함수 선언이라 위쪽 switchTab에서 불러도 안전해요)
         // { idle: true } 이면 첫 화면을 다 그린 뒤 한가할 때(최대 2초 안에) 불러와요. 알까기 판은 바로 불러요.
         function loadAlkkagiFontsOnce(opts) {
@@ -21917,7 +21917,7 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if(!container) return;
             applyPlazaCardSizeUI();
-            // 카드 이름표의 쨈 제목 글꼴은 여기서 부르지 않아요. renderPlaza 는 앱 시작 때(광장이 안 보여도) 불리므로,
+            // 카드 이름표의 쨈 본문 글꼴은 여기서 부르지 않아요. renderPlaza 는 앱 시작 때(광장이 안 보여도) 불리므로,
             // 글꼴은 switchTab('plaza') 에서만 불러와요. 글꼴이 오기 전에는 Noto Sans KR로 보여요.
 
             const createCard = (data, isGMCard, idLabel) => {

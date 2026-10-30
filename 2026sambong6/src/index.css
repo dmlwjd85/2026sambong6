@@ -6722,15 +6722,16 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             mask-image: linear-gradient(to bottom, transparent 38%, #000 74%);
         }
         /* 이름표·Lv·수치 줄은 짙은 판 위에 — 어떤 무늬 위에서도 글자가 또렷하고, 수치 줄 아래로 무늬가 비치지 않게 불투명 */
+        /* 이름표·Lv는 8~11px라 쨈 본문(작은 글자용)으로 써요. 본문 Bold는 14px 이상용이라 Regular로 둬요 */
         .plaza-tier .plaza-card-name {
-            font-family: 'JJAEM Title', 'Noto Sans KR', sans-serif;
+            font-family: 'JJAEM Body', 'Noto Sans KR', sans-serif;
             font-weight: 400;
             background-color: var(--pt-plate);
             border-color: var(--pt-plate-edge);
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(0, 0, 0, 0.35);
         }
         .plaza-tier .plaza-card-lv {
-            font-family: 'JJAEM Title', 'Noto Sans KR', sans-serif;
+            font-family: 'JJAEM Body', 'Noto Sans KR', sans-serif;
             font-weight: 400;
             background-color: rgba(2, 6, 23, 0.72);
             color: var(--pt-ink);

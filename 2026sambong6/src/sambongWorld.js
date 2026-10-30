@@ -206,6 +206,7 @@ import {
     chessAttackerType,
 } from './lib/chessFx.js';
 import { chessPieceHtml } from './lib/chessPieces.js';
+import { isSlowConnection } from './lib/fontPrefetch.js';
 import {
     CHESS_BLACK,
     CHESS_WHITE,
@@ -12053,7 +12054,9 @@ ${subjectLine}
         // 알까기 48px 입체 제목 조각(JJAEM Title ks) 하나만 한가할 때 미리 받아 둬요. 광장이나 알까기 로비를 열면 예약해요.
         // 광장 본문 글꼴까지 다 받은 뒤에 시작하고, CSS에 이미 있는 글꼴을 document.fonts.load로 불러서 같은 파일을 두 번 받지 않아요.
         // 그래서 느린 인터넷에서도 알까기에 처음 들어갈 때 제목이 처음부터 입체로 보여요. requestIdleCallback이 없는 Safari는 setTimeout으로 해요.
+        // 데이터 절약 모드나 2G처럼 느린 망이면 미리 받지 않고, 알까기에 들어갈 때 받아요.
         function prefetchAlkkagiTitleOnce() {
+            if (isSlowConnection(window.navigator)) return;
             if (prefetchAlkkagiTitleOnce.queued) return;
             prefetchAlkkagiTitleOnce.queued = true;
             const idle = (fn, ms) => (typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(fn, { timeout: ms }) : setTimeout(fn, 600));

@@ -121,7 +121,7 @@ describe('광장 카드 보석 등급(시안 A)', () => {
         const fn = sliceBetween(src, 'function prefetchAlkkagiTitleOnce() {', '\n        }\n');
         assert.ok(fn.length > 0);
         // 한 번만 예약해요
-        assert.match(fn, /^function prefetchAlkkagiTitleOnce\(\) \{\s*if \(prefetchAlkkagiTitleOnce\.queued\) return;\s*prefetchAlkkagiTitleOnce\.queued = true;/);
+        assert.match(fn, /^function prefetchAlkkagiTitleOnce\(\) \{\s*if \(isSlowConnection\(window\.navigator\)\) return;\s*if \(prefetchAlkkagiTitleOnce\.queued\) return;\s*prefetchAlkkagiTitleOnce\.queued = true;/);
         // 한가할 때(Safari는 setTimeout), 지금 받는 글꼴이 끝난 뒤에 받아요
         assert.match(fn, /requestIdleCallback/);
         assert.match(fn, /setTimeout\(fn, 600\)/);

@@ -546,7 +546,7 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { classXpGivenOnDevice, classXpIssueMessage, classXpNextFireMs, classXpNoticeFirstToday, classXpStudentLabel, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpGivenOnDevice, classXpGrantsFromServer, classXpIssueMessage, classXpNextFireMs, classXpNoticeFirstToday, classXpStudentLabel, classXpTimerDelay, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { classXpSkewFromDateHeader, classXpStoredSkew, runClassXpGrant } from './lib/classXpGrant.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
@@ -31006,16 +31006,25 @@ ${subjectLine}
             return classXpStudentLabel(s, name ? getStudentDisplayLabel(s) : '');
         }
 
-        /** 묶음 저장 1번: 학생마다 +5와 이번 종 키, 첫 묶음에는 autoXp 공지까지. 읽기 없이 한 번만 보내요(maxAttempts 1). */
+        /** 묶음 저장 1번: 학생 문서를 읽어 이번 종이 없는 학생만 +5와 종 키, 첫 묶음에는 autoXp 공지까지. 한 번만 보내요(maxAttempts 1, 겹치면 409로 재시도). */
         async function commitClassXpChunk(slot, ids, withAutoXp) {
-            const xpById = new Map(window.allStudentsData.map((stu) => [String(stu && stu.id), stu && stu.xp]));
             await runTransaction(db, async (transaction) => {
+                // 학생 문서를 먼저 읽고, 이번 종을 아직 받지 않은 학생만 +5 해요.
+                // 다른 마스터 화면이 먼저 준 학생(lastClassXpSlot이 이미 이번 종)은 다시 주지 않아요.
+                const refs = new Map();
+                const loaded = [];
                 for (const sid of ids) {
-                    const beforeXp = xpById.get(sid);
-                    transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                    refs.set(sid, ref);
+                    const snap = await transaction.get(ref);
+                    const data = snap.exists() ? (snap.data() || {}) : null;
+                    loaded.push({ id: sid, exists: snap.exists(), xp: data ? data.xp : undefined, lastClassXpSlot: data ? data.lastClassXpSlot : undefined });
+                }
+                for (const row of classXpGrantsFromServer(loaded, slot.key)) {
+                    transaction.update(refs.get(row.id), {
                         xp: increment(5),
                         lastClassXpSlot: slot.key,
-                        xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${slot.timeStr})`, beforeXp, beforeXp + 5, { source: 'class-end-auto' })),
+                        xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${slot.timeStr})`, row.xp, row.xp + 5, { source: 'class-end-auto' })),
                     });
                 }
                 // 같은 종을 두 번 쓰면 autoXp 규칙(40분 간격)이 이 저장 전체를 거절해요. 기기 여러 대가 겹쳐도 한 번만 들어가요.
@@ -31023,7 +31032,7 @@ ${subjectLine}
             }, { maxAttempts: 1 });
         }
 
-        /** 평일 KST. 오늘 가장 최근 종을 이 기기에서 한 번만, 읽기 없이 한 번에 저장해요. */
+        /** 평일 KST. 오늘 가장 최근 종을 이 기기에서 한 번만 저장해요. 이미 받은 학생은 서버 문서로 걸러요. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState || !window.playerState.isGM || typeof db === 'undefined' || !db) return;
             if (!window.allStudentsData || window.allStudentsData.length === 0) return;

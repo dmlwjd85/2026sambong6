@@ -119,6 +119,28 @@ export function classXpTargets(students, slotKey, skip = () => false) {
     return { pending, invalidXp };
 }
 
+/**
+ * 서버에서 읽은 학생 문서 가운데 이번 종 경험치를 줄 학생만 고릅니다.
+ * 문서가 없거나, 이미 이 종을 받았거나, 경험치가 숫자가 아니면 빼요.
+ * 화면 목록이 아직 슬롯을 몰라도, 다른 마스터 화면이 먼저 줬으면 여기서 걸러 두 번 주지 않습니다.
+ * @param {Array<{ id?: string, exists?: boolean, xp?: unknown, lastClassXpSlot?: unknown }>} docs
+ * @param {string} slotKey
+ * @returns {Array<{ id: string, xp: number }>}
+ */
+export function classXpGrantsFromServer(docs, slotKey) {
+    const grants = [];
+    const seen = new Set();
+    for (const row of Array.isArray(docs) ? docs : []) {
+        if (!row || row.exists !== true) continue;
+        const id = String(row.id == null ? '' : row.id).trim();
+        if (!id || seen.has(id)) continue;
+        if (classXpGrantDecision(row.xp, row.lastClassXpSlot, slotKey) !== 'grant') continue;
+        seen.add(id);
+        grants.push({ id, xp: row.xp });
+    }
+    return grants;
+}
+
 /** 종이 친 뒤 주기까지 기다리는 시간(20초). 기기 시계가 조금 빨라도 서버 규칙이 같은 종으로 보게 여유를 둬요. */
 export const CLASS_XP_FIRE_DELAY_MS = 20 * 1000;
 

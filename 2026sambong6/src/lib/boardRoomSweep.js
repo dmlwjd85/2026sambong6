@@ -30,8 +30,17 @@ export function pickIdleRoomsToSweep(rooms, now, handledKeys = new Set()) {
 /**
  * 정리 실행기를 만들어요.
  * getRooms(): 지금 화면이 아는 방 목록, removeRoom(room): 방 하나 지우기(트랜잭션 권장).
+ * 고를 방 기준(pickRooms)·정리 키(keyOf)를 바꿀 수 있어요. parallel이면 고른 방을 한꺼번에 지워요
+ * (방마다 기다림이 있을 때 뒤 방이 앞 방 기다림만큼 밀리지 않게). 기본값은 위 기준·차례대로예요.
  */
-export function createIdleRoomSweeper({ getRooms, removeRoom, onError = () => {} } = {}) {
+export function createIdleRoomSweeper({
+    getRooms,
+    removeRoom,
+    onError = () => {},
+    pickRooms = pickIdleRoomsToSweep,
+    keyOf = boardRoomSweepKey,
+    parallel = false,
+} = {}) {
     const handled = new Set();
     let running = false;
     let again = false;
@@ -44,14 +53,23 @@ export function createIdleRoomSweeper({ getRooms, removeRoom, onError = () => {}
             do {
                 again = false;
                 againAt = 0;
-                const due = pickIdleRoomsToSweep(getRooms(), t, handled);
-                for (const room of due) {
-                    // 지우기 전에 먼저 적어 둬요. 실패해도 이 화면은 같은 방을 다시 지우지 않아요.
-                    handled.add(boardRoomSweepKey(room));
+                const due = pickRooms(getRooms(), t, handled).filter((room) => !handled.has(keyOf(room)));
+                const run = async (room) => {
                     try {
                         await removeRoom(room);
                     } catch (e) {
                         onError(e, room);
+                    }
+                };
+                if (parallel) {
+                    // 지우기 전에 먼저 적어 둬요. 실패해도 이 화면은 같은 방을 다시 지우지 않아요.
+                    due.forEach((room) => handled.add(keyOf(room)));
+                    await Promise.all(due.map(run));
+                } else {
+                    for (const room of due) {
+                        // 지우기 전에 먼저 적어 둬요. 실패해도 이 화면은 같은 방을 다시 지우지 않아요.
+                        handled.add(keyOf(room));
+                        await run(room);
                     }
                 }
                 t = Math.max(t, againAt);

@@ -92,3 +92,28 @@ describe('오래 쉰 방 정리: 중복 삭제 막기', () => {
         assert.deepEqual(calls, ['bg_1', 'bg_2']);
     });
 });
+
+describe('정리기 옵션: 고르는 기준·키·한꺼번에 지우기', () => {
+    it('parallel이면 기다림이 겹쳐도 방마다 한 번만, 한꺼번에 지워요', async () => {
+        const rows = [room('1', { at: OLD }), room('2', { at: OLD }), room('3', { at: OLD })];
+        const started = [];
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        const sweeper = createIdleRoomSweeper({
+            getRooms: () => rows,
+            keyOf: (r) => r.id,
+            pickRooms: (list) => list.filter((r) => r.id !== 'bg_2'),
+            parallel: true,
+            removeRoom: async (r) => { started.push(r.id); await gate; },
+        });
+        const first = sweeper.sweep(T0);
+        await tick();
+        assert.deepEqual(started, ['bg_1', 'bg_3']); // 앞 방 기다림이 끝나기 전에 둘 다 시작
+        const again = sweeper.sweep(T0 + 1000);
+        release();
+        await Promise.all([first, again]);
+        await sweeper.sweep(T0 + 2000);
+        assert.deepEqual(started, ['bg_1', 'bg_3']);
+        assert.equal(sweeper.handledCount(), 2);
+    });
+});

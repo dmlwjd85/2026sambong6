@@ -74,6 +74,11 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    // 보드게임 방(아래 전용 match만 쓰고, 공개 와일드카드에서는 뺍니다).
+    function isBoardGameRoomDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/boardGameRooms/.*');
+    }
+
     function isEstateStateDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/estate/state$');
     }
@@ -418,16 +423,234 @@ service cloud.firestore {
     }
 
     // 보드게임 방: 로그인(익명 인증)한 학급 화면에서만 만들고 고칩니다.
-    // 학번·방장 권한은 클라이언트 상태 머신(boardGameRooms.js)이 검사합니다.
-    // 익명 Auth에는 학번이 없으므로 규칙에서 명단 대조는 하지 않습니다.
+    // 학번·참가 순서·수 두기 내용은 클라이언트 상태 머신(boardGameRooms.js)이 검사합니다.
+    // 방장은 hostUid(만든 기기의 로그인 uid), 참가자는 memberUids(참가자 uid 목록)로 알아봅니다.
+    // hostUid가 없는 옛 방은 예전처럼 로그인한 누구나 고치고 지울 수 있습니다.
+    // 만든 지(createdAt) 30분이 지난 방은 로그인한 누구나 지울 수 있습니다.
+    // 단, 두는 중(playing)인 판은 마지막 활동(lastActivityAt)이 숫자이고 10분 넘게 지났을 때만 지웁니다.
+    // 옛 화면(hostUid를 모르는 앱)은 문서 전체를 hostUid 없이 덮어써서 이 규칙에서 참가·만들기·두기가 막힙니다.
+    // 그래서 이 규칙은 앱을 먼저 배포하고, 방과 후 모든 탭이 새로고침된 뒤에 게시합니다.
     match /artifacts/{appId}/public/data/boardGameRooms/{roomId} {
+      function roomHostUid(d) {
+        return d.get('hostUid', '');
+      }
+      function roomIsLegacy(d) {
+        return !(roomHostUid(d) is string) || roomHostUid(d) == '';
+      }
+      function roomIsMine(d) {
+        return roomHostUid(d) == request.auth.uid;
+      }
+      function roomMemberUids(d) {
+        let u = d.get('memberUids', []);
+        return u is list ? u : [];
+      }
+      function roomMembers(d) {
+        let m = d.get('members', []);
+        return m is list ? m : [];
+      }
+      // 방장이거나 지금 참가자(memberUids)인 기기
+      function roomIsParty(d) {
+        return roomIsMine(d) || request.auth.uid in roomMemberUids(d);
+      }
+      function roomCleanupAgeDue(d) {
+        let created = d.get('createdAt', 0);
+        let last = d.get('lastActivityAt', 0);
+        return created is number && created > 0
+          && request.time.toMillis() - created >= 1800000
+          && (d.get('status', '') != 'playing'
+            || (last is number && request.time.toMillis() - last >= 600000));
+      }
+      function roomIdle(d) {
+        let last = d.get('lastActivityAt', 0);
+        return last is number && request.time.toMillis() - last >= 600000;
+      }
+      function roomTimesOk(n) {
+        return n.get('createdAt', null) is number && n.get('lastActivityAt', null) is number;
+      }
+      // 서버 시각 앞뒤 10분 안의 숫자
+      function roomTimeNear(v) {
+        return v is number
+          && v <= request.time.toMillis() + 600000
+          && v >= request.time.toMillis() - 600000;
+      }
+      // 새로 만드는 방 모양(R2-1): 대기 상태, 방장 한 명(내 uid), 신청 없음, 만든 시각·마지막 활동이 서버 시각 앞뒤 10분 안.
+      // 미래 시각으로 만들어 정리를 피하거나 로비 맨 위를 차지하는 방을 막아요.
+      function roomFreshShape(n) {
+        let m = roomMembers(n);
+        return n.get('status', '') == 'waiting'
+          && roomTimeNear(n.get('createdAt', null))
+          && roomTimeNear(n.get('lastActivityAt', null))
+          && n.get('hostId', '') is string && n.get('hostId', '') != ''
+          && m.size() == 1
+          && m[0].get('id', '') == n.get('hostId', '')
+          && m[0].get('uid', '') == request.auth.uid
+          && roomMemberUids(n) == [request.auth.uid]
+          && n.get('joinRequests', []) == []
+          && n.get('participantIds', [n.get('hostId', '')]) == [n.get('hostId', '')];
+      }
+      // lastActivityAt: 그대로이거나, 줄지 않고 서버 시각 앞뒤 10분 안의 숫자
+      function roomActivityOk(d, n) {
+        let before = d.get('lastActivityAt', 0);
+        let after = n.get('lastActivityAt', 0);
+        return after == before
+          || (after is number
+            && (!(before is number) || after >= before)
+            && after <= request.time.toMillis() + 600000
+            && after >= request.time.toMillis() - 600000);
+      }
+      // createdAt: 그대로. 없던 방에는 방장만 숫자로 넣을 수 있습니다.
+      function roomCreatedOk(d, n) {
+        return ('createdAt' in d && n.get('createdAt', null) == d.createdAt)
+          || (!('createdAt' in d) && (!('createdAt' in n) || (roomIsMine(d) && n.createdAt is number)));
+      }
+      // 참가자가 자기 자리 하나만 빼기. 승인 없이 자리 넣기는 막아요(R2-3, 자리는 방장 승인으로만 생겨요).
+      function roomSelfSeatOnly(d, n) {
+        let dm = roomMembers(d);
+        let nm = roomMembers(n);
+        let du = roomMemberUids(d);
+        let nu = roomMemberUids(n);
+        let me = request.auth.uid;
+        return nm.size() + 1 == dm.size() && dm.hasAll(nm)
+          && dm.removeAll(nm).size() == 1 && dm.removeAll(nm)[0].get('uid', '') == me
+          && (me in du) && nu.size() + 1 == du.size() && du.hasAll(nu) && !(me in nu);
+      }
+      function roomMembersOk(d, n) {
+        return (n.get('members', null) == d.get('members', null)
+            && n.get('memberUids', null) == d.get('memberUids', null))
+          || roomIsMine(d)
+          || roomSelfSeatOnly(d, n);
+      }
+      // R2-4·r4 ④: uid 없이 승인된 자리(옛 화면이 섞였을 때 생겨요) 하나에 내 uid를 채우는 쓰기.
+      // 자리 칸은 그 자리 uid만 바뀌어야 해요. 대기·두는 중인 방에서만 돼요.
+      // 채우는 쓰기에 두기(판·차례·결과)를 함께 실어도 돼요(규칙이 바뀐 뒤에도 두던 판을 끝까지 둘 수 있게).
+      // 이 쓰기를 한 기기는 그 순간부터 참가자로 봐요(상태 바꾸기 기준).
+      function roomClaimSeat(d, n) {
+        let dm = roomMembers(d);
+        let nm = roomMembers(n);
+        let me = request.auth.uid;
+        let gone = dm.removeAll(nm);
+        let added = nm.removeAll(dm);
+        return d.get('status', '') in ['waiting', 'playing']
+          && !(me in roomMemberUids(d))
+          && !roomIsMine(d)
+          && nm.size() == dm.size()
+          && gone.size() == 1 && added.size() == 1
+          && gone[0].get('uid', '') == ''
+          && added[0].get('uid', '') == me
+          && added[0].diff(gone[0]).affectedKeys().hasOnly(['uid'])
+          && roomMemberUids(n).size() == roomMemberUids(d).size() + 1
+          && roomMemberUids(n).hasAll(roomMemberUids(d))
+          && (me in roomMemberUids(n));
+      }
+      // R2-3: 방장·참가자가 아닌 기기가 할 수 있는 일만.
+      // - 대기 방에 내 신청(내 uid, pending) 하나 넣기·바꾸기, 또는 내 신청 빼기
+      // - 10분 넘게 멈춘 방 닫기
+      // 판(game)·자리·상태·방 설정은 못 바꾸고, 두는 중인 판의 마지막 활동도 못 밀어요.
+      function roomOutsiderJoinOk(d, n) {
+        let dj = d.get('joinRequests', []);
+        let nj = n.get('joinRequests', []);
+        let me = request.auth.uid;
+        let addedJ = nj.removeAll(dj);
+        let goneJ = dj.removeAll(nj);
+        let dp = d.get('participantIds', []);
+        let np = n.get('participantIds', []);
+        return d.get('status', '') == 'waiting'
+          && dj is list && nj is list && dp is list && np is list
+          // r4 ③(c2b): 이미 방에 있는 학번(방장·자리·남의 신청)으로는 새 신청을 못 넣어요. 내 신청을 같은 학번으로 바꾸는 것만 돼요.
+          && (addedJ.size() == 0 || !(addedJ[0].get('id', '') in dp)
+            || (goneJ.size() == 1 && goneJ[0].get('id', '') == addedJ[0].get('id', '')))
+          && n.diff(d).affectedKeys().hasOnly(['joinRequests', 'participantIds', 'lastActivityAt', 'updatedAt', 'round'])
+          && n.get('round', 0) == d.get('round', 0)
+          && addedJ.size() <= 1 && goneJ.size() <= 1 && addedJ.size() + goneJ.size() >= 1
+          && (addedJ.size() == 0
+            || (addedJ[0].get('uid', '') == me && addedJ[0].get('status', '') == 'pending'))
+          && (goneJ.size() == 0 || goneJ[0].get('uid', '') == me)
+          && np.removeAll(dp).hasOnly(addedJ.size() == 1 ? [addedJ[0].get('id', '')] : [])
+          && dp.removeAll(np).hasOnly(goneJ.size() == 1 ? [goneJ[0].get('id', '')] : []);
+      }
+      function roomOutsiderCloseOk(d, n) {
+        return n.get('status', '') == 'closed'
+          && roomIdle(d)
+          && n.diff(d).affectedKeys().hasOnly(['status', 'lastActivityAt', 'updatedAt', 'round'])
+          && n.get('round', 0) == d.get('round', 0);
+      }
+      function roomOutsiderOk(d, n) {
+        return roomIsParty(d)
+          || roomOutsiderJoinOk(d, n)
+          || roomOutsiderCloseOk(d, n);
+      }
+      // 상태: playing·finished → waiting 금지, closed는 되돌리지 않음.
+      // finished·closed로 바꾸기와 끝난 판 다시 두기는 방장·참가자만(10분 넘게 멈춘 방 닫기는 누구나).
+      function roomStatusOk(d, n, party) {
+        let a = d.get('status', '');
+        let b = n.get('status', '');
+        return a == b
+          || (a == 'waiting' && b == 'playing')
+          || (a in ['waiting', 'playing'] && b == 'finished' && party)
+          || (a == 'finished' && b == 'playing' && party)
+          || (a in ['waiting', 'playing', 'finished'] && b == 'closed' && (party || roomIdle(d)));
+      }
+      // 보통 쓰기(참가 신청·승인·두기·나가기): 방장·학번·만든 시각은 그대로
+      function roomUpdateKeepsRoom(d, n) {
+        let claim = roomClaimSeat(d, n);
+        return roomHostUid(n) == roomHostUid(d)
+          && (roomIsLegacy(d)
+            || (n.get('hostId', '') == d.get('hostId', '')
+              && roomCreatedOk(d, n)
+              && roomActivityOk(d, n)
+              && (claim || roomMembersOk(d, n))
+              && roomStatusOk(d, n, claim || roomIsParty(d))
+              && (claim || roomOutsiderOk(d, n))));
+      }
+      // 같은 문서에 새로 만든 방: 새 방 모양(roomFreshShape)이고, 만든 시각은 예전 방보다 앞서지 않음
+      function roomFreshOver(d, n) {
+        let before = d.get('createdAt', 0);
+        return roomFreshShape(n)
+          && (!(before is number) || n.createdAt >= before);
+      }
+      // hostUid가 없는 옛 방에 방장이 내 uid를 적기(만든 시각 그대로, 마지막 활동은 서버 시각 근처)
+      function roomLegacyClaimOk(d, n) {
+        return (('createdAt' in d) ? n.get('createdAt', null) == d.createdAt : roomTimeNear(n.get('createdAt', null)))
+          && roomActivityOk(d, n);
+      }
+      // 같은 문서에 새 방 덮어쓰기(hostUid를 내 것으로):
+      // - 옛 방(hostUid 없음): 내 uid를 적는 쓰기이거나 새 방 모양
+      // - 새 방 모양으로, 30분 정리 대상 위에, 또는 내 방(hostUid가 내 uid)이 끝났거나(finished·closed) 10분 넘게 비었을 때만.
+      //   R2-2: hostUid가 있는 방은 같은 학번(hostId)만으로는 덮어쓰지 못해요(남의 학번으로 방을 막는 걸 막아요).
+      // (두는 중인 판·끝난 판을 대기로 되돌리는 쪼개 쓰기는 여기서도 막혀요.)
+      function roomOverwriteOk(d, n) {
+        return roomIsMine(n) && roomTimesOk(n) && (
+          (roomIsLegacy(d) && (roomLegacyClaimOk(d, n) || roomFreshOver(d, n)))
+          || (roomFreshOver(d, n) && (
+            roomCleanupAgeDue(d)
+            || (roomIsMine(d) && (
+              d.get('status', '') in ['finished', 'closed']
+              || roomIdle(d)))
+          ))
+        );
+      }
+
       allow read: if true;
       allow create: if signedIn()
         && request.resource.data.gameType is string
         && request.resource.data.hostId is string
-        && request.resource.data.status is string;
-      allow update: if signedIn();
-      allow delete: if signedIn();
+        && request.resource.data.status is string
+        && roomTimesOk(request.resource.data)
+        && roomIsMine(request.resource.data)
+        && roomFreshShape(request.resource.data);
+      allow update: if signedIn() && (
+        roomUpdateKeepsRoom(resource.data, request.resource.data)
+        || roomOverwriteOk(resource.data, request.resource.data)
+      );
+      // 지우기: 내 방, 옛 방, 30분 정리 대상, 참가자가 닫은(closed) 방,
+      // 또는 r4 ②: 참가자가 10분 넘게 둔 끝난(finished) 방
+      allow delete: if signedIn() && (
+        roomIsMine(resource.data)
+        || roomIsLegacy(resource.data)
+        || roomCleanupAgeDue(resource.data)
+        || (resource.data.get('status', '') == 'closed' && roomIsParty(resource.data))
+        || (resource.data.get('status', '') == 'finished' && roomIsParty(resource.data) && roomIdle(resource.data))
+      );
     }
 
     // 부동산 자리표. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
@@ -523,6 +746,7 @@ service cloud.firestore {
         && !isApprovedClassIdDoc()
         && !isOxQuizBankDoc()
         && !isEstateStateDoc()
+        && !isBoardGameRoomDoc()
         && studentClassXpSlotAllowed();
     }
 

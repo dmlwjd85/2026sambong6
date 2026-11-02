@@ -1098,7 +1098,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const base = 'artifacts/class1/peerFeedback/7/items';
         const db = anon().firestore();
         await testEnv.withSecurityRulesDisabled(async (context) => {
-            for (const id of ['3', '5', '6', '7', '8']) await setDoc(doc(context.firestore(), `artifacts/class1/public/data/students/${id}`), { name: `학생${id}` });
+            for (const id of ['3', '5', '6', '7', '8']) await setDoc(doc(context.firestore(), `artifacts/class1/public/data/students/student_${id}`), { name: `학생${id}` });
         });
         const good = (extra = {}) => ({ kind: 'dislike', fromId: '3', fromName: '김철수', reason: '떠들어서', date: T, uid: 'anon-student', createdAt: serverTimestamp(), ...extra });
         await assertSucceeds(setDoc(doc(db, `${base}/${T}_dislike_3`), good()));

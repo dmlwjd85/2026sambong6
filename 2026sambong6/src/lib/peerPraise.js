@@ -9,6 +9,11 @@ export const PRAISE_BONG = 1;
 export const PRAISE_FANFARE_AT = 10;
 export const PRAISE_FANFARE_XP = 50;
 export const PRAISE_FANFARE_BONG = 5;
+export const PRAISE_REASON_MAX = 40;
+
+function cleanReason(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
 
 function pairKey(fromId, toId) {
     return `${String(fromId || '')}>${String(toId || '')}`;
@@ -31,7 +36,7 @@ function latestYmd(bags) {
 }
 
 export function emptyPraiseBoard() {
-    return { countDate: '', lastGiven: {}, pairs: {}, received: {}, fanfare: {} };
+    return { countDate: '', lastGiven: {}, pairs: {}, received: {}, fanfare: {}, latestReason: {} };
 }
 
 export function sanitizePraiseBoard(raw) {
@@ -52,6 +57,11 @@ export function sanitizePraiseBoard(raw) {
     const fanfare = src.fanfare && typeof src.fanfare === 'object' ? src.fanfare : {};
     Object.keys(fanfare).forEach((id) => {
         if (fanfare[id]) board.fanfare[String(id)] = true;
+    });
+    const latest = src.latestReason && typeof src.latestReason === 'object' ? src.latestReason : {};
+    Object.keys(latest).forEach((id) => {
+        const reason = cleanReason(latest[id]).slice(0, PRAISE_REASON_MAX);
+        if (reason) board.latestReason[String(id)] = reason;
     });
     board.countDate = isYmd(src.countDate) ? String(src.countDate) : '';
     return board;
@@ -92,12 +102,24 @@ export function praiseCountForToday(board, studentId, today) {
     return Math.max(0, Math.floor(Number(rolled.board.received[id]) || 0));
 }
 
-export function planPeerPraise(board, { fromId, toId, today } = {}) {
+/** 광장 카드에 보여 줄 가장 최근 따봉(추천) 사유. 보낸 사람 이름은 넣지 않습니다. */
+export function latestPraiseReason(board, studentId) {
+    const id = String(studentId || '');
+    if (!id) return '';
+    return String(sanitizePraiseBoard(board).latestReason[id] || '');
+}
+
+/** reason을 넘기면 사유가 필수입니다(빈칸·40자 초과 거절). 넘기지 않으면 예전처럼 사유 없이 계획합니다. */
+export function planPeerPraise(board, { fromId, toId, today, reason } = {}) {
+    const needReason = reason !== undefined;
+    const reasonText = cleanReason(reason);
     const from = String(fromId || '');
     const to = String(toId || '');
     const date = String(today || '');
     if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, reason: 'who' };
     if (from === to) return { ok: false, reason: 'self' };
+    if (needReason && !reasonText) return { ok: false, reason: 'empty' };
+    if (needReason && [...reasonText].length > PRAISE_REASON_MAX) return { ok: false, reason: 'long' };
     const src = rollPraiseDay(board, date).board;
     if (src.lastGiven[from] === date) return { ok: false, reason: 'once' };
     if (src.pairs[pairKey(to, from)]) return { ok: false, reason: 'mutual' };
@@ -108,8 +130,10 @@ export function planPeerPraise(board, { fromId, toId, today } = {}) {
     next.pairs[pairKey(from, to)] = date;
     next.received[to] = received;
     if (fanfare) next.fanfare[to] = true;
+    if (reasonText) next.latestReason[to] = reasonText;
     return {
         ok: true,
+        reasonText,
         board: next,
         fanfare,
         received,
@@ -123,6 +147,8 @@ export function planPeerPraise(board, { fromId, toId, today } = {}) {
 
 export function praiseFailMessage(reason) {
     if (reason === 'self') return '나에게는 따봉을 줄 수 없습니다.';
+    if (reason === 'empty') return '따봉(추천) 사유를 적어 주세요.';
+    if (reason === 'long') return `따봉(추천) 사유는 ${PRAISE_REASON_MAX}자까지 적을 수 있습니다.`;
     if (reason === 'once') return '따봉은 하루에 한 번만 줄 수 있습니다.';
     if (reason === 'mutual') return '서로 따봉은 줄 수 없습니다. 이미 그 친구가 나에게 따봉을 주었습니다.';
     return '따봉을 보내지 못했습니다.';

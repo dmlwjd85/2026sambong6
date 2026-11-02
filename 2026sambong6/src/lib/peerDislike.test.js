@@ -26,15 +26,15 @@ describe('광장 비추천', () => {
         assert.equal(ok.xpCost, DISLIKE_XP_COST);
         assert.equal(ok.xpCost, 10);
         assert.equal(ok.received, 1);
-        assert.equal(ok.board.latestReason['2'], '떠들어서');
-        assert.equal(ok.board.log[0].from, '1');
+        assert.equal(ok.board.latestReason['2'], undefined, '사유는 공개 보드에 쓰지 않는다');
+        assert.equal(ok.board.log.length, 0, '보낸 사람 기록도 공개 보드에 쓰지 않는다');
         assert.equal(ok.board.once['1>2'], '2026-10-21');
         assert.equal(planPeerDislike(ok.board, { fromId: '1', toId: '2', today: '2026-10-21', reason: '또' }).reason, 'once');
         assert.equal(planPeerDislike(ok.board, { fromId: '1', toId: '1', today: '2026-10-21', reason: '나' }).reason, 'self');
     });
 
-    it('자정이 지나면 받은 수만 지우고 사유는 카드에 남긴다', () => {
-        const made = planPeerDislike({}, { fromId: '3', toId: '4', today: '2026-10-20', reason: '떠듦' });
+    it('자정이 지나면 받은 수만 지우고 예전 보드의 사유는 그대로 둔다', () => {
+        const made = planPeerDislike({ latestReason: { 4: '떠듦' } }, { fromId: '3', toId: '4', today: '2026-10-20', reason: '떠듦' });
         const rolled = rollDislikeDay(made.board, '2026-10-21');
         assert.equal(rolled.reset, true);
         assert.equal(dislikeCountForToday(made.board, '4', '2026-10-21'), 0);
@@ -42,6 +42,6 @@ describe('광장 비추천', () => {
         const again = planPeerDislike(made.board, { fromId: '3', toId: '4', today: '2026-10-21', reason: '또 떠듦' });
         assert.equal(again.ok, true);
         assert.equal(again.received, 1);
-        assert.equal(again.board.latestReason['4'], '또 떠듦');
+        assert.equal(again.board.latestReason['4'], '떠듦');
     });
 });

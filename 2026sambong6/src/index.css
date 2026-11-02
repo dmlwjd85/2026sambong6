@@ -762,6 +762,15 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .plaza-dislike-reason.plaza-praise-reason { color: #bbf7d0; }
+        .peer-feedback-list { max-height: min(60vh, 22rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; text-align: left; }
+        .peer-feedback-row { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.5rem; padding: 0.45rem 0.6rem; border-radius: 0.75rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(71, 85, 105, 0.6); font-size: 12px; }
+        .peer-feedback-row.is-praise { border-color: rgba(74, 222, 128, 0.5); }
+        .peer-feedback-row.is-dislike { border-color: rgba(248, 113, 113, 0.5); }
+        .peer-feedback-kind { font-weight: 800; color: #fff; white-space: nowrap; }
+        .peer-feedback-from { color: #cbd5e1; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+        .peer-feedback-reason { grid-column: 1 / -1; color: #e2e8f0; overflow-wrap: anywhere; white-space: pre-wrap; }
+        .peer-feedback-empty { color: #94a3b8; text-align: center; font-size: 12px; padding: 0.75rem 0; }
         .checklist-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(2.6rem, 1fr));

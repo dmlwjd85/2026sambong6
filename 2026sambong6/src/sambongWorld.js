@@ -697,6 +697,7 @@ import {
     toggleChecklistNumber,
 } from './lib/classChecklist.js';
 import {
+    latestPraiseReason,
     planPeerPraise,
     praiseCountForToday,
     praiseFailMessage,
@@ -705,12 +706,11 @@ import {
 } from './lib/peerPraise.js';
 import {
     DISLIKE_XP_COST,
-    dislikeCountForToday,
     dislikeFailMessage,
-    latestDislikeReason,
     planPeerDislike,
     sanitizeDislikeBoard,
 } from './lib/peerDislike.js';
+import { appendFeedback, feedbackNewestFirst } from './lib/peerFeedback.js';
 import {
     buildScreenNotice,
     closeScreenNotice,
@@ -21908,22 +21908,10 @@ ${subjectLine}
             return Math.max(0, Math.floor(Number(storedCount) || 0));
         }
 
-        function plazaDislikeCount(studentId) {
-            const today = getLocalDateStr();
-            if (window._classOpsReady) return dislikeCountForToday(window._dislikeBoard, studentId, today);
-            if (!window._classOpsLoading && typeof db !== 'undefined' && db) {
-                void ensureClassOpsLoaded().then(() => {
-                    if (typeof window.renderPlaza === 'function') {
-                        window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
-                    }
-                });
-            }
-            return 0;
-        }
-
-        function plazaDislikeReason(studentId) {
+        /** 광장 카드에는 비추천 수·사유를 보이지 않고, 가장 최근 따봉(추천) 사유만 보여 줍니다. */
+        function plazaPraiseReason(studentId) {
             if (!window._classOpsReady) return '';
-            return latestDislikeReason(window._dislikeBoard, studentId);
+            return latestPraiseReason(window._praiseBoard, studentId);
         }
 
         window.renderPlaza = function(studentsData, gmData, gmaData) {
@@ -22066,15 +22054,15 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const dislikeCount = plazaDislikeCount(targetId);
-                const dislikeReason = plazaDislikeReason(targetId);
-                const dislikeReasonHtml = dislikeReason
-                    ? `<div class="plaza-dislike-reason" title="${escapeHtmlAttr(dislikeReason)}">${escapeConvenienceHtml(dislikeReason)}</div>`
+                const praiseReason = plazaPraiseReason(targetId);
+                const praiseReasonHtml = praiseReason
+                    ? `<div class="plaza-dislike-reason plaza-praise-reason" title="${escapeHtmlAttr(praiseReason)}">${escapeConvenienceHtml(praiseReason)}</div>`
                     : '';
                 const praiseBtn = `<div class="praise-pair" onclick="event.stopPropagation();">
                     <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉"><img src="nav/thumbs-up.svg" alt="따봉" width="16" height="16"><span>${praiseCount}</span></button>
-                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerDislike('${targetId}')" title="비추천"><img src="nav/thumbs-up.svg" alt="비추천" width="16" height="16" class="praise-thumb-down"><span>${dislikeCount}</span></button>
-                </div>${dislikeReasonHtml}`;
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerDislike('${targetId}')" title="비추천"><img src="nav/thumbs-up.svg" alt="비추천" width="16" height="16" class="praise-thumb-down"></button>${window.playerState && window.playerState.isGM ? `
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.openPeerFeedback('${targetId}')" title="받은 사유 보기" aria-label="받은 사유 보기">📩</button>` : ''}
+                </div>${praiseReasonHtml}`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${tierClass}${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
@@ -24948,8 +24936,13 @@ ${subjectLine}
                 return window.customAlert(playerCreditDefaultMessage());
             }
             await ensureClassOpsLoaded();
+            if (String(toId) === fromId) return window.openPeerFeedback(fromId);
             const today = getLocalDateStr();
-            const plan = planPeerPraise(window._praiseBoard, { fromId, toId: String(toId), today });
+            const gate = planPeerPraise(window._praiseBoard, { fromId, toId: String(toId), today });
+            if (!gate.ok) return window.customAlert(praiseFailMessage(gate.reason));
+            const typed = await window.customPrompt('따봉(추천) 사유를 적어 주세요.\n받은 친구는 사유와 내 이름을 볼 수 있고, 광장 카드에는 사유만 보입니다.', 'text');
+            if (typed == null) return;
+            const plan = planPeerPraise(window._praiseBoard, { fromId, toId: String(toId), today, reason: typed });
             if (!plan.ok) return window.customAlert(praiseFailMessage(plan.reason));
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return window.customAlert('인증에 실패했습니다.');
@@ -24957,8 +24950,10 @@ ${subjectLine}
             try {
                 const result = await runTransaction(db, async (tx) => {
                     const praiseSnap = await tx.get(praiseRef);
-                    const fresh = planPeerPraise(praiseSnap.exists() ? praiseSnap.data() : {}, { fromId, toId: String(toId), today });
+                    const fresh = planPeerPraise(praiseSnap.exists() ? praiseSnap.data() : {}, { fromId, toId: String(toId), today, reason: typed });
                     if (!fresh.ok) return fresh;
+                    const inboxRef = peerFeedbackRef(toId);
+                    const inboxSnap = await tx.get(inboxRef);
                     const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
                     const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + toId);
                     const fromSnap = await tx.get(fromRef);
@@ -24973,6 +24968,9 @@ ${subjectLine}
                     const fromNext = bump(fromSnap, fresh.giver.xp, fresh.giver.bong, {});
                     const toNext = bump(toSnap, fresh.receiver.xp, fresh.receiver.bong, { praiseCount: fresh.received });
                     tx.set(praiseRef, fresh.board, { merge: false });
+                    tx.set(inboxRef, appendFeedback(inboxSnap.exists() ? inboxSnap.data() : {}, {
+                        kind: 'praise', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today,
+                    }), { merge: false });
                     return { ok: true, fresh, fromNext, toNext };
                 });
                 if (!result || !result.ok) return window.customAlert(praiseFailMessage(result && result.reason));
@@ -25004,11 +25002,12 @@ ${subjectLine}
             const fromId = String(localStorage.getItem('sambong_student_id') || '');
             if (!fromId) return;
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            if (String(toId) === fromId) return window.openPeerFeedback(fromId);
             await ensureClassOpsLoaded();
             const today = getLocalDateStr();
             const gate = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: '확인' });
             if (!gate.ok) return window.customAlert(dislikeFailMessage(gate.reason));
-            const typed = await window.customPrompt('비추천 사유를 적어 주세요.\n누르면 내 경험치가 10 줄어듭니다.', 'text');
+            const typed = await window.customPrompt('비추천 사유를 적어 주세요.\n누르면 내 경험치가 10 줄어듭니다.\n받은 친구는 사유와 내 이름을 볼 수 있습니다. 광장 카드에는 보이지 않습니다.', 'text');
             if (typed == null) return;
             const plan = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: typed });
             if (!plan.ok) return window.customAlert(dislikeFailMessage(plan.reason));
@@ -25028,6 +25027,8 @@ ${subjectLine}
                     if (!fresh.ok) return fresh;
                     const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
                     const fromSnap = await tx.get(fromRef);
+                    const inboxRef = peerFeedbackRef(toId);
+                    const inboxSnap = await tx.get(inboxRef);
                     if (!fromSnap.exists()) return { ok: false, reason: 'who' };
                     const data = fromSnap.data() || {};
                     const before = Math.max(0, Math.floor(Number(data.xp) || 0));
@@ -25035,6 +25036,9 @@ ${subjectLine}
                     const xp = before - fresh.xpCost;
                     tx.set(fromRef, { xp }, { merge: true });
                     tx.set(dislikeRef, fresh.board, { merge: false });
+                    tx.set(inboxRef, appendFeedback(inboxSnap.exists() ? inboxSnap.data() : {}, {
+                        kind: 'dislike', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today,
+                    }), { merge: false });
                     return { ok: true, fresh, xp };
                 });
                 if (!result || !result.ok) return window.customAlert(dislikeFailMessage(result && result.reason));
@@ -25050,6 +25054,55 @@ ${subjectLine}
                 console.error('givePeerDislike', e);
                 await window.customAlert('비추천을 저장하지 못했습니다.');
             }
+        };
+
+        /** 받은 추천·비추천 사유함. 광장(public) 밖 artifacts/{학급}/peerFeedback/{학번}. */
+        function peerFeedbackRef(studentId) {
+            return doc(db, 'artifacts', appId, 'peerFeedback', String(studentId));
+        }
+
+        function peerFeedbackSenderName(studentId) {
+            const id = String(studentId || '');
+            return String((STUDENT_NAMES && STUDENT_NAMES[id]) || getStudentDisplayLabel(id) || id).slice(0, 24);
+        }
+
+        /** 받은 학생 본인(자기 카드의 👍/👎)과 선생님(📩)만 엽니다. */
+        window.openPeerFeedback = async function(studentId) {
+            const sid = String(studentId || '');
+            const me = String(localStorage.getItem('sambong_student_id') || '');
+            const isTeacher = !!(window.playerState && window.playerState.isGM);
+            if (!sid || (!isTeacher && sid !== me)) return window.customAlert('받은 사유는 본인과 선생님만 볼 수 있습니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            let list = [];
+            try {
+                const snap = await getDoc(peerFeedbackRef(sid));
+                list = feedbackNewestFirst(snap.exists() ? snap.data() : {});
+            } catch (e) {
+                console.error('openPeerFeedback', e);
+                return window.customAlert('받은 사유를 불러오지 못했습니다.');
+            }
+            const who = isTeacher && sid !== me ? `${escapeConvenienceHtml(peerFeedbackSenderName(sid))} 학생이 받은 사유` : '내가 받은 추천·비추천';
+            const rows = list.length
+                ? list.map((row) => `<li class="peer-feedback-row ${row.kind === 'praise' ? 'is-praise' : 'is-dislike'}">
+                        <span class="peer-feedback-kind">${row.kind === 'praise' ? '👍 추천' : '👎 비추천'}</span>
+                        <span class="peer-feedback-from">${escapeConvenienceHtml(row.fromName)} · ${escapeConvenienceHtml(row.date.slice(5).replace('-', '/'))}</span>
+                        <span class="peer-feedback-reason">${escapeConvenienceHtml(row.reason)}</span>
+                    </li>`).join('')
+                : '<li class="peer-feedback-empty">아직 받은 사유가 없습니다.</li>';
+            const d = document.createElement('div');
+            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-5 rounded-3xl border border-slate-700 max-w-sm w-full space-y-3 shadow-2xl peer-feedback-panel">
+                    <h3 class="text-lg font-display text-white text-center">${who}</h3>
+                    <p class="text-[11px] text-slate-400 text-center">본인과 선생님만 볼 수 있어요. 최근 50개까지 보관해요.</p>
+                    <ul class="peer-feedback-list">${rows}</ul>
+                    <button type="button" class="js-peer-feedback-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">닫기</button>
+                </div>`;
+            sambongModalHost().appendChild(d);
+            d.querySelector('.js-peer-feedback-ok').addEventListener('click', () => d.remove());
+            d.addEventListener('click', (ev) => { if (ev.target === d) d.remove(); });
         };
 
         window.openClassroomRename = function() {

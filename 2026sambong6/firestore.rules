@@ -507,6 +507,30 @@ service cloud.firestore {
       allow write: if signedIn();
     }
 
+    // 받은 추천·비추천 사유함(사유 + 보낸 사람 실명). 공개 와일드카드(public/**) 밖에 둡니다.
+    // 익명 Auth에는 학번이 없어 규칙만으로 '받은 학생 본인'을 가릴 수는 없습니다.
+    // 그래서 로그인 없이는 못 읽고, 목록(list) 조회를 막아 한 번에 긁어 가지 못하게 합니다.
+    // 화면은 받은 학생 본인 카드와 선생님(마스터)에게만 엽니다. 지우거나 줄이는 쓰기는 막습니다.
+    function peerFeedbackItemsOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['items'])
+        && d.items is list
+        && d.items.size() >= 1
+        && d.items.size() <= 50
+        && (resource == null
+          || d.items.size() > resource.data.items.size()
+          || d.items.size() == 50);
+    }
+
+    match /artifacts/{appId}/peerFeedback/{studentId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if signedIn()
+        && studentId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && peerFeedbackItemsOk();
+      allow delete: if false;
+    }
+
     // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
     match /admins/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;

@@ -1090,6 +1090,24 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             pin: '2468',
         }));
     });
+
+    it('추천·비추천 사유함은 로그인해야 읽고, 목록 조회·삭제·줄이기·공개 경로 노출은 막는다', async () => {
+        const path = 'artifacts/class1/peerFeedback/7';
+        const item = { kind: 'dislike', fromId: '3', fromName: '김철수', reason: '떠들어서', date: '2026-11-02' };
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, path), { items: [item] }));
+        await assertSucceeds(setDoc(doc(db, path), { items: [item, { ...item, kind: 'praise' }] }));
+        await assertSucceeds(getDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, path), { items: [item] }));
+        await assertFails(setDoc(doc(db, path), { items: [item, item, item], extra: 1 }));
+        await assertFails(deleteDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, 'artifacts/class1/peerFeedback/bad id!'), { items: [item] }));
+        const { collection, getDocs } = await import('firebase/firestore');
+        await assertFails(getDocs(collection(db, 'artifacts/class1/peerFeedback')));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(getDoc(doc(guest, path)));
+        await assertFails(setDoc(doc(guest, 'artifacts/class1/peerFeedback/8'), { items: [item] }));
+    });
 });
 
 describe('firestore rules 테스트 준비', () => {

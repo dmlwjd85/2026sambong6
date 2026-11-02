@@ -45,3 +45,17 @@ export function feedbackNewestFirst(raw, kind) {
     const list = sanitizeFeedbackInbox(raw).items.slice().reverse();
     return kind ? list.filter((row) => row.kind === kind) : list;
 }
+
+/** 항목별 하위 문서 ID. 같은 사람이 같은 날 같은 종류를 두 번 못 쓰게 규칙에서도 이 ID를 확인합니다. */
+export function feedbackItemId(kind, fromId, date) {
+    return `${String(date || '')}_${String(kind || '')}_${String(fromId || '')}`;
+}
+
+/** 하위 문서에 쓸 값(createdAt은 호출하는 쪽에서 serverTimestamp로 붙입니다). 형식이 틀리면 null. */
+export function buildFeedbackItem(entry) {
+    const item = sanitizeFeedbackItem(entry);
+    if (!item) return null;
+    if (!/^[A-Za-z0-9_-]{1,24}$/.test(item.fromId)) return null;
+    if ([...String(entry.reason || '').replace(/\s+/g, ' ').trim()].length > FEEDBACK_REASON_MAX) return null;
+    return { ...item, id: feedbackItemId(item.kind, item.fromId, item.date) };
+}

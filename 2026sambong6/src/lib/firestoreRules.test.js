@@ -1091,22 +1091,39 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }));
     });
 
-    it('추천·비추천 사유함은 로그인해야 읽고, 목록 조회·삭제·줄이기·공개 경로 노출은 막는다', async () => {
-        const path = 'artifacts/class1/peerFeedback/7';
-        const item = { kind: 'dislike', fromId: '3', fromName: '김철수', reason: '떠들어서', date: '2026-11-02' };
+    it('추천·비추천 사유함: 항목 하나씩 만들기만, 형식·길이·uid 검사, 고치기·지우기·비로그인 거부', async () => {
+        const { collection, getDocs, serverTimestamp } = await import('firebase/firestore');
+        const base = 'artifacts/class1/peerFeedback/7/items';
         const db = anon().firestore();
-        await assertSucceeds(setDoc(doc(db, path), { items: [item] }));
-        await assertSucceeds(setDoc(doc(db, path), { items: [item, { ...item, kind: 'praise' }] }));
-        await assertSucceeds(getDoc(doc(db, path)));
-        await assertFails(setDoc(doc(db, path), { items: [item] }));
-        await assertFails(setDoc(doc(db, path), { items: [item, item, item], extra: 1 }));
-        await assertFails(deleteDoc(doc(db, path)));
-        await assertFails(setDoc(doc(db, 'artifacts/class1/peerFeedback/bad id!'), { items: [item] }));
-        const { collection, getDocs } = await import('firebase/firestore');
-        await assertFails(getDocs(collection(db, 'artifacts/class1/peerFeedback')));
+        const good = (extra = {}) => ({ kind: 'dislike', fromId: '3', fromName: '김철수', reason: '떠들어서', date: '2026-11-02', uid: 'anon-student', createdAt: serverTimestamp(), ...extra });
+        await assertSucceeds(setDoc(doc(db, `${base}/2026-11-02_dislike_3`), good()));
+        await assertSucceeds(setDoc(doc(db, `${base}/2026-11-02_praise_3`), good({ kind: 'praise', reason: '가'.repeat(40) })));
+        await assertSucceeds(getDoc(doc(db, `${base}/2026-11-02_dislike_3`)));
+        await assertSucceeds(getDocs(collection(db, base)));
+        // 변조·삭제·덮어쓰기
+        await assertFails(setDoc(doc(db, `${base}/2026-11-02_dislike_3`), good({ reason: '바꿔치기' })));
+        await assertFails(updateDoc(doc(db, `${base}/2026-11-02_dislike_3`), { reason: '바꿔치기' }));
+        await assertFails(deleteDoc(doc(db, `${base}/2026-11-02_dislike_3`)));
+        // 길이·형식
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', reason: '가'.repeat(41) })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', reason: '가'.repeat(10240) })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', reason: '' })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', reason: '   ' })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_hate_3`), good({ date: '2026-11-03', kind: 'hate' })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', extra: 1 })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', fromName: 123 })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', createdAt: 5 })));
+        await assertFails(setDoc(doc(db, `${base}/아무ID`), good({ date: '2026-11-03' })));
+        // 위장: 남의 uid를 적거나, 받은 사람과 같은 학번, ID와 다른 보낸 사람
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', uid: 'someone-else' })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_7`), good({ date: '2026-11-03', fromId: '7' })));
+        await assertFails(setDoc(doc(db, `${base}/2026-11-03_dislike_3`), good({ date: '2026-11-03', fromId: '4' })));
+        // 예전 단일 문서 방식은 막힘
+        await assertFails(setDoc(doc(db, 'artifacts/class1/peerFeedback/7'), { items: [] }));
         const guest = testEnv.unauthenticatedContext().firestore();
-        await assertFails(getDoc(doc(guest, path)));
-        await assertFails(setDoc(doc(guest, 'artifacts/class1/peerFeedback/8'), { items: [item] }));
+        await assertFails(getDoc(doc(guest, `${base}/2026-11-02_dislike_3`)));
+        await assertFails(getDocs(collection(guest, base)));
+        await assertFails(setDoc(doc(guest, `${base}/2026-11-04_dislike_3`), good({ date: '2026-11-04' })));
     });
 });
 

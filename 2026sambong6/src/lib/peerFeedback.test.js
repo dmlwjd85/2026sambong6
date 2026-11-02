@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFeedback, feedbackNewestFirst, FEEDBACK_KEEP, sanitizeFeedbackInbox } from './peerFeedback.js';
+import { appendFeedback, buildFeedbackItem, feedbackItemId, feedbackNewestFirst, FEEDBACK_KEEP, sanitizeFeedbackInbox } from './peerFeedback.js';
 import { latestPraiseReason, planPeerPraise, praiseFailMessage } from './peerPraise.js';
 
 describe('peerFeedback 사유함', () => {
@@ -34,5 +34,19 @@ describe('따봉(추천) 사유', () => {
     });
     it('사유를 넘기지 않으면 예전처럼 동작한다', () => {
         assert.equal(planPeerPraise({}, { fromId: '1', toId: '2', today: '2026-11-02' }).ok, true);
+    });
+});
+
+describe('사유함 하위 문서 항목', () => {
+    it('규칙과 같은 ID·형식으로 만들고 틀린 값은 거른다', () => {
+        const ok = buildFeedbackItem({ kind: 'praise', fromId: '3', fromName: '김철수', reason: ' 고마워 ', date: '2026-11-02' });
+        assert.equal(ok.id, feedbackItemId('praise', '3', '2026-11-02'));
+        assert.equal(ok.id, '2026-11-02_praise_3');
+        assert.equal(ok.reason, '고마워');
+        assert.equal(buildFeedbackItem({ kind: 'hate', fromId: '3', reason: 'x', date: '2026-11-02' }), null);
+        assert.equal(buildFeedbackItem({ kind: 'praise', fromId: '3', reason: '가'.repeat(41), date: '2026-11-02' }), null);
+        assert.equal(buildFeedbackItem({ kind: 'praise', fromId: '3', reason: '  ', date: '2026-11-02' }), null);
+        assert.equal(buildFeedbackItem({ kind: 'praise', fromId: 'a b', reason: 'x', date: '2026-11-02' }), null);
+        assert.equal(buildFeedbackItem({ kind: 'praise', fromId: '3', reason: 'x', date: '11/02' }), null);
     });
 });

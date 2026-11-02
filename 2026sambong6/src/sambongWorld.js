@@ -20,6 +20,8 @@ import {
     serverTimestamp,
     query,
     where,
+    orderBy as fsOrderBy,
+    limit as fsLimit,
 } from 'firebase/firestore';
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
@@ -710,7 +712,7 @@ import {
     planPeerDislike,
     sanitizeDislikeBoard,
 } from './lib/peerDislike.js';
-import { appendFeedback, feedbackNewestFirst } from './lib/peerFeedback.js';
+import { buildFeedbackItem, FEEDBACK_KEEP, feedbackNewestFirst } from './lib/peerFeedback.js';
 import {
     buildScreenNotice,
     closeScreenNotice,
@@ -21914,6 +21916,13 @@ ${subjectLine}
             return latestPraiseReason(window._praiseBoard, studentId);
         }
 
+        /** 카드에서 2줄로 줄인 추천 사유를 탭하면 전체 글을 보여 줍니다(보낸 사람은 보이지 않음). */
+        window.showPlazaPraiseReason = function(studentId) {
+            const reason = plazaPraiseReason(studentId);
+            if (!reason) return;
+            return window.customAlert(`👍 추천 사유\n${escapeConvenienceHtml(reason)}`);
+        };
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
@@ -22056,7 +22065,7 @@ ${subjectLine}
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
                 const praiseReason = plazaPraiseReason(targetId);
                 const praiseReasonHtml = praiseReason
-                    ? `<div class="plaza-dislike-reason plaza-praise-reason" title="${escapeHtmlAttr(praiseReason)}">${escapeConvenienceHtml(praiseReason)}</div>`
+                    ? `<div class="plaza-dislike-reason plaza-praise-reason" role="button" tabindex="0" title="${escapeHtmlAttr(praiseReason)}" onclick="event.stopPropagation(); window.showPlazaPraiseReason('${targetId}')">${escapeConvenienceHtml(praiseReason)}</div>`
                     : '';
                 const praiseBtn = `<div class="praise-pair" onclick="event.stopPropagation();">
                     <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉"><img src="nav/thumbs-up.svg" alt="따봉" width="16" height="16"><span>${praiseCount}</span></button>
@@ -24691,6 +24700,10 @@ ${subjectLine}
                     window._dislikeBoard = sanitizeDislikeBoard(dislikes.exists() ? dislikes.data() : {});
                     window._classOpsReady = true;
                     await maybeRollPraiseAtMidnight();
+                    // 추천 사유·수는 이 데이터를 다 받은 뒤에야 알 수 있으니 광장을 한 번 더 그립니다.
+                    if (typeof window.renderPlaza === 'function') {
+                        window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                    }
                 } finally {
                     window._classOpsLoading = null;
                 }
@@ -24953,8 +24966,6 @@ ${subjectLine}
                     const praiseSnap = await tx.get(praiseRef);
                     const fresh = planPeerPraise(praiseSnap.exists() ? praiseSnap.data() : {}, { fromId, toId: String(toId), today, reason: typed });
                     if (!fresh.ok) return fresh;
-                    const inboxRef = peerFeedbackRef(toId);
-                    const inboxSnap = await tx.get(inboxRef);
                     const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
                     const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + toId);
                     const fromSnap = await tx.get(fromRef);
@@ -24969,9 +24980,11 @@ ${subjectLine}
                     const fromNext = bump(fromSnap, fresh.giver.xp, fresh.giver.bong, {});
                     const toNext = bump(toSnap, fresh.receiver.xp, fresh.receiver.bong, { praiseCount: fresh.received });
                     tx.set(praiseRef, fresh.board, { merge: false });
-                    tx.set(inboxRef, appendFeedback(inboxSnap.exists() ? inboxSnap.data() : {}, {
-                        kind: 'praise', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today,
-                    }), { merge: false });
+                    const item = buildFeedbackItem({ kind: 'praise', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today });
+                    if (item) {
+                        const { id: itemId, ...itemData } = item;
+                        tx.set(peerFeedbackItemRef(toId, itemId), { ...itemData, uid: auth.currentUser ? auth.currentUser.uid : '', createdAt: serverTimestamp() });
+                    }
                     return { ok: true, fresh, fromNext, toNext };
                 });
                 if (!result || !result.ok) return window.customAlert(praiseFailMessage(result && result.reason));
@@ -25028,8 +25041,6 @@ ${subjectLine}
                     if (!fresh.ok) return fresh;
                     const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
                     const fromSnap = await tx.get(fromRef);
-                    const inboxRef = peerFeedbackRef(toId);
-                    const inboxSnap = await tx.get(inboxRef);
                     if (!fromSnap.exists()) return { ok: false, reason: 'who' };
                     const data = fromSnap.data() || {};
                     const before = Math.max(0, Math.floor(Number(data.xp) || 0));
@@ -25037,9 +25048,11 @@ ${subjectLine}
                     const xp = before - fresh.xpCost;
                     tx.set(fromRef, { xp }, { merge: true });
                     tx.set(dislikeRef, fresh.board, { merge: false });
-                    tx.set(inboxRef, appendFeedback(inboxSnap.exists() ? inboxSnap.data() : {}, {
-                        kind: 'dislike', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today,
-                    }), { merge: false });
+                    const item = buildFeedbackItem({ kind: 'dislike', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today });
+                    if (item) {
+                        const { id: itemId, ...itemData } = item;
+                        tx.set(peerFeedbackItemRef(toId, itemId), { ...itemData, uid: auth.currentUser ? auth.currentUser.uid : '', createdAt: serverTimestamp() });
+                    }
                     return { ok: true, fresh, xp };
                 });
                 if (!result || !result.ok) return window.customAlert(dislikeFailMessage(result && result.reason));
@@ -25057,9 +25070,12 @@ ${subjectLine}
             }
         };
 
-        /** 받은 추천·비추천 사유함. 광장(public) 밖 artifacts/{학급}/peerFeedback/{학번}. */
-        function peerFeedbackRef(studentId) {
-            return doc(db, 'artifacts', appId, 'peerFeedback', String(studentId));
+        /** 받은 추천·비추천 사유함. 광장(public) 밖 artifacts/{학급}/peerFeedback/{학번}/items/{날짜_종류_보낸학번}. 항목은 만들기만 됩니다. */
+        function peerFeedbackItemsRef(studentId) {
+            return collection(db, 'artifacts', appId, 'peerFeedback', String(studentId), 'items');
+        }
+        function peerFeedbackItemRef(studentId, itemId) {
+            return doc(db, 'artifacts', appId, 'peerFeedback', String(studentId), 'items', String(itemId));
         }
 
         function peerFeedbackSenderName(studentId) {
@@ -25078,8 +25094,8 @@ ${subjectLine}
             if (!authOk) return window.customAlert('인증에 실패했습니다.');
             let list = [];
             try {
-                const snap = await getDoc(peerFeedbackRef(sid));
-                list = feedbackNewestFirst(snap.exists() ? snap.data() : {});
+                const snap = await getDocs(query(peerFeedbackItemsRef(sid), fsOrderBy('createdAt', 'desc'), fsLimit(FEEDBACK_KEEP)));
+                list = feedbackNewestFirst({ items: snap.docs.map((d) => d.data()).reverse() });
             } catch (e) {
                 console.error('openPeerFeedback', e);
                 return window.customAlert('받은 사유를 불러오지 못했습니다.');

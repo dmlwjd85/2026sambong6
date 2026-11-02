@@ -762,7 +762,19 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .plaza-dislike-reason.plaza-praise-reason { color: #bbf7d0; }
+        .plaza-dislike-reason.plaza-praise-reason {
+            color: #bbf7d0;
+            width: 100%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: keep-all;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
         .peer-feedback-list { max-height: min(60vh, 22rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; text-align: left; }
         .peer-feedback-row { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.5rem; padding: 0.45rem 0.6rem; border-radius: 0.75rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(71, 85, 105, 0.6); font-size: 12px; }
         .peer-feedback-row.is-praise { border-color: rgba(74, 222, 128, 0.5); }

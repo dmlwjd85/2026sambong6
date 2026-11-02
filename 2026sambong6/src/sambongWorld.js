@@ -22060,8 +22060,9 @@ ${subjectLine}
                     : '';
                 const praiseBtn = `<div class="praise-pair" onclick="event.stopPropagation();">
                     <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉"><img src="nav/thumbs-up.svg" alt="따봉" width="16" height="16"><span>${praiseCount}</span></button>
-                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerDislike('${targetId}')" title="비추천"><img src="nav/thumbs-up.svg" alt="비추천" width="16" height="16" class="praise-thumb-down"></button>${window.playerState && window.playerState.isGM ? `
-                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.openPeerFeedback('${targetId}')" title="받은 사유 보기" aria-label="받은 사유 보기">📩</button>` : ''}
+                    ${window.playerState && window.playerState.isGM
+                        ? `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.openPeerFeedback('${targetId}')" title="받은 사유 보기"><img src="nav/thumbs-up.svg" alt="받은 사유 보기" width="16" height="16" class="praise-thumb-down"></button>`
+                        : `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerDislike('${targetId}')" title="비추천"><img src="nav/thumbs-up.svg" alt="비추천" width="16" height="16" class="praise-thumb-down"></button>`}
                 </div>${praiseReasonHtml}`;
 
                 return `
@@ -25066,7 +25067,7 @@ ${subjectLine}
             return String((STUDENT_NAMES && STUDENT_NAMES[id]) || getStudentDisplayLabel(id) || id).slice(0, 24);
         }
 
-        /** 받은 학생 본인(자기 카드의 👍/👎)과 선생님(📩)만 엽니다. */
+        /** 받은 학생 본인(자기 카드의 👍/👎)과 선생님(마스터 화면의 👎 자리)만 엽니다. */
         window.openPeerFeedback = async function(studentId) {
             const sid = String(studentId || '');
             const me = String(localStorage.getItem('sambong_student_id') || '');

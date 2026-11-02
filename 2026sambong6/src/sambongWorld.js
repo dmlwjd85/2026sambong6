@@ -7950,6 +7950,11 @@ ${subjectLine}
         }
 
         /** 로컬 기준 오늘 날짜 YYYY-MM-DD */
+        /** 기기 시간대와 상관없이 한국 날짜(KST, UTC+9) 'YYYY-MM-DD'. 서버 규칙의 '오늘'과 맞춥니다. */
+        function getKstDateStr(d = new Date()) {
+            return new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+        }
+
         function getLocalDateStr(d = new Date()) {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
@@ -24980,7 +24985,7 @@ ${subjectLine}
                     const fromNext = bump(fromSnap, fresh.giver.xp, fresh.giver.bong, {});
                     const toNext = bump(toSnap, fresh.receiver.xp, fresh.receiver.bong, { praiseCount: fresh.received });
                     tx.set(praiseRef, fresh.board, { merge: false });
-                    const item = buildFeedbackItem({ kind: 'praise', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today });
+                    const item = buildFeedbackItem({ kind: 'praise', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: getKstDateStr() });
                     if (item) {
                         const { id: itemId, ...itemData } = item;
                         tx.set(peerFeedbackItemRef(toId, itemId), { ...itemData, uid: auth.currentUser ? auth.currentUser.uid : '', createdAt: serverTimestamp() });
@@ -25048,7 +25053,7 @@ ${subjectLine}
                     const xp = before - fresh.xpCost;
                     tx.set(fromRef, { xp }, { merge: true });
                     tx.set(dislikeRef, fresh.board, { merge: false });
-                    const item = buildFeedbackItem({ kind: 'dislike', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: today });
+                    const item = buildFeedbackItem({ kind: 'dislike', fromId, fromName: peerFeedbackSenderName(fromId), reason: fresh.reasonText, date: getKstDateStr() });
                     if (item) {
                         const { id: itemId, ...itemData } = item;
                         tx.set(peerFeedbackItemRef(toId, itemId), { ...itemData, uid: auth.currentUser ? auth.currentUser.uid : '', createdAt: serverTimestamp() });

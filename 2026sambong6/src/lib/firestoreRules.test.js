@@ -1097,6 +1097,9 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const T = kst(0), Y = kst(-1), N = kst(1);
         const base = 'artifacts/class1/peerFeedback/7/items';
         const db = anon().firestore();
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            for (const id of ['3', '5', '6', '7', '8']) await setDoc(doc(context.firestore(), `artifacts/class1/public/data/students/${id}`), { name: `학생${id}` });
+        });
         const good = (extra = {}) => ({ kind: 'dislike', fromId: '3', fromName: '김철수', reason: '떠들어서', date: T, uid: 'anon-student', createdAt: serverTimestamp(), ...extra });
         await assertSucceeds(setDoc(doc(db, `${base}/${T}_dislike_3`), good()));
         await assertSucceeds(setDoc(doc(db, `${base}/${T}_praise_3`), good({ kind: 'praise', reason: '가'.repeat(40) })));
@@ -1127,6 +1130,11 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, uid: 'someone-else' })));
         await assertFails(setDoc(doc(db, `${base}/${T}_dislike_7`), good({ date: T, fromId: '7' })));
         await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ date: T, fromId: '4' })));
+        // 학생 목록에 없는 가짜 학번(보낸 쪽·받는 쪽) 거부
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_99`), good({ fromId: '99' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_fake1`), good({ fromId: 'fake1' })));
+        await assertFails(setDoc(doc(db, `artifacts/class1/peerFeedback/99/items/${T}_dislike_3`), good()));
+        await assertFails(setDoc(doc(db, `artifacts/class2/peerFeedback/7/items/${T}_dislike_5`), good({ fromId: '5' })));
         // 위 거부 사례가 모두 '값 때문'임을 확인: 같은 ID로 올바르게 쓰면 통과
         await assertSucceeds(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6' })));
         // 예전 단일 문서 방식은 막힘

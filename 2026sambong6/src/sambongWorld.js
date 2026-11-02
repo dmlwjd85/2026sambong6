@@ -25113,7 +25113,7 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-sb-panel p-5 rounded-3xl border border-slate-700 max-w-sm w-full space-y-3 shadow-2xl peer-feedback-panel">
                     <h3 class="text-lg font-display text-white text-center">${who}</h3>
-                    <p class="text-[11px] text-slate-400 text-center">본인과 선생님만 볼 수 있어요. 최근 50개까지 보관해요.</p>
+                    <p class="text-[11px] text-slate-400 text-center">받은 학생과 선생님 화면에서 보여요. 최근 50개까지 보관해요.</p>
                     <ul class="peer-feedback-list">${rows}</ul>
                     <button type="button" class="js-peer-feedback-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">닫기</button>
                 </div>`;

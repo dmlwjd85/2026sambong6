@@ -712,6 +712,7 @@ import {
     planPeerDislike,
     sanitizeDislikeBoard,
 } from './lib/peerDislike.js';
+import { getKstDateStr } from './lib/kstDate.js';
 import { buildFeedbackItem, FEEDBACK_KEEP, feedbackNewestFirst } from './lib/peerFeedback.js';
 import {
     buildScreenNotice,
@@ -7950,11 +7951,6 @@ ${subjectLine}
         }
 
         /** 로컬 기준 오늘 날짜 YYYY-MM-DD */
-        /** 기기 시간대와 상관없이 한국 날짜(KST, UTC+9) 'YYYY-MM-DD'. 서버 규칙의 '오늘'과 맞춥니다. */
-        function getKstDateStr(d = new Date()) {
-            return new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
-        }
-
         function getLocalDateStr(d = new Date()) {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
@@ -21903,7 +21899,7 @@ ${subjectLine}
         }
 
         function plazaPraiseCount(studentId, storedCount) {
-            const today = getLocalDateStr();
+            const today = getKstDateStr();
             if (window._classOpsReady) return praiseCountForToday(window._praiseBoard, studentId, today);
             if (!window._classOpsLoading && typeof db !== 'undefined' && db) {
                 void ensureClassOpsLoaded().then(() => {
@@ -24757,7 +24753,7 @@ ${subjectLine}
         const praiseRollState = { running: false, lastRollDate: null };
         async function maybeRollPraiseAtMidnight() {
             if (typeof db === 'undefined' || !db || praiseRollState.running || !window._classOpsReady) return;
-            const today = getLocalDateStr();
+            const today = getKstDateStr();
             const local = rollPraiseDay(window._praiseBoard, today);
             if (!local.reset && !local.changed && !window._praiseCountsNeedSync) return;
             try {
@@ -24956,7 +24952,7 @@ ${subjectLine}
             }
             await ensureClassOpsLoaded();
             if (String(toId) === fromId) return window.openPeerFeedback(fromId);
-            const today = getLocalDateStr();
+            const today = getKstDateStr();
             const gate = planPeerPraise(window._praiseBoard, { fromId, toId: String(toId), today });
             if (!gate.ok) return window.customAlert(praiseFailMessage(gate.reason));
             const typed = await window.customPrompt('따봉(추천) 사유를 적어 주세요.\n받은 친구는 사유와 내 이름을 볼 수 있고, 광장 카드에는 사유만 보입니다.', 'text');
@@ -25023,7 +25019,7 @@ ${subjectLine}
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             if (String(toId) === fromId) return window.openPeerFeedback(fromId);
             await ensureClassOpsLoaded();
-            const today = getLocalDateStr();
+            const today = getKstDateStr();
             const gate = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: '확인' });
             if (!gate.ok) return window.customAlert(dislikeFailMessage(gate.reason));
             const typed = await window.customPrompt('비추천 사유를 적어 주세요.\n누르면 내 경험치가 10 줄어듭니다.\n받은 친구는 사유와 내 이름을 볼 수 있습니다. 광장 카드에는 보이지 않습니다.', 'text');

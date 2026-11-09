@@ -1056,3 +1056,6 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         },
     };
 }
+
+/** 실시간 알까기 화면(alkkagiLiveBoard.js)이 같은 판·알 그림을 쓰도록 내보내기만 해요. 이 파일의 동작은 그대로예요. */
+export { bakeFace as bakeAlkkagiFace, bakeStone as bakeAlkkagiStone, bakeShadow as bakeAlkkagiShadow, bakeBoardLayer as bakeAlkkagiBoardLayer, stoneVariant as alkkagiStoneVariant };

@@ -1144,6 +1144,84 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(getDocs(query(collection(guest, base), limit(50))));
         await assertFails(setDoc(doc(guest, `${base}/${T}_dislike_8`), good({ fromId: '8', date: T })));
     });
+
+    it('실시간 알까기 live/자리: 형식·내 색 알·번호 하나씩·서버 시각 4.5초 간격, 접속 표시만 쓰기는 허용', async () => {
+        const { serverTimestamp, Timestamp } = await import('firebase/firestore');
+        const base = 'artifacts/class1/public/data/boardGameRooms/alkl_3/live';
+        const db = anon().firestore();
+        const fresh = (seat, extra = {}) => ({ seat, sid: '3', gid: 1000, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
+        const shotOf = (id, a = 0, p = 5000) => ({ v: 1, id, a, p });
+        // 처음 만들기: 번호 0·샷 없음만
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), fresh('black')));
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { n: 1, shot: shotOf('w1') })));
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh('black')));
+        await assertFails(setDoc(doc(db, `${base}/other`), fresh('black')));
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { extra: 1 })));
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { seenAt: Timestamp.fromMillis(1000) })));
+        // 방금 만든 자리에서 바로 쏘면(4.5초 안) 거부
+        const next = (n, shot, extra = {}) => ({ seat: 'black', sid: '3', gid: 1000, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'))));
+        // 마지막 샷이 10초 전이면 허용
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), `${base}/black`), { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null, shotAt: Timestamp.fromMillis(Date.now() - 10000), seenAt: Timestamp.fromMillis(Date.now() - 10000) });
+        });
+        // 상대 색 알·형식이 틀린 샷·번호 건너뛰기·sid 바꾸기 거부
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('w1'))));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b6'))));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, { ...shotOf('b1'), p: 0 })));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, { ...shotOf('b1'), p: 10001 })));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, { ...shotOf('b1'), a: 40000 })));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, { ...shotOf('b1'), a: 1.5 })));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, { ...shotOf('b1'), x: 1 })));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(2, shotOf('b1'))));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'), { sid: '9' })));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'), { shotAt: Timestamp.fromMillis(Date.now() - 60000) })));
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1', -15708, 8000))));
+        // 바로 다음 샷은 거부(쿨다운), 접속 표시만 다시 쓰는 건 허용(샷·시각 그대로)
+        await assertFails(setDoc(doc(db, `${base}/black`), next(2, shotOf('b2'))));
+        const cur = (await getDoc(doc(db, `${base}/black`))).data();
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), { ...cur, seenAt: serverTimestamp() }));
+        await assertFails(setDoc(doc(db, `${base}/black`), { ...cur, shot: shotOf('b3'), seenAt: serverTimestamp() }));
+        // 새 판(gid가 커짐)이면 번호 0으로 다시 시작, 다른 학생도 앉을 수 있어요
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), fresh('black', { gid: 2000, sid: '5' })));
+        await assertFails(setDoc(doc(db, `${base}/black`), fresh('black', { gid: 1500 })));
+        // 비로그인은 쓰지 못하고 읽기는 돼요
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, `${base}/white`), fresh('white')));
+        await assertSucceeds(getDoc(doc(guest, `${base}/black`)));
+        await assertSucceeds(deleteDoc(doc(db, `${base}/black`)));
+    });
+
+    it('실시간 알까기 live/state: 형식, 같은 판은 seq 증가만, 호스트 바꾸기는 epoch를 올릴 때만', async () => {
+        const { serverTimestamp } = await import('firebase/firestore');
+        const ref = 'artifacts/class1/public/data/boardGameRooms/alkl_3/live/state';
+        const db = anon().firestore();
+        const st = (extra = {}) => ({
+            gid: 1000, seq: 1, epoch: 0, hostSeat: 'black', step: 0, moving: false,
+            stones: [{ id: 'b1', color: 'black', x: 1, y: 2, vx: 0, vy: 0, alive: true }],
+            applied: { black: 0, white: 0 }, rejected: { black: 0, white: 0 }, lastShotAt: { black: 0, white: 0 },
+            last: null, shots: 0, over: null, at: serverTimestamp(), ...extra,
+        });
+        await assertFails(setDoc(doc(db, ref), st({ hostSeat: 'red' })));
+        await assertFails(setDoc(doc(db, ref), st({ hacked: true })));
+        await assertFails(setDoc(doc(db, ref), st({ stones: Array.from({ length: 11 }, (_, i) => ({ id: `b${i}` })) })));
+        await assertSucceeds(setDoc(doc(db, ref), st()));
+        await assertSucceeds(setDoc(doc(db, ref), st({ seq: 2 })));
+        await assertFails(setDoc(doc(db, ref), st({ seq: 2 })));
+        await assertFails(setDoc(doc(db, ref), st({ seq: 1 })));
+        await assertFails(setDoc(doc(db, ref), st({ seq: 3, hostSeat: 'white' })));
+        await assertSucceeds(setDoc(doc(db, ref), st({ seq: 3, epoch: 1, hostSeat: 'white' })));
+        // 예전 호스트(epoch 0)의 늦은 스냅샷은 거부
+        await assertFails(setDoc(doc(db, ref), st({ seq: 9, epoch: 0, hostSeat: 'black' })));
+        await assertSucceeds(setDoc(doc(db, ref), st({ seq: 4, epoch: 1, hostSeat: 'white' })));
+        // 새 판은 seq·epoch를 처음부터
+        await assertSucceeds(setDoc(doc(db, ref), st({ gid: 2000, seq: 1, epoch: 0 })));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, ref), st({ gid: 3000 })));
+        await assertSucceeds(getDoc(doc(guest, ref)));
+        // 방 문서는 예전처럼 로그인하면 쓸 수 있어요(오목·체스와 같음)
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/boardGameRooms/alkl_3'), { gameType: 'alkkagiLive', hostId: '3', status: 'waiting' }));
+    });
 });
 
 describe('firestore rules 테스트 준비', () => {

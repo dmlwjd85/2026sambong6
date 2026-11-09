@@ -74,6 +74,76 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    // 실시간 알까기 하위 문서(live/state·live/black·live/white). 공개 와일드카드와 OR 되지 않게 빼 둡니다.
+    function isAlkkagiLiveDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/boardGameRooms/[^/]+/live/[^/]+$');
+    }
+
+    // 샷 의도: {v:1, id:'b1'~'b5' 또는 'w1'~'w5'(내 자리 색), a: 각도 정수, p: 힘 정수}
+    function alkLiveShotOk(seat, shot) {
+      return shot is map
+        && shot.keys().hasOnly(['v', 'id', 'a', 'p'])
+        && shot.keys().hasAll(['v', 'id', 'a', 'p'])
+        && shot.v == 1
+        && shot.id is string
+        && shot.id.matches(seat == 'black' ? '^b[1-5]$' : '^w[1-5]$')
+        && shot.a is int && shot.a >= -31416 && shot.a <= 31416
+        && shot.p is int && shot.p >= 1 && shot.p <= 10000;
+    }
+
+    function alkLiveSeatShapeOk(seat) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['seat', 'sid', 'gid', 'n', 'shot', 'shotAt', 'seenAt'])
+        && d.keys().hasAll(['seat', 'sid', 'gid', 'n', 'shot', 'shotAt', 'seenAt'])
+        && d.seat == seat
+        && d.sid is string && d.sid.size() > 0 && d.sid.size() <= 20
+        && d.gid is int && d.gid >= 0
+        && d.n is int && d.n >= 0
+        && (d.shot == null || alkLiveShotOk(seat, d.shot))
+        && d.shotAt is timestamp
+        && d.seenAt == request.time;
+    }
+
+    // 새 판(gid가 커짐)이나 처음 만들 때: 번호 0, 샷 없음.
+    function alkLiveSeatFresh() {
+      let d = request.resource.data;
+      return d.n == 0 && d.shot == null && d.shotAt == request.time;
+    }
+
+    // 같은 판: 접속 표시만(번호·샷 그대로) 또는 번호를 하나 올려 새 샷(서버 시각으로 4.5초 지나야 함).
+    function alkLiveSeatNext() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return d.gid == o.gid && d.sid == o.sid && (
+        (d.n == o.n && d.shot == o.shot && d.shotAt == o.shotAt)
+        || (d.n == o.n + 1 && d.shot != null && d.shotAt == request.time
+            && request.time > o.shotAt + duration.value(4500, 'ms'))
+      );
+    }
+
+    function alkLiveStateShapeOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['gid', 'seq', 'epoch', 'hostSeat', 'step', 'moving', 'stones', 'applied', 'rejected', 'lastShotAt', 'last', 'shots', 'over', 'at'])
+        && d.gid is int && d.gid >= 0
+        && d.seq is int && d.seq >= 0
+        && d.epoch is int && d.epoch >= 0
+        && d.hostSeat in ['black', 'white']
+        && d.stones is list && d.stones.size() <= 10
+        && d.applied is map && d.rejected is map && d.lastShotAt is map
+        && d.at == request.time;
+    }
+
+    // 스냅샷은 같은 판에서 앞으로만 갑니다. 호스트 자리를 바꾸려면 epoch를 올려야 합니다(승계).
+    function alkLiveStateNext() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return d.gid > o.gid || (
+        d.gid == o.gid
+        && d.epoch >= o.epoch
+        && (d.epoch > o.epoch || (d.seq > o.seq && d.hostSeat == o.hostSeat))
+      );
+    }
+
     function isEstateStateDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/estate/state$');
     }
@@ -430,6 +500,25 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
+    // 실시간 알까기. 판 계산은 방장(호스트) 기기가 하고 live/state 에 스냅샷을 씁니다.
+    // 각자 live/{자리} 에 샷 의도와 접속 표시를 씁니다. 같은 자리 샷은 서버 시각으로 4.5초 간격이 있어야 합니다.
+    // 익명 Auth라 '그 자리 학생'인지는 규칙으로 확인하지 못합니다(오목·체스 방과 같은 한계, 서버 로그인 확인은 후속).
+    match /artifacts/{appId}/public/data/boardGameRooms/{roomId}/live/{docId} {
+      allow read: if true;
+      allow create: if signedIn() && (
+        (docId == 'state' && alkLiveStateShapeOk())
+        || (docId in ['black', 'white'] && alkLiveSeatShapeOk(docId) && alkLiveSeatFresh())
+      );
+      allow update: if signedIn() && (
+        (docId == 'state' && alkLiveStateShapeOk() && alkLiveStateNext())
+        || (docId in ['black', 'white'] && alkLiveSeatShapeOk(docId) && (
+          (request.resource.data.gid > resource.data.gid && alkLiveSeatFresh())
+          || alkLiveSeatNext()
+        ))
+      );
+      allow delete: if signedIn();
+    }
+
     // 부동산 자리표. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
     // 로그인한 학생의 자리 구매는 좌석 배열이 있을 때만 허용하고, 빈 배열·삭제로 자리를 지우지는 못합니다.
     // 상점 가격 등 GM 전용 키는 아래 settings/global 의 #68 조건을 유지합니다. 학생 화면에는 열지 않습니다.
@@ -568,6 +657,7 @@ service cloud.firestore {
         && !isApprovedClassIdDoc()
         && !isOxQuizBankDoc()
         && !isEstateStateDoc()
+        && !isAlkkagiLiveDoc()
         && studentClassXpSlotAllowed();
     }
 

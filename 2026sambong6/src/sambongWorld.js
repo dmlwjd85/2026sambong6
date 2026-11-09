@@ -10113,8 +10113,10 @@ ${subjectLine}
                 const desc = escapeHtmlAttr(row.desc || '새 창으로 이동합니다');
                 const url = escapeHtmlAttr(row.url);
                 const emoji = escapeHtmlAttr(row.emoji || '🌐');
+                // 'ㄱㄴㄷ'처럼 글자 아이콘은 한 줄에 작게(아이콘 칸 밖으로 넘치지 않게)
+                const emojiSize = Array.from(String(row.emoji || '🌐')).length > 2 ? 'text-sm font-black whitespace-nowrap text-white' : 'text-3xl';
                 return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border ${tone.border} ${tone.bg} p-4 flex items-center gap-3 transition">
-                    <div class="w-12 h-12 rounded-2xl ${tone.wrap} flex items-center justify-center text-3xl group-hover:scale-110 transition">${emoji}</div>
+                    <div class="w-12 h-12 shrink-0 rounded-2xl ${tone.wrap} flex items-center justify-center ${emojiSize} group-hover:scale-110 transition">${emoji}</div>
                     <div class="flex-1 min-w-0">
                         <div class="${tone.name} font-black text-sm truncate">${name}</div>
                         <div class="text-[10px] text-slate-400 truncate">${desc}</div>

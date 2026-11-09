@@ -45,7 +45,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     let wasMoving = false;
     let finished = false;
     let lastTick = Number(now) || 0;
-    const events = { hits: [], outs: [], launches: [] };
+    const events = { hits: [], outs: [], launches: [], fails: [] };
     // 내 샷
     let myN = 0;
     let myLastAt = 0; // 내 시계
@@ -142,6 +142,9 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
                 myN = Math.max(0, n - 1);
                 myLastAt = 0;
                 note('intent_failed', { n });
+                events.fails.push({ n, reason: 'send' });
+                // 내 화면에만 먼저 굴린 샷을 거둬요: 마지막으로 받은 방장 판으로 돌아가요.
+                if (!isHost()) engine.adopt(st.stones, { step: st.step, nowMs: lastTick });
             });
         return { ok: true, error: '' };
     }
@@ -150,7 +153,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     function reapplyPending() {
         if (!pending) return;
         if (st.applied[me] >= pending.n) { pending = null; return; }
-        if (st.rejected[me] >= pending.n) { pending = null; myLastAt = 0; note('rejected', { n: myN }); return; }
+        if (st.rejected[me] >= pending.n) { events.fails.push({ n: pending.n, reason: 'rejected' }); pending = null; myLastAt = 0; note('rejected', { n: myN }); return; }
         engine.applyShot(pending.shot, { color: me });
     }
 
@@ -260,7 +263,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     }
 
     function drainEvents() {
-        const out = { hits: events.hits.splice(0), outs: events.outs.splice(0), launches: events.launches.splice(0) };
+        const out = { hits: events.hits.splice(0), outs: events.outs.splice(0), launches: events.launches.splice(0), fails: events.fails.splice(0) };
         return out;
     }
 

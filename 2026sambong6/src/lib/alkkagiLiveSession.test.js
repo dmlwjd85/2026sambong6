@@ -5,7 +5,7 @@ import { emptyLiveState, liveStateToDoc } from './alkkagiLiveGame.js';
 import { serializeAlkkagiShot } from './alkkagiPhysics.js';
 
 /** 가짜 네트워크: 지연(ms)을 두고 상대에게 전달해요. 시계는 가짜예요. */
-function makeNet({ latency = 120, gid = 1000, stateDoc = null } = {}) {
+function makeNet({ latency = 120, gid = 1000, stateDoc = null, failIntent = 0 } = {}) {
     let now = 0;
     const queue = [];
     const later = (ms, fn) => queue.push({ at: now + ms, fn });
@@ -24,6 +24,7 @@ function makeNet({ latency = 120, gid = 1000, stateDoc = null } = {}) {
                 }),
                 writeIntent: ({ n, shot }) => new Promise((res, rej) => {
                     log.intentWrites += 1;
+                    if (log.intentWrites <= failIntent) { later(latency, () => rej(new Error('permission-denied'))); return; }
                     const doc = { seat, sid: seat, gid, n, shot };
                     later(latency, () => { other(seat).onSeatDoc(seat, doc, now); res(); });
                 }),
@@ -157,5 +158,21 @@ describe('실시간 알까기 동기화(가짜 네트워크)', () => {
         h2.init(liveStateToDoc(st), { hostSeat: 'black', nowMs: 0 });
         assert.equal(h2.state().seq, 0);
         assert.equal(h2.state().gid, 2000);
+    });
+    it('샷 의도를 못 보내면 내 화면에서 거두고 바로 다시 쏠 수 있어요', async () => {
+        const net = makeNet({ failIntent: 1 });
+        const start = net.G.stones().map((s) => [s.id, s.x, s.y]);
+        assert.equal(net.G.shoot(down('w3', 0.8), net.now()).ok, true);
+        await net.run(60);
+        assert.notDeepEqual(net.G.stones().map((s) => [s.id, s.x, s.y]), start);
+        await net.run(200);
+        assert.deepEqual(net.G.stones().map((s) => [s.id, s.x, s.y]), start);
+        assert.equal(net.G.drainEvents().fails.length, 1);
+        assert.equal(net.G.canShoot(net.now()).ok, true);
+        assert.equal(net.G.shoot(down('w3', 0.8), net.now()).ok, true);
+        await net.run(4000);
+        const a = net.H.stones().map((s) => [s.id, s.alive, s.x, s.y]);
+        assert.deepEqual(net.G.stones().map((s) => [s.id, s.alive, s.x, s.y]), a);
+        assert.equal(net.H.stats().applied, 1);
     });
 });

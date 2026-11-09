@@ -1145,7 +1145,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(guest, `${base}/${T}_dislike_8`), good({ fromId: '8', date: T })));
     });
 
-    it('실시간 알까기 live/자리: 형식·내 색 알·번호 하나씩·서버 시각 4.5초 간격, 접속 표시만 쓰기는 허용', async () => {
+    it('실시간 알까기 live/자리: 형식·내 색 알·번호 하나씩·첫 샷 뒤 서버 시각 4.5초 간격, 접속 표시만 쓰기는 허용', async () => {
         const { serverTimestamp, Timestamp } = await import('firebase/firestore');
         const base = 'artifacts/class1/public/data/boardGameRooms/alkl_3/live';
         const db = anon().firestore();
@@ -1158,9 +1158,10 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(db, `${base}/other`), fresh('black')));
         await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { extra: 1 })));
         await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { seenAt: Timestamp.fromMillis(1000) })));
-        // 방금 만든 자리에서 바로 쏘면(4.5초 안) 거부
+        // 첫 샷은 자리를 만든 직후라도 허용, 그다음 샷을 바로(4.5초 안) 쏘면 거부
         const next = (n, shot, extra = {}) => ({ seat: 'black', sid: '3', gid: 1000, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
-        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'))));
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'))));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(2, shotOf('b2'))));
         // 마지막 샷이 10초 전이면 허용
         await testEnv.withSecurityRulesDisabled(async (ctx) => {
             await setDoc(doc(ctx.firestore(), `${base}/black`), { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null, shotAt: Timestamp.fromMillis(Date.now() - 10000), seenAt: Timestamp.fromMillis(Date.now() - 10000) });

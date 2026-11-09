@@ -111,13 +111,14 @@ service cloud.firestore {
     }
 
     // 같은 판: 접속 표시만(번호·샷 그대로) 또는 번호를 하나 올려 새 샷(서버 시각으로 4.5초 지나야 함).
+    // 첫 샷(번호 0→1)은 자리를 만든 직후라도 바로 쏠 수 있어요. 그다음부터는 서버 시각 4.5초 간격.
     function alkLiveSeatNext() {
       let d = request.resource.data;
       let o = resource.data;
       return d.gid == o.gid && d.sid == o.sid && (
         (d.n == o.n && d.shot == o.shot && d.shotAt == o.shotAt)
         || (d.n == o.n + 1 && d.shot != null && d.shotAt == request.time
-            && request.time > o.shotAt + duration.value(4500, 'ms'))
+            && (o.n == 0 || request.time > o.shotAt + duration.value(4500, 'ms')))
       );
     }
 

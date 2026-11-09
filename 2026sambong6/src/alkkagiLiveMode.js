@@ -42,6 +42,7 @@ export function createAlkkagiLiveMode(deps) {
     let live = null;
     const stats = { stateWrites: 0, intentWrites: 0, seatWrites: 0, roomWrites: 0, liveReads: 0, roomReads: 0, games: 0 };
     let flashUntil = 0;
+    let failUntil = 0;
 
     const $ = (id) => document.getElementById(id);
     const me = () => String(deps.selfId() || '');
@@ -88,6 +89,7 @@ export function createAlkkagiLiveMode(deps) {
             s.tick(Date.now());
             const ev = s.drainEvents();
             for (const l of ev.launches) if (board) board.launched(l.power);
+            if (ev.fails.length) failUntil = Date.now() + 2200;
             shownStones = s.stones();
             return { stones: shownStones, hits: ev.hits, outs: ev.outs };
         }
@@ -220,6 +222,7 @@ export function createAlkkagiLiveMode(deps) {
         else if (can.error === 'sending') { line = '샷을 보내는 중이에요'; cls = 'is-wait'; }
         else if (left > 0) { line = `다시 쏘기까지 ${liveCooldownLabel(left)}`; cls = 'is-wait'; }
         if (flashUntil > t) cls = 'is-end';
+        if (failUntil > t) { line = '샷이 전달되지 않았어요. 다시 쏴 주세요'; cls = 'is-end'; }
         if (pill) {
             pill.classList.toggle('is-ready', cls === 'is-ready');
             pill.classList.toggle('is-wait', cls === 'is-wait');

@@ -116,6 +116,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
 
     function canShoot(nowMs) {
         if (!ready || finished || st.over) return { ok: false, error: 'not_ready' };
+        if (!connected) return { ok: false, error: 'offline' }; // 내 연결이 끊긴 동안 쏜 샷은 판에 못 들어가요
         if (inflight || pending) return { ok: false, error: 'sending' };
         if (cooldownLeft(me, nowMs) > 0) return { ok: false, error: 'cooldown' };
         if (engine.aliveCount(me) === 0) return { ok: false, error: 'not_alive' };

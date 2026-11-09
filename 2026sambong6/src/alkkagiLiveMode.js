@@ -261,6 +261,7 @@ export function createAlkkagiLiveMode(deps) {
         let line = '지금 쏠 수 있어요';
         let cls = 'is-ready';
         if (!s.isReady()) { line = '판에 연결하는 중이에요'; cls = 'is-wait'; }
+        else if (can.error === 'offline') { line = '연결되면 다시 쏠 수 있어요'; cls = 'is-wait'; }
         else if (s.aliveCount(seat) === 0) { line = '남은 알이 없어요'; cls = 'is-wait'; }
         else if (can.error === 'sending') { line = '샷을 보내는 중이에요'; cls = 'is-wait'; }
         else if (left > 0) { line = `다시 쏘기까지 ${liveCooldownLabel(left)}`; cls = 'is-wait'; }

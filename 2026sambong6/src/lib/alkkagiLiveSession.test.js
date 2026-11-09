@@ -277,6 +277,7 @@ describe('실시간 알까기 끊김·방장 승계(가짜 네트워크)', () =>
         await net.run(5000);
         assert.deepEqual(net.W.stones(), net.B.stones());
         net.drop('black');
+        assert.equal(net.B.canShoot(net.now()).error, 'offline', '내 연결이 끊긴 동안은 못 쏴요');
         await net.run(38000);
         assert.equal(net.W.isHost(), false);
         await net.run(8000);

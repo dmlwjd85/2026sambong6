@@ -5870,6 +5870,62 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             gap: 0.55rem;
         }
         .boardgame-view.hidden { display: none !important; }
+        /* 오목·체스 한 화면 전환 탭 */
+        .boardgame-switch {
+            display: flex;
+            gap: 0.35rem;
+            flex-shrink: 0;
+            padding: 0.2rem;
+            margin-bottom: 0.45rem;
+            border-radius: 0.9rem;
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            background: rgba(28, 25, 23, 0.75);
+        }
+        .boardgame-switch.hidden { display: none !important; }
+        .boardgame-switch-tab {
+            position: relative;
+            flex: 1;
+            min-height: 40px;
+            border-radius: 0.7rem;
+            font-size: 13px;
+            font-weight: 900;
+            color: rgba(254, 243, 199, 0.75);
+            background: transparent;
+            transition: background 0.15s, color 0.15s;
+        }
+        .boardgame-switch-tab.is-on {
+            color: #1c1917;
+            background: linear-gradient(180deg, #fcd34d, #f59e0b);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+        }
+        .boardgame-switch-tab:focus-visible { outline: 2px solid #fde68a; outline-offset: 2px; }
+        .boardgame-switch-dot {
+            position: absolute;
+            top: 6px;
+            right: 10px;
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #34d399;
+            box-shadow: 0 0 0 2px rgba(28, 25, 23, 0.9);
+        }
+        .boardgame-switch-dot[hidden] { display: none; }
+        .boardgame-resume {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            flex-shrink: 0;
+            padding: 0.55rem 0.7rem;
+            border-radius: 0.85rem;
+            border: 1px solid rgba(52, 211, 153, 0.45);
+            background: rgba(6, 78, 59, 0.35);
+            font-size: 12px;
+            font-weight: 800;
+            color: #d1fae5;
+        }
+        .boardgame-resume.hidden { display: none !important; }
         .boardgame-head {
             display: flex;
             flex-wrap: wrap;

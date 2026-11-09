@@ -2463,6 +2463,10 @@
 
                 <!-- 보드게임(오목) — 공통 방 로비 위에 게임을 붙입니다 -->
                 <div class="classtool-pane hidden boardgame-panel" data-tool="boardgames">
+                    <div id="boardgameSwitchTabs" class="boardgame-switch hidden" role="tablist" aria-label="오목·체스 바꾸기">
+                        <button type="button" role="tab" class="boardgame-switch-tab" data-switch-game="gomoku" aria-selected="false" onclick="window.switchBoardGameTab('gomoku')"><span aria-hidden="true">⚫⚪</span> 오목<span class="boardgame-switch-dot" title="멈춰 둔 판" hidden></span></button>
+                        <button type="button" role="tab" class="boardgame-switch-tab" data-switch-game="chess" aria-selected="false" onclick="window.switchBoardGameTab('chess')"><span aria-hidden="true">♟</span> 체스<span class="boardgame-switch-dot" title="멈춰 둔 판" hidden></span></button>
+                    </div>
                     <div id="boardgameHomeView" class="boardgame-view">
                         <div class="boardgame-head">
                             <div class="w-12 h-12 rounded-lg overflow-hidden border-2 border-amber-400/70 shadow-inner shrink-0">
@@ -2518,6 +2522,10 @@
                             </div>
                         </div>
                         <p id="boardgameLobbyLead" class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.</p>
+                        <div id="boardgameResumeRow" class="boardgame-resume hidden">
+                            <span id="boardgameResumeText">멈춰 둔 AI 판이 있어요.</span>
+                            <button type="button" class="boardgame-primary-btn" onclick="window.resumeParkedBoardAi()">이어 두기</button>
+                        </div>
                         <p id="boardgameMyRecord" class="boardgame-record">내 오목 전적 0승 0패 0무</p>
                         <div id="boardgameRoomList" class="boardgame-room-list">방을 불러오는 중…</div>
                     </div>

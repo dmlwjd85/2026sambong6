@@ -2710,7 +2710,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function currentExternalPortals() {
-            return resolveExternalPortals(window.globalSettings && window.globalSettings.externalPortals);
+            return resolveExternalPortals(window.globalSettings && window.globalSettings.externalPortals, { classId: appId });
         }
 
         function buildDefaultRosterFromLegacy() {
@@ -10184,7 +10184,7 @@ ${subjectLine}
                 await runTransaction(db, async (tx) => {
                     const snap = await tx.get(ref);
                     const serverList = snap.exists() ? (snap.data() || {}).externalPortals : undefined;
-                    const res = appendExternalPortal(serverList, { name, url });
+                    const res = appendExternalPortal(serverList, { name, url }, { classId: appId });
                     if (!res.ok) {
                         failReason = res.reason;
                         return;

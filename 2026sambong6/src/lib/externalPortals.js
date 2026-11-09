@@ -1,13 +1,30 @@
 /**
- * 외부 세계 차원문 링크. 코드에 박아 둔 기본 링크 없이, 학급마다 마스터가 + 버튼으로 등록합니다.
+ * 외부 세계 차원문 링크. 학급마다 마스터가 + 버튼으로 등록합니다.
  * 저장 위치: artifacts/{학급ID}/public/data/settings/global 의 externalPortals 배열.
+ * 원래 학급(6학년 1반, sambong-class-2026)만 저장된 목록이 없을 때 기존 기본 링크를 보여 주고,
+ * 새로 만든 학급은 빈 목록에서 시작합니다. 기본 링크는 Firestore에 미리 써 두지 않습니다.
  */
+import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
 
 export const EXTERNAL_PORTAL_MAX = 12;
 export const EXTERNAL_PORTAL_NAME_MAX = 24;
 export const EXTERNAL_PORTAL_URL_MAX = 300;
 
 const PORTAL_TONES = ['lime', 'cyan', 'red', 'amber', 'fuchsia', 'sky'];
+
+/** 6학년 1반(원래 학급)에 처음부터 있던 링크 */
+export const HOME_CLASS_DEFAULT_PORTALS = Object.freeze([
+    { id: 'fc', name: '삼봉FC', url: 'https://dmlwjd85.github.io/sambong-FC/', emoji: '⚽', desc: '축구 세계로 이동', tone: 'lime' },
+    { id: 'ncgame', name: '가나다 눈치게임', url: 'https://dmlwjd85.github.io/ncgame/', emoji: 'ㄱㄴㄷ', desc: '눈치게임 세계로 이동', tone: 'cyan' },
+    { id: 'englishrpg', name: '영켓몬', url: 'https://joontube82.github.io/English-RPG/', emoji: '🐾', desc: '영어 RPG 세계로 이동', tone: 'red' },
+    { id: 'iscream', name: '지식의 샘', url: 'https://www.i-scream.co.kr/', emoji: '📚', desc: '아이스크림 지식 세계로 이동', tone: 'amber' },
+    { id: 'picbook', name: '픽북', url: 'https://dmlwjd85.github.io/picbook/', emoji: '📖', desc: 'AI 그림책 세계로 이동', tone: 'fuchsia' },
+].map((row) => Object.freeze(row)));
+
+/** 기본 링크를 쓰는 학급인지 — 학급 ID로만 판별합니다(6학년 1반 = sambong-class-2026). */
+export function usesHomeClassDefaultPortals(classId) {
+    return String(classId || '') === SEED_MASTER_CLASS_ID;
+}
 
 function clip(raw, max) {
     return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().slice(0, max);
@@ -48,9 +65,14 @@ export function sanitizeExternalPortals(raw) {
     return list.map((row, i) => sanitizeExternalPortal(row, i)).filter(Boolean).slice(0, EXTERNAL_PORTAL_MAX);
 }
 
-/** 저장된 배열만 씁니다. 저장된 링크가 없으면 빈 목록입니다(기본 링크 없음). */
-export function resolveExternalPortals(raw) {
-    return sanitizeExternalPortals(raw);
+/**
+ * 저장된 배열이 있으면(빈 배열 포함) 그것만 씁니다.
+ * 저장된 적이 없으면 6학년 1반은 기본 링크, 그 밖의 학급은 빈 목록입니다.
+ */
+export function resolveExternalPortals(raw, { classId = '' } = {}) {
+    if (Array.isArray(raw)) return sanitizeExternalPortals(raw);
+    if (usesHomeClassDefaultPortals(classId)) return sanitizeExternalPortals(HOME_CLASS_DEFAULT_PORTALS);
+    return [];
 }
 
 /**
@@ -87,10 +109,11 @@ export function externalPortalInputMessage(reason) {
  * 서버 목록 끝에 새 링크 1개를 붙입니다(트랜잭션 안에서 호출).
  * @returns {{ ok: true, list: object[], item: object } | { ok: false, reason: string }}
  */
-export function appendExternalPortal(serverList, input, { nowMs = Date.now(), rand = Math.random } = {}) {
+export function appendExternalPortal(serverList, input, { nowMs = Date.now(), rand = Math.random, classId = '' } = {}) {
     const v = validateExternalPortalInput(input);
     if (!v.ok) return v;
-    const list = sanitizeExternalPortals(serverList);
+    // 6학년 1반에서 처음 추가하면 기본 링크 뒤에 붙여 저장합니다(기본 링크가 사라지지 않게).
+    const list = resolveExternalPortals(serverList, { classId });
     if (list.length >= EXTERNAL_PORTAL_MAX) return { ok: false, reason: 'full' };
     if (list.some((row) => row.url === v.url)) return { ok: false, reason: 'dup' };
     const used = new Set(list.map((row) => row.id));

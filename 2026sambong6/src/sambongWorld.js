@@ -24155,7 +24155,7 @@ ${subjectLine}
                     await window.customAlert(stockBuyFailMessage(gateNow.reason, gateNow.room));
                     return;
                 }
-                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, qNow.price, Date.now(), getLocalDateStr());
+                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, qNow.price, Date.now(), getKstDateStr());
                 if (!bought.ok) {
                     await window.customAlert('매수에 실패했습니다.');
                     return;
@@ -24165,7 +24165,7 @@ ${subjectLine}
                     marketId: market.id,
                     amount: gateNow.amount,
                     currentIndex: qNow.price,
-                    today: getLocalDateStr(),
+                    today: getKstDateStr(),
                     nowMs: Date.now(),
                 };
                 const saved = await saveDataToCloud({
@@ -24208,7 +24208,7 @@ ${subjectLine}
                 amount: raw === '' ? null : raw,
                 currentIndex: q ? q.price : NaN,
                 daily: window.playerState.stockInvestDaily,
-                today: getLocalDateStr(),
+                today: getKstDateStr(),
                 nowMs: Date.now(),
             });
             document.querySelectorAll(`.js-stock-sell-ratio[data-market="${market.id}"]`).forEach((el) => {
@@ -24266,7 +24266,7 @@ ${subjectLine}
                     await window.customAlert(stockSellFailMessage(gate.reason, gate.max));
                     return;
                 }
-                const today = getLocalDateStr();
+                const today = getKstDateStr();
                 const preview = applySellStock(
                     window.playerState.stockInvestments,
                     market.id,
@@ -24303,7 +24303,7 @@ ${subjectLine}
                     market.id,
                     qNow.price,
                     window.playerState.stockInvestDaily,
-                    getLocalDateStr(),
+                    getKstDateStr(),
                     Date.now(),
                     gateNow.amount
                 );
@@ -24316,7 +24316,7 @@ ${subjectLine}
                     marketId: market.id,
                     amount: gateNow.amount,
                     currentIndex: qNow.price,
-                    today: getLocalDateStr(),
+                    today: getKstDateStr(),
                     nowMs: Date.now(),
                 };
                 const saved = await saveDataToCloud({
@@ -26699,7 +26699,7 @@ ${subjectLine}
                         if (trade && (trade.kind === 'sell' || trade.kind === 'buy')) {
                             // 지수 매수·매도는 서버에 남은 원금·잔액만 정산합니다. 같은 포지션을 두 번 넣지 않습니다.
                             const tradeNow = Math.floor(Number(trade.nowMs) || Date.now());
-                            const tradeToday = String(trade.today || getLocalDateStr());
+                            const tradeToday = String(trade.today || getKstDateStr());
                             const tradeIndex = Number(trade.currentIndex);
                             if (trade.kind === 'sell') {
                                 const sold = applyStockSellFromServer({

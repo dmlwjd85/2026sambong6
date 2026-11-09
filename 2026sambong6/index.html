@@ -2661,7 +2661,7 @@
                             <header class="alk-head">
                                 <button type="button" class="alk-back alk-hanji" onclick="void window.leaveBoardGameTable()"><span>나가기</span></button>
                                 <h2 class="alk-title alk-live-title">알까기<span class="alk-live-badge">실시간</span></h2>
-                                <div class="alk-head-side"><span id="alkLiveNet" class="alk-live-net" hidden></span></div>
+                                <div class="alk-head-side"></div>
                             </header>
                             <div class="alk-cards">
                                 <div id="alkLiveCardBlack" class="alk-card alk-hanji">
@@ -2681,6 +2681,7 @@
                                 <div id="alkLivePill" class="alk-turn" aria-live="polite"><i id="alkLivePillDot" class="alk-mini b" aria-hidden="true"></i><span id="alkLivePillText">판을 준비하고 있어요</span></div>
                             </div>
                             <div id="alkLiveStage" class="alk-stage">
+                                <span id="alkLiveNet" class="alk-live-net" role="status" aria-live="polite" hidden></span>
                                 <div class="alk-board-wrap">
                                     <canvas id="alkLiveCanvas" class="alk-canvas" role="img" aria-label="실시간 알까기 판" data-fit-el="alkLiveStage" data-max-board="520"></canvas>
                                 </div>

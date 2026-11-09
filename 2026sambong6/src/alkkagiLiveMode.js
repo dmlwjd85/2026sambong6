@@ -6,6 +6,8 @@ import './alkkagiLive.css';
 import { ALKKAGI_BLACK, ALKKAGI_STONES_PER_SIDE, ALKKAGI_WHITE } from './lib/alkkagiGame.js';
 import {
     ALKKAGI_LIVE_COOLDOWN_MS,
+    ALKKAGI_LIVE_HEARTBEAT_MS,
+    ALKKAGI_LIVE_HOST_SILENT_MS,
     alkkagiLiveEndText,
     alkkagiLiveOther,
     alkkagiLiveResultTitle,
@@ -40,9 +42,15 @@ export function createAlkkagiLiveMode(deps) {
     const dialogs = new Set();
     // 지금 두는 판의 실시간 연결: { key, roomId, gid, seat, session, unsub, timer, liveCol }
     let live = null;
-    const stats = { stateWrites: 0, intentWrites: 0, seatWrites: 0, roomWrites: 0, liveReads: 0, roomReads: 0, games: 0 };
+    const stats = { stateWrites: 0, intentWrites: 0, seatWrites: 0, heartbeats: 0, roomWrites: 0, liveReads: 0, roomReads: 0, games: 0, takeovers: 0, lostHost: 0 };
     let flashUntil = 0;
     let failUntil = 0;
+    let netMsg = null; // { text, until }
+    const buf = { hits: [], outs: [] };
+    const NET_TEXT = {
+        takeover: '내 기기가 판을 이어 맡았어요',
+        lost_host: '다시 연결됐어요',
+    };
 
     const $ = (id) => document.getElementById(id);
     const me = () => String(deps.selfId() || '');
@@ -83,15 +91,32 @@ export function createAlkkagiLiveMode(deps) {
         return collection(deps.roomRef(roomId), 'live');
     }
 
+    /** 세션을 한 번 돌리고 사건을 모아요(화면 프레임과 타이머가 함께 불러요). */
+    function pump() {
+        if (!live || !live.session.isReady()) return;
+        const s = live.session;
+        const t = Date.now();
+        s.tick(t);
+        const ev = s.drainEvents();
+        for (const l of ev.launches) if (board) board.launched(l.power);
+        if (ev.fails.length) failUntil = t + 2200;
+        buf.hits.push(...ev.hits);
+        buf.outs.push(...ev.outs);
+        for (const n of ev.net) {
+            if (NET_TEXT[n.type]) netMsg = { text: NET_TEXT[n.type], until: t + 4500, type: n.type };
+            if (n.type === 'takeover' || n.type === 'lost_host') {
+                stats[n.type === 'takeover' ? 'takeovers' : 'lostHost'] += 1;
+                if (board) board.kick();
+            }
+        }
+        shownStones = s.stones();
+    }
+
     function frameForBoard() {
         if (live && live.session.isReady()) {
-            const s = live.session;
-            s.tick(Date.now());
-            const ev = s.drainEvents();
-            for (const l of ev.launches) if (board) board.launched(l.power);
-            if (ev.fails.length) failUntil = Date.now() + 2200;
-            shownStones = s.stones();
-            return { stones: shownStones, hits: ev.hits, outs: ev.outs };
+            pump();
+            const out = { stones: shownStones, hits: buf.hits.splice(0), outs: buf.outs.splice(0) };
+            return out;
         }
         return { stones: shownStones };
     }
@@ -127,24 +152,29 @@ export function createAlkkagiLiveMode(deps) {
         const sid = me();
         const gid = g.gid;
         const hostSeat = room.hostId && deps.seatOf(room, room.hostId) ? alkkagiLiveSeat(deps.seatOf(room, room.hostId)) || ALKKAGI_BLACK : ALKKAGI_BLACK;
+        let cur = null;
         const session = createLiveSession({
             seat,
             gid,
             now: Date.now(),
             send: {
-                writeState: (st) => { stats.stateWrites += 1; return setDoc(doc(col, 'state'), { ...liveStateToDoc(st), at: serverTimestamp() }); },
-                writeIntent: ({ n, shot }) => { stats.intentWrites += 1; return setDoc(doc(col, seat), { seat, sid, gid, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp() }); },
+                writeState: (st) => { stats.stateWrites += 1; cur.wroteAt = Date.now(); return setDoc(doc(col, 'state'), { ...liveStateToDoc(st), at: serverTimestamp() }); },
+                writeIntent: ({ n, shot }) => { stats.intentWrites += 1; cur.wroteAt = Date.now(); return setDoc(doc(col, seat), { seat, sid, gid, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp() }); },
                 finish: (r) => { void finishFromHost(roomId, gid, r); },
             },
         });
-        const cur = { key, roomId, gid, seat, session, unsub: null, timer: null, col, first: true };
+        // send는 init 뒤에만 불려서 그때는 cur가 채워져 있어요.
+        cur = { key, roomId, gid, seat, session: null, unsub: null, timer: null, col, first: true, wroteAt: Date.now(), seatOk: false };
+        cur.session = session;
         live = cur;
         stats.games += 1;
-        cur.unsub = onSnapshot(col, (snap) => {
+        // includeMetadataChanges: 내가 오프라인인지(fromCache) 알아야 승계·끊김을 잘못 정하지 않아요. 메타데이터만 바뀐 건 읽기로 치지 않아요.
+        cur.unsub = onSnapshot(col, { includeMetadataChanges: true }, (snap) => {
             if (live !== cur) return;
             const t = Date.now();
-            const changes = snap.docChanges();
-            stats.liveReads += changes.length;
+            session.setConnected(!snap.metadata.fromCache, t);
+            const changes = snap.docChanges().filter((ch) => !ch.doc.metadata.hasPendingWrites);
+            if (!snap.metadata.fromCache) stats.liveReads += changes.length;
             if (cur.first) {
                 cur.first = false;
                 let stateDoc = null;
@@ -158,8 +188,12 @@ export function createAlkkagiLiveMode(deps) {
                 // 내 자리 문서를 이번 판으로 만들어 둬요(번호 0). 같은 판을 새로고침한 거면 그대로 써요.
                 if (!mine || Number(mine.gid) !== gid) {
                     stats.seatWrites += 1;
+                    cur.wroteAt = t;
                     setDoc(doc(col, seat), { seat, sid, gid, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp() })
+                        .then(() => { cur.seatOk = true; })
                         .catch((e) => console.warn('alkLive seat', e));
+                } else {
+                    cur.seatOk = true;
                 }
                 session.tick(t);
                 if (board) board.kick();
@@ -181,9 +215,16 @@ export function createAlkkagiLiveMode(deps) {
         }, (e) => console.warn('alkLive snapshot', e));
         cur.timer = setInterval(() => {
             if (live !== cur) return;
-            session.tick(Date.now());
+            const t = Date.now();
+            pump();
+            // 접속 표시: 20초 동안 내가 아무것도 안 썼으면 자리 문서의 seenAt만 다시 써요(샷 번호·시각은 그대로).
+            if (cur.seatOk && session.isReady() && !session.isFinished() && t - cur.wroteAt >= ALKKAGI_LIVE_HEARTBEAT_MS) {
+                cur.wroteAt = t;
+                stats.heartbeats += 1;
+                setDoc(doc(col, seat), { seenAt: serverTimestamp() }, { merge: true }).catch((e) => console.warn('alkLive heartbeat', e));
+            }
             liveChrome();
-            if (board && (session.isMoving() || session.cooldownLeft(seat, Date.now()) > 0)) board.kick();
+            if (board && (session.isMoving() || session.cooldownLeft(seat, t) > 0)) board.kick();
         }, TICK_MS);
     }
 
@@ -211,6 +252,8 @@ export function createAlkkagiLiveMode(deps) {
         const pillDot = $('alkLivePillDot');
         if (over || !s) {
             if (board) board.setView({ canShoot: false, cooldown: 0 });
+            const net = $('alkLiveNet');
+            if (net) net.hidden = true;
             return;
         }
         const left = s.cooldownLeft(seat, t);
@@ -249,7 +292,33 @@ export function createAlkkagiLiveMode(deps) {
             const html = `알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 5초 쉬어요.<span class="alk-guide">${who}</span>`;
             if (tip.innerHTML !== html) tip.innerHTML = html;
         }
+        renderNet(s, t);
         if (board) board.setView({ canShoot: can.ok, cooldown: left / ALKKAGI_LIVE_COOLDOWN_MS });
+    }
+
+    /** 상단 오른쪽 연결 알림: 내 연결 끊김 · 승계/재연결 알림 · 상대(방장)가 오래 조용할 때 */
+    function renderNet(s, t) {
+        const el = $('alkLiveNet');
+        if (!el) return;
+        let text = '';
+        let tone = '';
+        const offline = !s.isConnected() || (typeof navigator !== 'undefined' && navigator.onLine === false);
+        if (offline) { text = '연결 끊김 · 다시 잇는 중'; tone = 'bad'; }
+        else if (netMsg && netMsg.until > t) { text = netMsg.text; tone = 'ok'; }
+        else {
+            const quiet = s.quietMs(t);
+            if (quiet >= 25000) {
+                if (s.isHost()) { text = '상대 연결 기다리는 중'; tone = 'wait'; }
+                else {
+                    const sec = Math.max(1, Math.ceil((ALKKAGI_LIVE_HOST_SILENT_MS - quiet) / 1000));
+                    text = `방장 연결 약함 · ${sec}초 뒤 이어 맡기`;
+                    tone = 'wait';
+                }
+            }
+        }
+        if (el.textContent !== text) el.textContent = text;
+        el.hidden = !text;
+        el.dataset.tone = tone;
     }
 
     function renderDots(el, alive, cls) {

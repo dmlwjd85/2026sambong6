@@ -361,7 +361,6 @@ import {
     applyBankTransfer,
     bankTransferWalletFields,
     canBankTransfer,
-    resolveBankSaveBongDelta,
     sanitizeBankTransferFee,
     walletCoversSpend,
     BANK_TRANSFER_AMOUNT_MAX,
@@ -369,6 +368,9 @@ import {
 import {
     STOCK_INVEST_MAX,
     STOCK_INVEST_MIN,
+    STOCK_SELL_RATIOS,
+    previewStockSell,
+    stockSellAmountForRatio,
     STOCK_MARKETS,
     applyBuyStock,
     applySellStock,
@@ -713,6 +715,13 @@ import {
     sanitizeDislikeBoard,
 } from './lib/peerDislike.js';
 import { getKstDateStr } from './lib/kstDate.js';
+import {
+    computeTermDepositMaturity,
+    planManualBankSave,
+    sanitizeTermDeposits,
+    sumTermDeposits,
+    ymdDaysBetween,
+} from './lib/bankSavings.js';
 import { buildFeedbackItem, FEEDBACK_KEEP, feedbackNewestFirst } from './lib/peerFeedback.js';
 import {
     buildScreenNotice,
@@ -7285,13 +7294,15 @@ ${subjectLine}
         /** 삼봉 금융감독 — 아이템 환불 누적 의심 기준 */
         const BONG_SUPERVISION_REFUND_WARN = 8;
         /** 금융감독 집계에서 제외할 bongChangeLog source (정상 은행·적금 흐름) */
-        const BONG_SUPERVISION_EXCLUDED_SOURCES = new Set(['bankTermMaturity', 'bankTermEarly', 'bankLoanTake', 'bankLoanDue', 'bankLoanRepay']);
+        const BONG_SUPERVISION_EXCLUDED_SOURCES = new Set(['bankTermMaturity', 'bankTermEarly', 'bankLoanTake', 'bankLoanDue', 'bankLoanRepay', 'stockSell']);
 
         function isBankTermDepositBongSupervisionExcluded(row) {
             if (!row || typeof row !== 'object') return false;
             if (row.source && BONG_SUPERVISION_EXCLUDED_SOURCES.has(String(row.source))) return true;
             const reason = String(row.reason || '');
-            return /보물상자 적금 만기|적금 만기|보물상자 적금 중도 해지|대출/.test(reason);
+            // 지수 매도는 넣었던 원금을 돌려받는 것이라 획득으로 보지 않습니다(수익은 하루 8봉 상한).
+            return /보물상자 적금 만기|적금 만기|보물상자 적금 중도 해지|대출/.test(reason)
+                || /^(코스피|코스닥|나스닥) (일부 )?매도$/.test(reason);
         }
 
         function formatSupervisionDateTime(ms) {
@@ -7724,7 +7735,7 @@ ${subjectLine}
                 }).join('\n\n');
                 await window.customAlert(
                     '⚠️ 삼봉 금융감독 경고\n\n' +
-                    '비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n' +
+                    `비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n` +
                     `허용되지 않은 방법으로 획득·환불한 경우 ${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
                     '[감지 내역]\n' +
                     lines +
@@ -9260,19 +9271,9 @@ ${subjectLine}
             };
         }
 
-        /** 적금 가입일(YYYY-MM-DD)부터 오늘까지 경과 일수(가입 당일=0, 30 이상이면 만기) */
+        /** 적금 가입일(YYYY-MM-DD)부터 오늘(KST)까지 경과 일수(가입 당일=0, 30 이상이면 만기) */
         function bankCalendarDaysElapsed(startDateStr) {
-            if (!startDateStr || typeof startDateStr !== 'string') return 0;
-            const parts = startDateStr.split('-');
-            if (parts.length !== 3) return 0;
-            const y = parseInt(parts[0], 10);
-            const m = parseInt(parts[1], 10) - 1;
-            const day = parseInt(parts[2], 10);
-            if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) return 0;
-            const start = new Date(y, m, day);
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            return Math.max(0, Math.floor((today - start) / 86400000));
+            return ymdDaysBetween(startDateStr, getKstDateStr());
         }
 
         /** YYYY-MM-DD 두 날짜 사이의 달력 일수(같은 날=0, 익일=1) */
@@ -9308,32 +9309,9 @@ ${subjectLine}
             return normalizeBongValue(wallet + regular);
         }
 
-        /** 적금 항목 정규화 */
-        function sanitizeBankTermDepositEntry(td) {
-            if (!td || typeof td !== 'object') return null;
-            const amount = normalizeBongValue(Number(td.amount) || 0);
-            const startDate = String(td.startDate || '');
-            const id = String(td.id || '');
-            if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || amount <= 0) return null;
-            return { id, amount, startDate };
-        }
-
-        function sanitizeBankTermDeposits(arr) {
-            if (!Array.isArray(arr)) return [];
-            const out = [];
-            const seen = new Set();
-            arr.forEach((td) => {
-                const clean = sanitizeBankTermDepositEntry(td);
-                if (!clean || seen.has(clean.id)) return;
-                seen.add(clean.id);
-                out.push(clean);
-            });
-            return out;
-        }
-
-        function sumBankTermDeposits(terms) {
-            return normalizeBongValue(sanitizeBankTermDeposits(terms).reduce((s, t) => s + t.amount, 0));
-        }
+        /** 적금 항목 정규화·합계 — src/lib/bankSavings.js */
+        const sanitizeBankTermDeposits = sanitizeTermDeposits;
+        const sumBankTermDeposits = sumTermDeposits;
 
         function parseBankAmountInput(raw) {
             const n = typeof raw === 'string' || typeof raw === 'number' ? Number(raw) : NaN;
@@ -9342,92 +9320,11 @@ ${subjectLine}
             return amt >= 1 ? amt : null;
         }
 
-        function termDepositMapsEqual(a, b) {
-            const sa = sanitizeBankTermDeposits(a);
-            const sb = sanitizeBankTermDeposits(b);
-            if (sa.length !== sb.length) return false;
-            const mapB = new Map(sb.map((t) => [t.id, t.amount]));
-            return sa.every((t) => mapB.get(t.id) === t.amount);
-        }
-
-        function findNewTermDeposits(before, after) {
-            const beforeIds = new Set(sanitizeBankTermDeposits(before).map((t) => t.id));
-            return sanitizeBankTermDeposits(after).filter((t) => !beforeIds.has(t.id));
-        }
-
-        function findRemovedTermDeposits(before, after) {
-            const afterIds = new Set(sanitizeBankTermDeposits(after).map((t) => t.id));
-            return sanitizeBankTermDeposits(before).filter((t) => !afterIds.has(t.id));
-        }
-
-        /** 적금 만기 처리(서버 기준) */
+        /** 적금 만기 처리(서버 기준, KST 날짜) */
         function computeTermDepositMaturityCredit(terms, ratePercent) {
-            const left = [];
-            let credit = 0;
-            const msgs = [];
-            sanitizeBankTermDeposits(terms).forEach((td) => {
-                const elapsed = bankCalendarDaysElapsed(td.startDate);
-                if (elapsed >= 30) {
-                    const principal = td.amount;
-                    const interest = Math.max(0, Math.round(principal * (Number(ratePercent) / 100)));
-                    const total = normalizeBongValue(principal + interest);
-                    credit = normalizeBongValue(credit + total);
-                    msgs.push(`원금 ${formatBongAmount(principal)} + 이자 ${formatBongAmount(interest)} → 지갑 ${formatBongAmount(total)}`);
-                } else {
-                    left.push(td);
-                }
-            });
-            return { left, credit, msgs };
-        }
-
-        /** 수동 은행 조작(입출금·적금 가입/해지) 1건만 허용 — 지갑+예금+적금 원금 합계 보존 */
-        function validateManualBankTransition(base, target) {
-            const bReg = normalizeBongValue(Number(base.bankRegularSavings) || 0);
-            const tReg = normalizeBongValue(Number(target.bankRegularSavings) || 0);
-            const bBong = normalizeBongValue(Number(base.bong) || 0);
-            const tBong = normalizeBongValue(Number(target.bong) || 0);
-            const bTerms = sanitizeBankTermDeposits(base.bankTermDeposits);
-            const tTerms = sanitizeBankTermDeposits(target.bankTermDeposits);
-            const regD = normalizeBongValue(tReg - bReg);
-            const bongD = normalizeBongValue(tBong - bBong);
-            const bTermSum = sumBankTermDeposits(bTerms);
-            const tTermSum = sumBankTermDeposits(tTerms);
-            const termSumD = normalizeBongValue(tTermSum - bTermSum);
-            const totalB = normalizeBongValue(bBong + bReg + bTermSum);
-            const totalC = normalizeBongValue(tBong + tReg + tTermSum);
-            const conserved = totalC === totalB;
-            const exactWalletOp = bongD === -regD && conserved;
-
-            // 예금·적금이 같으면 지갑 차이는 이체·주기 보너스로 보고 서버 지갑을 유지합니다.
-            if (regD === 0 && termDepositMapsEqual(bTerms, tTerms)) {
-                return { ok: true, kind: bongD === 0 ? 'none' : 'wallet_only', keepServerBong: true };
-            }
-            if (termDepositMapsEqual(bTerms, tTerms) && regD !== 0) {
-                if (regD > 0 && bBong + 0.0001 < regD) return { ok: false, kind: 'invalid' };
-                if (regD < 0 && bReg + 0.0001 < -regD) return { ok: false, kind: 'invalid' };
-                // exactWalletOp·conserved가 맞으면 그대로, 이체로 지갑만 어긋나도 서버 지갑에서 입출금만 반영합니다.
-                return {
-                    ok: true,
-                    kind: regD > 0 ? 'deposit' : 'withdraw',
-                    bongDelta: -regD,
-                    exact: exactWalletOp,
-                    conserved,
-                };
-            }
-            if (regD === 0 && tTerms.length === bTerms.length + 1) {
-                const added = findNewTermDeposits(bTerms, tTerms);
-                if (added.length === 1 && termSumD === added[0].amount) {
-                    if (bBong + 0.0001 < added[0].amount) return { ok: false, kind: 'invalid' };
-                    return { ok: true, kind: 'term_open', bongDelta: -added[0].amount };
-                }
-            }
-            if (regD === 0 && tTerms.length === bTerms.length - 1) {
-                const removed = findRemovedTermDeposits(bTerms, tTerms);
-                if (removed.length === 1 && termSumD === -removed[0].amount) {
-                    return { ok: true, kind: 'term_early', bongDelta: removed[0].amount };
-                }
-            }
-            return { ok: false, kind: 'invalid' };
+            const res = computeTermDepositMaturity(terms, ratePercent, getKstDateStr());
+            const msgs = res.matured.map((m) => `원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)} → 지갑 ${formatBongAmount(m.total)}`);
+            return { left: res.left, credit: res.credit, msgs, matured: res.matured };
         }
 
         /** 서버 문서 기준 만기·대출 만기·주기 보너스 반영 후, 클라이언트 수동 조작 검증 */
@@ -9539,32 +9436,30 @@ ${subjectLine}
                     rejected: false,
                 };
             }
-            const serverBase = {
-                bankRegularSavings: normalizeBongValue(Number(serverData.bankRegularSavings) || 0),
-                bankTermDeposits: sanitizeBankTermDeposits(serverData.bankTermDeposits),
-                bong: normalizeBongValue(Number(serverData.bong) || 0),
-                bankDailyBonusLastDate: String(serverData.bankDailyBonusLastDate || ''),
-            };
             const target = {
                 bankRegularSavings: normalizeBongValue(Number(clientData.bankRegularSavings) || 0),
                 bankTermDeposits: sanitizeBankTermDeposits(clientData.bankTermDeposits),
                 bong: normalizeBongValue(Number(clientData.bong) || 0),
                 bankDailyBonusLastDate: String(clientData.bankDailyBonusLastDate || ''),
             };
-            const validation = validateManualBankTransition(serverBase, target);
-            if (!validation.ok) {
-                return { ...accrued, rejected: true };
+            // 만기·자동이체를 먼저 반영한 서버 상태 위에 수동 조작 1건만 얹습니다(중복 지급·음수 잔액 방지).
+            const plan = planManualBankSave({
+                serverTerms: serverData.bankTermDeposits,
+                accrued,
+                target,
+            });
+            if (!plan.ok) {
+                return { ...accrued, rejected: true, bankReason: plan.reason || 'invalid' };
             }
-            const bongDelta = normalizeBongValue(resolveBankSaveBongDelta(validation, target.bong, serverBase.bong));
-            const regDelta = normalizeBongValue(target.bankRegularSavings - serverBase.bankRegularSavings);
             let bonusDate = accrued.bankDailyBonusLastDate;
             if (target.bankDailyBonusLastDate === accrued.bankDailyBonusLastDate || accrued.bonusGranted > 0) {
                 bonusDate = accrued.bankDailyBonusLastDate;
             }
             return {
-                bankRegularSavings: normalizeBongValue(accrued.bankRegularSavings + regDelta),
-                bankTermDeposits: target.bankTermDeposits,
-                bong: normalizeBongValue(accrued.bong + bongDelta),
+                bankRegularSavings: plan.bankRegularSavings,
+                bankTermDeposits: plan.bankTermDeposits,
+                bong: plan.bong,
+                bankOpKind: plan.kind,
                 bankDailyBonusLastDate: bonusDate,
                 bankLoan: accrued.bankLoan,
                 creditDefaultUntilYmd: accrued.creditDefaultUntilYmd || '',
@@ -24167,13 +24062,29 @@ ${subjectLine}
                             <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
                     </div>
-                    <div class="flex gap-2 flex-wrap items-center mt-2">
-                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
-                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
+                    <div class="flex gap-1.5 flex-wrap items-center mt-2" role="group" aria-label="${m.name} 매도 비율">
+                        ${STOCK_SELL_RATIOS.map((pct) => `<button type="button" onclick="window.setStockSellRatio('${m.id}', ${pct})" class="js-stock-sell-ratio min-h-[32px] min-w-[44px] px-2 rounded-lg border border-amber-600/50 bg-slate-950 hover:bg-amber-900/60 text-amber-100 text-[10px] font-bold" data-market="${m.id}" data-ratio="${pct}">${pct >= 100 ? '전량' : `${pct}%`}</button>`).join('')}
                     </div>
+                    <div class="flex gap-2 flex-wrap items-center mt-1.5">
+                        <input type="number" inputmode="numeric" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="팔 원금 (비우면 전량 ${pos.principal})" oninput="window.previewStockSellInput('${m.id}')" class="flex-1 min-w-[96px] min-h-[32px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
+                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn min-h-[32px] text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-3 py-1 rounded font-bold"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
+                    </div>
+                    <p id="bankInvestSellPreview_${m.id}" class="text-[9px] text-slate-400 mt-1 leading-snug" aria-live="polite">비율 버튼을 누르거나 팔 원금을 입력하세요. 비우면 전량 매도입니다.</p>
                 </div>`;
             });
+            // 시세·스냅샷으로 다시 그려도 입력 중인 매도 원금은 지우지 않습니다.
+            const keepSell = {};
+            STOCK_MARKETS.forEach((m) => {
+                const el = document.getElementById(`bankInvestSell_${m.id}`);
+                if (el && String(el.value || '').trim() !== '') keepSell[m.id] = el.value;
+            });
             box.innerHTML = rows.join('');
+            Object.keys(keepSell).forEach((id) => {
+                const el = document.getElementById(`bankInvestSell_${id}`);
+                if (!el) return;
+                el.value = keepSell[id];
+                window.previewStockSellInput?.(id);
+            });
         }
 
         /** 지수 매수·매도가 겹치면 같은 원금을 여러 번 정산할 수 있어 한 건씩만 처리합니다. */
@@ -24282,6 +24193,57 @@ ${subjectLine}
             }
         };
 
+        /** 일부 매도 미리보기: 입력한 원금 기준 예상 정산과 남는 원금 */
+        window.previewStockSellInput = function(marketId) {
+            const market = getStockMarket(marketId);
+            if (!market || !window.playerState) return;
+            const out = document.getElementById(`bankInvestSellPreview_${market.id}`);
+            const inp = document.getElementById(`bankInvestSell_${market.id}`);
+            if (!out) return;
+            const raw = inp && String(inp.value || '').trim() !== '' ? inp.value : '';
+            const q = _marketQuotes[market.id];
+            const pv = previewStockSell({
+                investments: window.playerState.stockInvestments,
+                marketId: market.id,
+                amount: raw === '' ? null : raw,
+                currentIndex: q ? q.price : NaN,
+                daily: window.playerState.stockInvestDaily,
+                today: getLocalDateStr(),
+                nowMs: Date.now(),
+            });
+            document.querySelectorAll(`.js-stock-sell-ratio[data-market="${market.id}"]`).forEach((el) => {
+                el.classList.remove('ring-2', 'ring-amber-300', 'bg-amber-900/60');
+            });
+            if (!pv.ok) {
+                out.className = 'text-[9px] text-rose-300 font-bold mt-1 leading-snug';
+                out.textContent = stockSellFailMessage(pv.reason, pv.max);
+                return;
+            }
+            out.className = 'text-[9px] text-amber-100/90 mt-1 leading-snug';
+            const payoutTxt = pv.payout == null ? '정산액은 매도 때 계산' : `예상 정산 ${formatBongAmount(pv.payout)}`;
+            out.textContent = `${pv.full ? '전량' : '일부'} 매도 원금 ${formatBongAmount(pv.amount)} → ${payoutTxt} · 남는 원금 ${formatBongAmount(pv.remaining)}${pv.capped ? ' (하루 수익 상한 적용)' : ''}`;
+        };
+
+        /** 비율 버튼: 보유 원금의 25·50·75%·전량을 입력칸에 채웁니다. */
+        window.setStockSellRatio = function(marketId, pct) {
+            const market = getStockMarket(marketId);
+            if (!market || !window.playerState) return;
+            const bag = sanitizeStockInvestments(window.playerState.stockInvestments);
+            const held = bag[market.id];
+            const inp = document.getElementById(`bankInvestSell_${market.id}`);
+            if (!held || !inp) return;
+            const pick = stockSellAmountForRatio(held.principal, pct);
+            if (!pick.ok) return;
+            inp.value = String(pick.amount);
+            window.previewStockSellInput(market.id);
+            const btn = document.querySelector(`.js-stock-sell-ratio[data-market="${market.id}"][data-ratio="${pct}"]`);
+            if (btn) btn.classList.add('ring-2', 'ring-amber-300', 'bg-amber-900/60');
+            if (pick.adjusted && !pick.full) {
+                const out = document.getElementById(`bankInvestSellPreview_${market.id}`);
+                if (out) out.textContent += ` (${formatBongAmount(STOCK_INVEST_MIN)} 이상 남도록 맞춤)`;
+            }
+        };
+
         window.sellStockIndex = async function(marketId) {
             if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
@@ -24360,6 +24322,7 @@ ${subjectLine}
                 const saved = await saveDataToCloud({
                     maxBongIncrease: Math.max(1, sold.payout),
                     operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
+                    bongLogSource: 'stockSell',
                     stockTrade: trade,
                 });
                 if (!saved) return;
@@ -24433,8 +24396,23 @@ ${subjectLine}
             await window.customAlert(`💵 ${formatBongAmount(sav)}를 모두 찾았습니다.`);
         };
 
+        /** 적금 가입·해지가 겹치면 같은 원금을 두 번 옮길 수 있어 한 건씩만 처리합니다. */
+        let _termDepositBusy = false;
+        async function runTermDepositOnce(fn) {
+            if (_termDepositBusy) return;
+            _termDepositBusy = true;
+            try {
+                await fn();
+            } finally {
+                _termDepositBusy = false;
+            }
+        }
+
         /** 적금(보물상자) 가입 — 안내 후 확인 */
-        window.openTermDeposit = async function() {
+        window.openTermDeposit = function() {
+            return runTermDepositOnce(openTermDepositImpl);
+        };
+        async function openTermDepositImpl() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             await window.customAlert(
                 '📦 적금(보물상자) 안내\n\n' +
@@ -24456,38 +24434,66 @@ ${subjectLine}
             const prevTerms = sanitizeBankTermDeposits(window.playerState.bankTermDeposits);
             window.playerState.bong = normalizeBongValue(w0 - amt);
             const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-            window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
+            window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getKstDateStr() });
             if (inp) inp.value = '';
             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '보물상자 적금 가입' });
             if (!saved) {
-                window.playerState.bong = prevBong;
-                window.playerState.bankTermDeposits = prevTerms;
+                // 서버 기준으로 화면을 이미 맞췄다면(새 적금이 없음) 그대로 둡니다.
+                if (sanitizeBankTermDeposits(window.playerState.bankTermDeposits).some((t) => t.id === id)) {
+                    window.playerState.bong = prevBong;
+                    window.playerState.bankTermDeposits = prevTerms;
+                }
+                updateUI();
                 return;
             }
             updateUI();
             await window.customAlert(`🎁 보물상자 적금 ${formatBongAmount(amt)}가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
-        };
+        }
 
-        /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음 */
-        window.earlyWithdrawTermDeposit = async function(termId) {
+        /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음. 만기가 지난 적금은 원금+이자 만기 처리로 돌립니다. */
+        window.earlyWithdrawTermDeposit = function(termId) {
+            return runTermDepositOnce(() => earlyWithdrawTermDepositImpl(termId));
+        };
+        async function earlyWithdrawTermDepositImpl(termId) {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const arr = window.playerState.bankTermDeposits || [];
-            const idx = arr.findIndex(t => String(t.id) === String(termId));
-            if (idx < 0) return window.customAlert('해당 적금을 찾을 수 없어요.');
-            const td = arr[idx];
+            const terms = sanitizeBankTermDeposits(window.playerState.bankTermDeposits);
+            const td = terms.find((t) => String(t.id) === String(termId));
+            if (!td) return window.customAlert('해당 적금을 찾을 수 없어요.');
+            if (bankCalendarDaysElapsed(td.startDate) >= 30) {
+                // 이미 만기: 원금만 돌려주면 이자를 잃고, 만기와 겹치면 원금이 두 번 들어갈 수 있습니다.
+                const termRes = applyBankTermDepositMaturity();
+                if (termRes.changed) {
+                    updateUI();
+                    const saved = await saveDataToCloud({ operationLabel: '보물상자 적금 만기', bongLogSource: 'bankTermMaturity' });
+                    if (!saved) return;
+                    await window.customAlert('🎁 이 적금은 이미 만기되었습니다.\n\n' + termRes.msgs.join('\n') + '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)');
+                }
+                return;
+            }
             const ok = await window.customConfirm(
                 `중도 해지 시 이자는 지급되지 않고 원금 ${formatBongAmount(td.amount)}만 지갑으로 돌아갑니다.\n해지할까요?`
             );
             if (!ok) return;
             const principal = normalizeBongValue(Number(td.amount) || 0);
-            arr.splice(idx, 1);
-            window.playerState.bankTermDeposits = arr;
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
+            const prevBong = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const prevTerms = sanitizeBankTermDeposits(window.playerState.bankTermDeposits);
+            if (!prevTerms.some((t) => t.id === td.id)) return window.customAlert('이미 해지되었거나 만기된 적금입니다.');
+            window.playerState.bankTermDeposits = prevTerms.filter((t) => t.id !== td.id);
+            window.playerState.bong = normalizeBongValue(prevBong + principal);
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
-            if (!saved) return;
+            if (!saved) {
+                // 서버 복원 데이터가 없을 때(네트워크 실패 등)만 화면을 이전 상태로 돌립니다.
+                if (sanitizeBankTermDeposits(window.playerState.bankTermDeposits).length === prevTerms.length - 1
+                    && normalizeBongValue(Number(window.playerState.bong) || 0) === normalizeBongValue(prevBong + principal)) {
+                    window.playerState.bong = prevBong;
+                    window.playerState.bankTermDeposits = prevTerms;
+                    updateUI();
+                }
+                return;
+            }
             await window.customAlert(`💰 원금 ${formatBongAmount(principal)}가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
-        };
+        }
 
         window.saveBankInterestRate = async function() {
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
@@ -26538,6 +26544,7 @@ ${subjectLine}
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
+            let blockedBankReason = '';
             let blockedLoanReason = '';
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
@@ -26621,6 +26628,7 @@ ${subjectLine}
                             if (reconciled.rejected) {
                                 blockedByBankReconcile = true;
                                 blockedLoanReason = String(reconciled.loanReason || '');
+                                blockedBankReason = String(reconciled.bankReason || '');
                                 serverRestoreData = {
                                     ...serverData,
                                     bong: reconciled.bong,
@@ -26876,6 +26884,10 @@ ${subjectLine}
                                 ? takeLoanFailMessage('default')
                                 : blockedLoanReason === 'funds' || blockedLoanReason === 'amount' || blockedLoanReason === 'none'
                                 ? repayLoanFailMessage(blockedLoanReason)
+                                : blockedBankReason === 'wallet'
+                                ? '서버 기준 지갑 잔액이 부족해 저장하지 않았습니다.\n잔액이 음수가 되지 않도록 막았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
+                                : blockedBankReason === 'regular'
+                                ? '서버 기준 일반예금 잔액이 부족해 저장하지 않았습니다.\n잔액이 음수가 되지 않도록 막았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
                                 : '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.')
                             : blockedByStockTrade
                             ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'

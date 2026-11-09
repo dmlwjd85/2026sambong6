@@ -408,3 +408,50 @@ export function applyStockBuyFromServer({
         added: !!bought.added,
     };
 }
+
+/** 일부 매도 비율 버튼 */
+export const STOCK_SELL_RATIOS = [25, 50, 75, 100];
+
+/**
+ * 보유 원금의 비율(%)만큼 팔 원금을 정합니다.
+ * 남는 원금이 최소 매수 단위보다 작아지면 남는 원금이 최소 단위가 되도록 줄이고,
+ * 그래도 안 되면 전량 매도로 바꿉니다.
+ */
+export function stockSellAmountForRatio(principal, ratioPct) {
+    const p = Math.floor(Number(principal) || 0);
+    const pct = Number(ratioPct);
+    if (p <= 0 || !Number.isFinite(pct) || pct <= 0) return { ok: false, reason: 'amount' };
+    if (pct >= 100) return { ok: true, amount: p, remaining: 0, full: true, adjusted: false };
+    let amount = Math.max(1, Math.round((p * pct) / 100));
+    let adjusted = false;
+    if (amount >= p) return { ok: true, amount: p, remaining: 0, full: true, adjusted: true };
+    if (p - amount < STOCK_INVEST_MIN) {
+        const keep = p - STOCK_INVEST_MIN;
+        if (keep >= 1) {
+            amount = keep;
+        } else {
+            amount = p;
+        }
+        adjusted = true;
+    }
+    const remaining = p - amount;
+    return { ok: true, amount, remaining, full: remaining === 0, adjusted };
+}
+
+/**
+ * 매도 미리보기(화면용). 서버 정산은 applyStockSellFromServer가 다시 계산합니다.
+ */
+export function previewStockSell({ investments, marketId, amount, currentIndex, daily, today, nowMs } = {}) {
+    const bag = sanitizeStockInvestments(investments);
+    const market = getStockMarket(marketId);
+    if (!market || !bag[market.id]) return { ok: false, reason: 'none' };
+    const gate = canSellStock({ existing: bag[market.id], amount });
+    if (!gate.ok) return { ok: false, reason: gate.reason, max: gate.max };
+    const price = Number(currentIndex);
+    if (!Number.isFinite(price) || price <= 0) {
+        return { ok: true, amount: gate.amount, remaining: gate.remaining, full: gate.full, payout: null, delta: null, capped: false };
+    }
+    const sold = applySellStock(bag, market.id, price, daily, today, nowMs, gate.amount);
+    if (!sold.ok) return { ok: false, reason: sold.reason };
+    return { ok: true, amount: gate.amount, remaining: gate.remaining, full: gate.full, payout: sold.payout, delta: sold.delta, capped: sold.capped };
+}

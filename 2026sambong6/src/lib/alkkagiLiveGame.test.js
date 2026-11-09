@@ -146,11 +146,11 @@ describe('실시간 알까기 쿨다운·샷 의도', () => {
         assert.equal(L.decideLiveIntent(over, { seat: 'white', n: 3, gid: 100, shot, now: 15000 }).reason, 'already_over');
     });
 
-    it('스냅샷 문서: 반올림하고 되읽어도 같아요', () => {
+    it('스냅샷 문서: 물리 값(소수 6자리)을 그대로 담고 되읽어도 같아요', () => {
         const st = L.emptyLiveState({ gid: 5 });
-        st.stones[0].vx = 12.3456789;
+        st.stones[0].vx = 12.345678;
         const d = L.liveStateToDoc(st);
-        assert.equal(d.stones[0].vx, 12.346);
+        assert.equal(d.stones[0].vx, 12.345678);
         const back = L.sanitizeLiveState(d);
         assert.equal(back.gid, 5);
         assert.equal(back.stones.length, 10);

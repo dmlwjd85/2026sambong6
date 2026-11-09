@@ -12041,6 +12041,8 @@ ${subjectLine}
         let _alkBusy = false;
         // 방·참가·승인은 보드게임 공통 방을 그대로 쓰고, 판 화면과 실시간 동기화는 alkkagiLiveMode.js가 맡아요.
         const _alkLive = createAlkkagiLiveMode({
+            fs: { doc, collection, setDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, getDb: () => db },
+            roomRef: (roomId) => boardGameRoomRef(roomId),
             selfId: () => boardGameSelfId(),
             seatOf: (room, id) => roomMemberSeat(room, id),
             memberName: (room, seat) => memberNameBySeat(room, seat),

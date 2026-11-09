@@ -296,13 +296,15 @@ export function sanitizeLiveState(raw) {
     };
 }
 
-/** Firestore에 넣을 스냅샷(중첩 배열 없음). 반올림해서 문서 크기를 줄여요. */
+/**
+ * Firestore에 넣을 스냅샷(중첩 배열 없음).
+ * 좌표·속도는 물리 모듈이 이미 소수 6자리로 맞춘 값을 그대로 넣어요. 더 줄이면 게스트가 이어서 돌린 판이 호스트와 어긋나요.
+ */
 export function liveStateToDoc(state) {
     const s = sanitizeLiveState(state);
-    const r3 = (v) => Math.round(v * 1000) / 1000;
     return {
         ...s,
-        stones: s.stones.map((t) => ({ id: t.id, color: t.color, x: r3(t.x), y: r3(t.y), vx: r3(t.vx), vy: r3(t.vy), alive: t.alive })),
+        stones: s.stones.map((t) => ({ id: t.id, color: t.color, x: t.x, y: t.y, vx: t.vx, vy: t.vy, alive: t.alive })),
     };
 }
 

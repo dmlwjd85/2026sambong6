@@ -259,6 +259,7 @@ import {
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
 import { createIdleRoomSweeper } from './lib/boardRoomSweep.js';
+import { boardSwitchVisible, parkBoardAiSession, planBoardGameSwitch } from './lib/boardGameSwitch.js';
 import {
     ALKKAGI_BLACK,
     ALKKAGI_STONES_PER_SIDE,
@@ -12024,6 +12025,8 @@ ${subjectLine}
         let _boardGameRooms = [];
         let _boardGameView = 'home';
         let _boardGameType = 'gomoku';
+        // 오목·체스 전환 탭으로 잠시 멈춰 둔 AI 판(돌아오면 이어 둡니다)
+        const _parkedBoardAi = { gomoku: null, chess: null };
         // 알까기 상태
         let _alkBoard = null;
         let _alkLocal = null; // { game, ai } — 한 화면 둘이서(ai 없음) 또는 AI와 하기(ai: { level, color, seed, job, thinking, pulling })
@@ -12184,7 +12187,107 @@ ${subjectLine}
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
+            syncBoardGameSwitchTabs();
         }
+
+        /** 오목·체스 전환 탭: 지금 게임 표시, 멈춰 둔 판이 있으면 점 표시 */
+        function syncBoardGameSwitchTabs() {
+            const bar = document.getElementById('boardgameSwitchTabs');
+            if (!bar) return;
+            const kind = _boardGameView === 'play' ? activeBoardPlayKind() : _boardGameType;
+            const show = boardSwitchVisible(_boardGameView, kind);
+            bar.classList.toggle('hidden', !show);
+            if (!show) return;
+            bar.querySelectorAll('[data-switch-game]').forEach((btn) => {
+                const id = btn.getAttribute('data-switch-game');
+                const on = id === kind;
+                btn.classList.toggle('is-on', on);
+                btn.setAttribute('aria-selected', on ? 'true' : 'false');
+                const dot = btn.querySelector('.boardgame-switch-dot');
+                if (dot) dot.hidden = !(!on && _parkedBoardAi[id]);
+            });
+        }
+
+        /** 친구와 두는 방에서 대국 중이거나 결과 화면이면 탭으로 나가지 않습니다(나가면 패배라서). */
+        function boardGamePvpLocked() {
+            if (_gomokuAiSession || _chessAiSession || _alkLocal) return false;
+            const room = currentBoardGameRoom();
+            if (!room) return false;
+            return isRoomMember(room, boardGameSelfId()) && (room.status === 'playing' || room.status === 'finished');
+        }
+
+        function parkActiveBoardAi() {
+            if (_gomokuAiSession) {
+                _parkedBoardAi.gomoku = parkBoardAiSession(_gomokuAiSession);
+                _gomokuAiSession = null;
+                _gomokuPending = null;
+            }
+            if (_chessAiSession) {
+                _parkedBoardAi.chess = parkBoardAiSession(_chessAiSession);
+                _chessAiSession = null;
+                _chessSelected = null;
+                _chessPending = null;
+                _chessPromo = null;
+                _chessPrevCells = null;
+                _chessSeenMoveKey = '';
+            }
+        }
+
+        function resumeParkedBoardAi(type) {
+            const parked = _parkedBoardAi[type];
+            if (!parked) return false;
+            _parkedBoardAi[type] = null;
+            _boardGameActiveId = '';
+            _boardGameType = type;
+            if (type === 'chess') {
+                _chessSelected = null;
+                _chessPending = null;
+                _chessPromo = null;
+                _chessPrevCells = null;
+                _chessSeenMoveKey = '';
+                _chessAiSession = parked;
+                renderChessPlay(chessAiRoomView());
+                if (!chessIsOver(parked.game) && parked.game.turn !== parked.human) void playChessAiTurn();
+            } else {
+                _gomokuPending = null;
+                _gomokuNeedFit = true;
+                _gomokuAiSession = parked;
+                renderGomokuPlay(gomokuAiRoomView());
+                const over = !!(parked.game.winner || parked.game.endReason === 'draw');
+                if (!over && parked.game.turn === GOMOKU_WHITE) void playGomokuAiTurn();
+            }
+            return true;
+        }
+
+        window.resumeParkedBoardAi = function (type) {
+            const t = type || _boardGameType;
+            if (!resumeParkedBoardAi(t)) renderBoardGameLobby();
+        };
+
+        /** 오목 ↔ 체스 탭 전환. AI 판은 멈춰 두고, 돌아오면 이어 둡니다. */
+        window.switchBoardGameTab = function (type) {
+            if (window.playerState && window.playerState.isGuest) {
+                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            }
+            const current = _boardGameView === 'play' ? activeBoardPlayKind() : _boardGameType;
+            const plan = planBoardGameSwitch({
+                target: type,
+                view: _boardGameView,
+                current,
+                pvpLocked: boardGamePvpLocked(),
+                parked: _parkedBoardAi,
+            });
+            if (plan.action === 'none') return;
+            if (plan.action === 'blocked') {
+                const room = currentBoardGameRoom();
+                return window.customAlert(room && room.status === 'finished'
+                    ? '결과 화면에서 「다시 두기」나 「방 종료」를 고른 뒤 다른 게임으로 바꿀 수 있어요.'
+                    : '친구와 두는 대국 중에는 다른 게임으로 바꿀 수 없어요.\n나가면 패배로 기록되니 판을 마친 뒤 바꿔 주세요.');
+            }
+            parkActiveBoardAi();
+            if (plan.action === 'resume' && resumeParkedBoardAi(plan.target)) return;
+            window.openBoardGameLobby(plan.target);
+        };
 
         function gomokuAiRoomView() {
             const s = _gomokuAiSession;
@@ -12266,6 +12369,7 @@ ${subjectLine}
         }
 
         function startGomokuAiSession(level) {
+            _parkedBoardAi.gomoku = null;
             _boardGameActiveId = '';
             _gomokuPending = null;
             _gomokuNeedFit = true;
@@ -12488,6 +12592,14 @@ ${subjectLine}
 
         function renderBoardGameLobby() {
             syncBoardGameLobbyChrome();
+            const resumeRow = document.getElementById('boardgameResumeRow');
+            if (resumeRow) {
+                const parked = _parkedBoardAi[_boardGameType];
+                resumeRow.classList.toggle('hidden', !parked);
+                const txt = document.getElementById('boardgameResumeText');
+                if (txt && parked) txt.textContent = `멈춰 둔 ${boardGameTypeLabel(_boardGameType)} AI 판이 있어요.`;
+            }
+            syncBoardGameSwitchTabs();
             const recEl = document.getElementById('boardgameMyRecord');
             const label = boardGameTypeLabel(_boardGameType);
             if (recEl) recEl.textContent = `내 ${label} 전적 ${myBoardGameRecordText(_boardGameType)}`;
@@ -13130,6 +13242,7 @@ ${subjectLine}
         }
 
         function startChessAiSession(level) {
+            _parkedBoardAi.chess = null;
             _boardGameActiveId = '';
             _boardGameType = 'chess';
             _chessSelected = null;
@@ -13457,6 +13570,17 @@ ${subjectLine}
 
         window.startBoardGameAi = function (level) {
             if (_boardGameType === 'alkkagi') return window.startAlkkagiAi(level === 'choin' ? 'hard' : 'normal');
+            const parkedType = _boardGameType;
+            if (_parkedBoardAi[parkedType]) {
+                // 탭 전환으로 멈춰 둔 판이 있으면 버리기 전에 묻습니다.
+                void (async () => {
+                    const ok = await window.customConfirm('멈춰 둔 AI 판이 있어요.\n새로 시작하면 그 판은 사라져요. 새로 시작할까요?');
+                    if (!ok) return;
+                    _parkedBoardAi[parkedType] = null;
+                    window.startBoardGameAi(level);
+                })();
+                return;
+            }
             if (_boardGameType === 'chess') {
                 if (window.playerState && window.playerState.isGuest) {
                     return window.customAlert('👀 게스트는 이용할 수 없어요.');

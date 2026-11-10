@@ -86,3 +86,10 @@
     color: #fff8ea;
     background: #b4553a;
 }
+/* 360px 폰: '나' 배지가 있어도 이름(예: '2. 데모학생2')이 잘리지 않게 간격을 줄이고, 안내 끝 '요.'만 따로 떨어지지 않게 줄 길이를 고르게 맞춰요. */
+.alk-live-view .alk-tip { word-break: keep-all; text-wrap: balance; }
+@media (max-width: 400px) {
+    .alk-live-view .alk-who { gap: 4px; padding-right: 10px; font-size: 14px; letter-spacing: -0.2px; }
+    .alk-live-view .alk-me { padding: 0 3px; font-size: 10px; }
+    .alk-live-view .alk-card.on .alk-rib, .alk-live-view .alk-card.is-win .alk-rib { right: 6px; }
+}

@@ -275,7 +275,7 @@ import {
     isAlkkagiOver,
 } from './lib/alkkagiGame.js';
 import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
-import { alkkagiLiveRecordResult, alkkagiLiveResultKey } from './lib/alkkagiLiveGame.js';
+import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey } from './lib/alkkagiLiveGame.js';
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
 import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, parseAlkkagiResume } from './lib/alkkagiResume.js';
@@ -1295,7 +1295,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.47';
+        const APP_VERSION = 'v1.49';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -12040,6 +12040,8 @@ ${subjectLine}
         let _alkWriting = false;
         let _alkBusy = false;
         // 방·참가·승인은 보드게임 공통 방을 그대로 쓰고, 판 화면과 실시간 동기화는 alkkagiLiveMode.js가 맡아요.
+        // 실시간 입구 스위치가 켜졌을 때만 '· 실시간 대전' 같은 안내를 보여요.
+        document.querySelectorAll('[data-alk-live-only]').forEach((el) => el.classList.toggle('hidden', !ALKKAGI_LIVE_ENABLED));
         const _alkLive = createAlkkagiLiveMode({
             selfId: () => boardGameSelfId(),
             seatOf: (room, id) => roomMemberSeat(room, id),
@@ -12048,7 +12050,7 @@ ${subjectLine}
             applyRoomGame: (room, opts) => applyBoardRoomGame(room, opts),
             continueRoom: (room, opts) => continueBoardRoom(room, opts),
             closeRoom: (room, opts) => closeBoardRoom(room, opts),
-            deleteRoom: async (roomId) => { try { await deleteDoc(boardGameRoomRef(roomId)); } catch (_) { /* 목록 필터로도 빠져요 */ } },
+            deleteRoom: async (roomId) => { await deleteBoardRoomDoc(roomId); },
             recordResult: (room) => maybeRecordBoardGameResult(room),
             myRecordText: () => myBoardGameRecordText('alkkagi'),
             loadFonts: () => loadAlkkagiFontsOnce(),
@@ -12124,6 +12126,21 @@ ${subjectLine}
             return doc(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms', roomId);
         }
 
+        // 실시간 알까기 방(alkl_…)을 지운 뒤에는 live 하위 문서(state·black·white)도 지워요.
+        // 규칙은 방 문서가 없을 때(또는 선생님)만 live 지우기를 허용해서, 방이 남아 있는 동안 판을 되감지 못해요.
+        async function deleteAlkkagiLiveDocs(roomId) {
+            const id = String(roomId || '');
+            if (!db || !id.startsWith('alkl_')) return;
+            await Promise.all(['state', 'black', 'white'].map((d) => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms', id, 'live', d)).catch(() => {})));
+        }
+
+        /** 방 문서를 지우고(실패하면 조용히 넘어가요) 실시간 방이면 live 문서도 정리해요. */
+        async function deleteBoardRoomDoc(roomId) {
+            try { await deleteDoc(boardGameRoomRef(roomId)); } catch (_) { return false; /* 목록 필터로도 빠져요 */ }
+            await deleteAlkkagiLiveDocs(roomId);
+            return true;
+        }
+
         function currentBoardGameRoom() {
             return _boardGameRooms.find((r) => r.id === _boardGameActiveId) || null;
         }
@@ -12161,7 +12178,9 @@ ${subjectLine}
             getRooms: () => _boardGameRooms,
             removeRoom: async (room) => {
                 const ref = boardGameRoomRef(room.id);
+                let removed = false;
                 await runTransaction(db, async (tx) => {
+                    removed = false;
                     const snap = await tx.get(ref);
                     if (!snap.exists()) return;
                     const t = Date.now();
@@ -12169,7 +12188,9 @@ ${subjectLine}
                     if (cur.status === 'closed' || !isRoomIdleExpired(cur, t)) return;
                     if (!expireIdleBoardRoom(cur, t).ok) return;
                     tx.delete(ref);
+                    removed = true;
                 });
+                if (removed) await deleteAlkkagiLiveDocs(room.id);
             },
             onError: (e, room) => console.warn('sweepIdleBoardRooms', room && room.id, e),
         });
@@ -12430,7 +12451,7 @@ ${subjectLine}
                         now: Date.now(),
                     }), { silent: true }));
                     if (closed) {
-                        try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 목록 필터로도 빠집니다 */ }
+                        await deleteBoardRoomDoc(id);
                     }
                 }
                 for (const id of cancelJoinIds) {
@@ -12498,7 +12519,9 @@ ${subjectLine}
             if (title) title.textContent = alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
             if (lead) {
                 lead.textContent = alk
-                    ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 「실시간 방 만들기」는 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요. 하다가 나가면 져요.'
+                    ? (ALKKAGI_LIVE_ENABLED
+                        ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 「실시간 방 만들기」는 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요. 하다가 나가면 져요.'
+                        : '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 하다가 나가면 져요.')
                     : chess
                     ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.'
                     : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.';
@@ -12516,7 +12539,8 @@ ${subjectLine}
             const localBtn = document.getElementById('boardgameLocalBtn');
             if (localBtn) localBtn.classList.toggle('hidden', !alk);
             const liveBtn = document.getElementById('boardgameAlkLiveBtn');
-            if (liveBtn) liveBtn.classList.toggle('hidden', !alk);
+            // 실시간 입구는 스위치(ALKKAGI_LIVE_ENABLED)가 켜졌을 때만 보여요(1단계에서는 꺼 둠).
+            if (liveBtn) liveBtn.classList.toggle('hidden', !alk || !ALKKAGI_LIVE_ENABLED);
             const alkAiRow = document.getElementById('boardgameAlkAiRow');
             if (alkAiRow) alkAiRow.classList.toggle('hidden', !alk);
             document.querySelectorAll('#boardgameLobbyView .boardgame-ai-row[aria-label="AI 난이도"]').forEach((row) => {
@@ -12533,15 +12557,17 @@ ${subjectLine}
             if (!box) return;
             const me = boardGameSelfId();
             const now = Date.now();
-            // 알까기 방 목록에는 실시간 방도 함께 보여 줘요(카드에 '실시간' 표시).
-            const rooms = _boardGameType === 'alkkagi'
+            // 알까기 방 목록에는 실시간 방도 함께 보여 줘요(카드에 '실시간' 표시). 스위치가 꺼져 있으면 보이지 않아요.
+            const rooms = _boardGameType === 'alkkagi' && ALKKAGI_LIVE_ENABLED
                 ? listLobbyBoardRooms(_boardGameRooms, { gameType: 'alkkagi', now })
                     .concat(listLobbyBoardRooms(_boardGameRooms, { gameType: 'alkkagiLive', now }))
                     .sort((a, b) => b.updatedAt - a.updatedAt)
                 : listLobbyBoardRooms(_boardGameRooms, { gameType: _boardGameType, now });
             if (!rooms.length) {
                 box.innerHTML = _boardGameType === 'alkkagi'
-                    ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「실시간 방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>'
+                    ? (ALKKAGI_LIVE_ENABLED
+                        ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「실시간 방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>'
+                        : '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>')
                     : '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI 고수」「AI 초인」으로 시작하세요.</p>';
                 return;
             }
@@ -13470,7 +13496,7 @@ ${subjectLine}
                     now: Date.now(),
                 }), { silent: true }));
                 if (closed) {
-                    try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 닫힌 방은 목록에서 빠져요 */ }
+                    await deleteBoardRoomDoc(room.id);
                 }
             }
         }
@@ -13649,6 +13675,7 @@ ${subjectLine}
             if (!me) return window.customAlert('로그인한 학생만 방을 만들 수 있습니다.');
             const def = getBoardGameDef(gameType || _boardGameType);
             if (!def || !db) return;
+            if (def.id === 'alkkagiLive' && !ALKKAGI_LIVE_ENABLED) return;
             // 만드는 중에 다시 누르면(더블클릭·연타) 아무것도 하지 않아요.
             if (_boardGameCreating) return;
             _boardGameCreating = true;
@@ -13723,7 +13750,7 @@ ${subjectLine}
                     now: Date.now(),
                 })));
                 if (closed) {
-                    try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 닫힌 방은 목록에서 빠져요 */ }
+                    await deleteBoardRoomDoc(id);
                     if (_boardGameActiveId === id) _boardGameActiveId = '';
                     _boardGameRooms = _boardGameRooms.filter((r) => r.id !== id);
                 }
@@ -13885,7 +13912,7 @@ ${subjectLine}
                 now: Date.now(),
             })));
             if (closed) {
-                try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 목록 필터로도 빠집니다 */ }
+                await deleteBoardRoomDoc(room.id);
             }
             _boardGameActiveId = '';
             _gomokuPending = null;
@@ -14561,7 +14588,7 @@ ${subjectLine}
                 now: Date.now(),
             })));
             if (closed) {
-                try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 목록 필터로도 빠져요 */ }
+                await deleteBoardRoomDoc(room.id);
             }
             _boardGameActiveId = '';
             saveAlkkagiResume('');

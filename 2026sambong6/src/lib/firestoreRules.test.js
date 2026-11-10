@@ -1145,9 +1145,35 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(guest, `${base}/${T}_dislike_8`), good({ fromId: '8', date: T })));
     });
 
+    // ---- 실시간 알까기(#99) ----
+    const LIVE_ROOM = 'artifacts/class1/public/data/boardGameRooms/alkl_3';
+    const liveStones = () => ['b1', 'b2', 'b3', 'b4', 'b5', 'w1', 'w2', 'w3', 'w4', 'w5'].map((id, i) => ({
+        id, color: id[0] === 'b' ? 'black' : 'white', x: 40 + (i % 5) * 80, y: id[0] === 'b' ? 340 : 60, vx: 0, vy: 0, alive: true,
+    }));
+    async function seedLiveRoom(extra = {}, path = LIVE_ROOM) {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), path), {
+                gameType: 'alkkagiLive', hostId: '3', status: 'playing', members: [], game: { mode: 'live', gid: 1000 }, ...extra,
+            });
+        });
+    }
+    async function liveState(extra = {}) {
+        const { serverTimestamp } = await import('firebase/firestore');
+        return {
+            gid: 1000, seq: 1, epoch: 0, hostSeat: 'black', step: 0, moving: false,
+            stones: liveStones(),
+            applied: { black: 0, white: 0 }, rejected: { black: 0, white: 0 }, lastShotAt: { black: 0, white: 0 },
+            last: null, shots: 0, over: null, at: serverTimestamp(), ...extra,
+        };
+    }
+    async function seedLiveDoc(id, data) {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), `${LIVE_ROOM}/live/${id}`), data); });
+    }
+
     it('실시간 알까기 live/자리: 형식·내 색 알·번호 하나씩·서버 시각 4.5초 간격, 접속 표시만 쓰기는 허용', async () => {
         const { serverTimestamp, Timestamp } = await import('firebase/firestore');
-        const base = 'artifacts/class1/public/data/boardGameRooms/alkl_3/live';
+        await seedLiveRoom();
+        const base = `${LIVE_ROOM}/live`;
         const db = anon().firestore();
         const fresh = (seat, extra = {}) => ({ seat, sid: '3', gid: 1000, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
         const shotOf = (id, a = 0, p = 5000) => ({ v: 1, id, a, p });
@@ -1162,9 +1188,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const next = (n, shot, extra = {}) => ({ seat: 'black', sid: '3', gid: 1000, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
         await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'))));
         // 마지막 샷이 10초 전이면 허용
-        await testEnv.withSecurityRulesDisabled(async (ctx) => {
-            await setDoc(doc(ctx.firestore(), `${base}/black`), { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null, shotAt: Timestamp.fromMillis(Date.now() - 10000), seenAt: Timestamp.fromMillis(Date.now() - 10000) });
-        });
+        await seedLiveDoc('black', { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null, shotAt: Timestamp.fromMillis(Date.now() - 10000), seenAt: Timestamp.fromMillis(Date.now() - 10000) });
         // 상대 색 알·형식이 틀린 샷·번호 건너뛰기·sid 바꾸기 거부
         await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('w1'))));
         await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b6'))));
@@ -1182,45 +1206,197 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const cur = (await getDoc(doc(db, `${base}/black`))).data();
         await assertSucceeds(setDoc(doc(db, `${base}/black`), { ...cur, seenAt: serverTimestamp() }));
         await assertFails(setDoc(doc(db, `${base}/black`), { ...cur, shot: shotOf('b3'), seenAt: serverTimestamp() }));
-        // 새 판(gid가 커짐)이면 번호 0으로 다시 시작, 다른 학생도 앉을 수 있어요
+        // 방의 판이 바뀌면(game.gid 2000) 번호 0으로 다시 시작, 다른 학생도 앉을 수 있어요. 방의 gid가 아니면 거부
+        await seedLiveRoom({ game: { mode: 'live', gid: 2000 } });
+        await assertFails(setDoc(doc(db, `${base}/black`), fresh('black', { gid: 1500, sid: '5' })));
         await assertSucceeds(setDoc(doc(db, `${base}/black`), fresh('black', { gid: 2000, sid: '5' })));
-        await assertFails(setDoc(doc(db, `${base}/black`), fresh('black', { gid: 1500 })));
         // 비로그인은 쓰지 못하고 읽기는 돼요
         const guest = testEnv.unauthenticatedContext().firestore();
-        await assertFails(setDoc(doc(guest, `${base}/white`), fresh('white')));
+        await assertFails(setDoc(doc(guest, `${base}/white`), fresh('white', { gid: 2000 })));
         await assertSucceeds(getDoc(doc(guest, `${base}/black`)));
-        await assertSucceeds(deleteDoc(doc(db, `${base}/black`)));
     });
 
-    it('실시간 알까기 live/state: 형식, 같은 판은 seq 증가만, 호스트 바꾸기는 epoch를 올릴 때만', async () => {
-        const { serverTimestamp } = await import('firebase/firestore');
-        const ref = 'artifacts/class1/public/data/boardGameRooms/alkl_3/live/state';
+    it('실시간 알까기 live/state: 형식, 같은 판은 seq 한 칸씩, 호스트 바꾸기는 epoch를 하나 올릴 때만', async () => {
+        await seedLiveRoom();
+        const ref = `${LIVE_ROOM}/live/state`;
         const db = anon().firestore();
-        const st = (extra = {}) => ({
-            gid: 1000, seq: 1, epoch: 0, hostSeat: 'black', step: 0, moving: false,
-            stones: [{ id: 'b1', color: 'black', x: 1, y: 2, vx: 0, vy: 0, alive: true }],
-            applied: { black: 0, white: 0 }, rejected: { black: 0, white: 0 }, lastShotAt: { black: 0, white: 0 },
-            last: null, shots: 0, over: null, at: serverTimestamp(), ...extra,
-        });
-        await assertFails(setDoc(doc(db, ref), st({ hostSeat: 'red' })));
-        await assertFails(setDoc(doc(db, ref), st({ hacked: true })));
-        await assertFails(setDoc(doc(db, ref), st({ stones: Array.from({ length: 11 }, (_, i) => ({ id: `b${i}` })) })));
-        await assertSucceeds(setDoc(doc(db, ref), st()));
-        await assertSucceeds(setDoc(doc(db, ref), st({ seq: 2 })));
-        await assertFails(setDoc(doc(db, ref), st({ seq: 2 })));
-        await assertFails(setDoc(doc(db, ref), st({ seq: 1 })));
-        await assertFails(setDoc(doc(db, ref), st({ seq: 3, hostSeat: 'white' })));
-        await assertSucceeds(setDoc(doc(db, ref), st({ seq: 3, epoch: 1, hostSeat: 'white' })));
+        const st = liveState;
+        await assertFails(setDoc(doc(db, ref), await st({ hostSeat: 'red' })));
+        await assertFails(setDoc(doc(db, ref), await st({ hacked: true })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: Array.from({ length: 11 }, (_, i) => ({ id: `b${i}` })) })));
+        await assertSucceeds(setDoc(doc(db, ref), await st()));
+        await assertSucceeds(setDoc(doc(db, ref), await st({ seq: 2 })));
+        await assertFails(setDoc(doc(db, ref), await st({ seq: 2 })));
+        await assertFails(setDoc(doc(db, ref), await st({ seq: 1 })));
+        await assertFails(setDoc(doc(db, ref), await st({ seq: 3, hostSeat: 'white' })));
+        await assertSucceeds(setDoc(doc(db, ref), await st({ seq: 3, epoch: 1, hostSeat: 'white' })));
         // 예전 호스트(epoch 0)의 늦은 스냅샷은 거부
-        await assertFails(setDoc(doc(db, ref), st({ seq: 9, epoch: 0, hostSeat: 'black' })));
-        await assertSucceeds(setDoc(doc(db, ref), st({ seq: 4, epoch: 1, hostSeat: 'white' })));
-        // 새 판은 seq·epoch를 처음부터
-        await assertSucceeds(setDoc(doc(db, ref), st({ gid: 2000, seq: 1, epoch: 0 })));
+        await assertFails(setDoc(doc(db, ref), await st({ seq: 9, epoch: 0, hostSeat: 'black' })));
+        await assertSucceeds(setDoc(doc(db, ref), await st({ seq: 4, epoch: 1, hostSeat: 'white' })));
+        // 승계는 지금 seq+1 이하로(예전에 본 낮은 seq여도 돼요)
+        await assertSucceeds(setDoc(doc(db, ref), await st({ seq: 2, epoch: 2, hostSeat: 'black' })));
+        // 새 판(방 gid 2000)은 seq·epoch를 처음부터
+        await seedLiveRoom({ game: { mode: 'live', gid: 2000 } });
+        await assertFails(setDoc(doc(db, ref), await st({ gid: 2000, seq: 5, epoch: 0 })));
+        await assertSucceeds(setDoc(doc(db, ref), await st({ gid: 2000, seq: 1, epoch: 0 })));
         const guest = testEnv.unauthenticatedContext().firestore();
-        await assertFails(setDoc(doc(guest, ref), st({ gid: 3000 })));
+        await assertFails(setDoc(doc(guest, ref), await st({ gid: 2000, seq: 2 })));
         await assertSucceeds(getDoc(doc(guest, ref)));
-        // 방 문서는 예전처럼 로그인하면 쓸 수 있어요(오목·체스와 같음)
-        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/boardGameRooms/alkl_3'), { gameType: 'alkkagiLive', hostId: '3', status: 'waiting' }));
+    });
+
+    it('[필수1] 실시간 방은 종류를 바꾸지 못해요(예전 화면이 오목 방으로 덮어쓰기 막기)', async () => {
+        const db = anon().firestore();
+        const room = (extra = {}) => ({ gameType: 'alkkagiLive', hostId: '3', status: 'waiting', members: [], game: { mode: 'live', gid: 1000 }, ...extra });
+        // 만들기: alkl_ id에는 실시간 방만, 실시간 방은 alkl_ id에만
+        await assertFails(setDoc(doc(db, 'artifacts/class1/public/data/boardGameRooms/alkl_7'), room({ gameType: 'gomoku' })));
+        await assertFails(setDoc(doc(db, 'artifacts/class1/public/data/boardGameRooms/bg_x1'), room()));
+        await assertSucceeds(setDoc(doc(db, LIVE_ROOM), room()));
+        // v1.47 화면이 참가 신청하며 gameType:'gomoku'와 오목 판으로 덮어쓰기 → 거부
+        await assertFails(setDoc(doc(db, LIVE_ROOM), room({ gameType: 'gomoku', game: { board: [], turn: 'black' }, joinRequests: [{ id: '5' }] })));
+        await assertFails(updateDoc(doc(db, LIVE_ROOM), { gameType: 'gomoku' }));
+        await assertFails(updateDoc(doc(db, LIVE_ROOM), { gameType: deleteField() }));
+        // 종류를 그대로 두는 실시간 방 쓰기는 예전처럼 돼요
+        await assertSucceeds(updateDoc(doc(db, LIVE_ROOM), { status: 'playing', joinRequests: [] }));
+        // 다른 방을 실시간 방으로 바꾸기도 거부, 오목·알까기·옛 문서(gameType 없음)는 예전처럼 쓸 수 있어요
+        const gomoku = 'artifacts/class1/public/data/boardGameRooms/bg_g1';
+        await assertSucceeds(setDoc(doc(db, gomoku), { gameType: 'gomoku', hostId: '4', status: 'waiting' }));
+        await assertSucceeds(updateDoc(doc(db, gomoku), { status: 'playing' }));
+        await assertFails(updateDoc(doc(db, gomoku), { gameType: 'alkkagiLive' }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/boardGameRooms/alk_4'), { gameType: 'alkkagi', hostId: '4', status: 'waiting' }));
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), 'artifacts/class1/public/data/boardGameRooms/old1'), { hostId: '6', status: 'waiting' });
+        });
+        await assertSucceeds(updateDoc(doc(db, 'artifacts/class1/public/data/boardGameRooms/old1'), { status: 'closed' }));
+        await assertSucceeds(deleteDoc(doc(db, gomoku)));
+    });
+
+    it('[필수3] live 지우기는 방이 없을 때(또는 방과 함께)·선생님만, 되감기·상대 자리 쫓아내기 막기', async () => {
+        const { serverTimestamp, writeBatch } = await import('firebase/firestore');
+        await seedLiveRoom();
+        const base = `${LIVE_ROOM}/live`;
+        const db = anon().firestore();
+        await seedLiveDoc('state', { ...(await liveState({ seq: 5 })), at: 1 });
+        const seat = (s, sid) => ({ seat: s, sid, gid: 1000, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp() });
+        await assertSucceeds(setDoc(doc(db, `${base}/white`), seat('white', '4')));
+        // 방이 있는 동안 학생은 판·자리를 지우지 못해요
+        await assertFails(deleteDoc(doc(db, `${base}/state`)));
+        await assertFails(deleteDoc(doc(db, `${base}/white`)));
+        // 되감기: 더 낮은 seq로 덮어쓰기 거부(지우고 다시 만드는 길도 위에서 막힘)
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: 1 })));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: 5 })));
+        // 상대 자리 쫓아내기: 같은 판에서 다른 sid로 덮어쓰기·gid를 올려 새로 앉기 거부
+        await assertFails(setDoc(doc(db, `${base}/white`), seat('white', '9')));
+        await assertFails(setDoc(doc(db, `${base}/white`), { ...seat('white', '9'), gid: 999999999999 }));
+        // 선생님은 지울 수 있어요
+        await assertSucceeds(deleteDoc(doc(teacher().firestore(), `${base}/white`)));
+        // 방과 같은 묶음으로 함께 지우기는 돼요
+        const batch = writeBatch(db);
+        batch.delete(doc(db, LIVE_ROOM));
+        batch.delete(doc(db, `${base}/state`));
+        await assertSucceeds(batch.commit());
+        // 방이 없어진 뒤 남은 live 문서는 누구나(로그인) 정리해요, 대신 다시 만들기는 안 돼요
+        await seedLiveDoc('black', { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null });
+        await assertSucceeds(deleteDoc(doc(db, `${base}/black`)));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState()));
+        // 비로그인은 지우지 못해요
+        await seedLiveDoc('black', { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null });
+        await assertFails(deleteDoc(doc(testEnv.unauthenticatedContext().firestore(), `${base}/black`)));
+    });
+
+    it('[필수4] live/state 내용 검사: 알 개수·칸 형식·숫자 범위, 약 950KB 부풀리기 거부', async () => {
+        await seedLiveRoom();
+        const ref = `${LIVE_ROOM}/live/state`;
+        const db = anon().firestore();
+        const st = liveState;
+        const stones = liveStones();
+        const withStone = (i, patch) => stones.map((s, k) => (k === i ? { ...s, ...patch } : s));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: stones.slice(0, 9) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: [...stones, stones[0]] })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(0, { hack: 1 }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(9, { x: '1' }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(3, { y: { big: 'x' } }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(4, { vx: [1, 2, 3] }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(2, { vy: null }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(5, { id: 'w6' }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(6, { color: 'black' }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(1, { color: 'blackblack' }) })));
+        // 칸 수는 7이지만 alive 대신 다른 칸(pad)이 들어간 알
+        await assertFails(setDoc(doc(db, ref), await st({ stones: stones.map((x, k) => { if (k !== 8) return x; const { alive, ...r } = x; return { ...r, pad: 1 }; }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(7, { alive: 'yes' }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ over: { endReason: 'hack', winner: 'black' } })));
+        await assertFails(setDoc(doc(db, ref), await st({ over: 'black' })));
+        await assertFails(setDoc(doc(db, ref), await st({ last: { by: 'black', id: 'b1', n: 1, step: 1, x: 1 } })));
+        await assertFails(setDoc(doc(db, ref), await st({ moving: 'no' })));
+        await assertFails(setDoc(doc(db, ref), await st({ step: 1.5 })));
+        await assertFails(setDoc(doc(db, ref), await st({ shots: -1 })));
+        await assertFails(setDoc(doc(db, ref), await st({ seq: 1.5 })));
+        await assertFails(setDoc(doc(db, ref), await st({ hostSeat: 'black'.repeat(1000) })));
+        await assertFails(setDoc(doc(db, ref), await st({ applied: { black: 0, white: 0, red: 1 } })));
+        await assertFails(setDoc(doc(db, ref), await st({ lastShotAt: { black: 'x', white: 0 } })));
+        const { last, ...noLast } = await st();
+        await assertFails(setDoc(doc(db, ref), noLast));
+        // 약 950KB: 칸 하나에 큰 글자를 넣거나 알 목록을 늘려도 거부
+        const big = 'x'.repeat(950 * 1024);
+        await assertFails(setDoc(doc(db, ref), await st({ over: { endReason: 'out', winner: big } })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: withStone(0, { id: big }) })));
+        await assertFails(setDoc(doc(db, ref), await st({ stones: Array.from({ length: 5000 }, () => stones[0]) })));
+        // 정상 판(움직이는 중·끝난 판)은 돼요
+        await assertSucceeds(setDoc(doc(db, ref), await st({ moving: true, stones: withStone(0, { vx: -12.345678, vy: 2999.5, x: 123.456789 }), last: { by: 'black', id: 'b1', n: 1, step: 42 }, shots: 1, lastShotAt: { black: 1762834000000, white: 0 } })));
+        await assertSucceeds(setDoc(doc(db, ref), await st({ seq: 2, stones: withStone(6, { alive: false, x: -150, vx: 0, vy: 0 }), over: { endReason: 'out', winner: 'black' } })));
+    });
+
+    it('[필수5] gid·seq·epoch·n 최댓값 한 번 쓰기로 판·자리를 잠그지 못해요', async () => {
+        const { serverTimestamp } = await import('firebase/firestore');
+        await seedLiveRoom();
+        const base = `${LIVE_ROOM}/live`;
+        const db = anon().firestore();
+        const MAX = Number.MAX_SAFE_INTEGER;
+        // state: 처음부터 큰 seq·epoch 거부, 같은 판에서 큰 폭으로 올리기 거부
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: MAX })));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ epoch: MAX })));
+        await assertSucceeds(setDoc(doc(db, `${base}/state`), await liveState()));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: MAX })));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: 3 })));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: 2, epoch: MAX })));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ seq: 2, epoch: 2 })));
+        await assertFails(setDoc(doc(db, `${base}/state`), await liveState({ gid: MAX, seq: 1 })));
+        // 정상 호스트는 계속 쓸 수 있어요
+        await assertSucceeds(setDoc(doc(db, `${base}/state`), await liveState({ seq: 2 })));
+        // 자리: gid는 방의 지금 판과 같아야 해서 최댓값으로 잠글 수 없어요
+        const fresh = (extra = {}) => ({ seat: 'white', sid: '4', gid: 1000, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh({ gid: MAX })));
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh({ n: MAX })));
+        await assertSucceeds(setDoc(doc(db, `${base}/white`), fresh()));
+        await assertFails(setDoc(doc(db, `${base}/white`), fresh({ gid: MAX })));
+    });
+
+    it('[필수6] live 문서는 같은 학급에 있는 두는 중인 실시간 방 아래에서만 만들어요', async () => {
+        const { serverTimestamp } = await import('firebase/firestore');
+        const db = anon().firestore();
+        const seatDoc = { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp() };
+        // 방이 없으면 거부
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState()));
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/black`), seatDoc));
+        // 다른 학급(class2)에 같은 id 방이 있어도 class1 아래에는 못 만들어요
+        await seedLiveRoom({}, 'artifacts/class2/public/data/boardGameRooms/alkl_3');
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState()));
+        // 실시간 방이 아니거나, 대기·닫힌 방이면 거부
+        await seedLiveRoom({ gameType: 'alkkagi' });
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState()));
+        await seedLiveRoom({ status: 'waiting' });
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/black`), seatDoc));
+        await seedLiveRoom({ status: 'closed' });
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/black`), seatDoc));
+        // 방의 판 번호(game.gid)와 다른 gid는 거부
+        await seedLiveRoom();
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState({ gid: 999 })));
+        // 두는 중인 실시간 방이면 돼요. 더 깊은 경로(live/state/x/y)는 막혀요
+        await assertSucceeds(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState()));
+        await assertSucceeds(setDoc(doc(db, `${LIVE_ROOM}/live/black`), seatDoc));
+        await assertFails(setDoc(doc(db, `${LIVE_ROOM}/live/state/x/y`), { a: 1 }));
+        // 판이 막 끝난 방(finished)에서도 마지막 스냅샷은 써요
+        await seedLiveRoom({ status: 'finished' });
+        await assertSucceeds(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState({ seq: 2, over: { endReason: 'forfeit', winner: 'white' } })));
     });
 });
 

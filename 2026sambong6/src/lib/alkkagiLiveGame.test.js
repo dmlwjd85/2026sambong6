@@ -102,6 +102,27 @@ describe('실시간 알까기 판 요약', () => {
         assert.equal(L.alkkagiLiveResultTitle(d), '비겼어요');
     });
 
+    it('기권 버튼으로 지면 「기권해서」, 판에서 나가면 「나가서」라고 보여 줘요(전적은 둘 다 패)', () => {
+        const g = L.emptyAlkkagiLiveGame({ now: 1 });
+        const names = { blackName: '가', whiteName: '나' };
+        const resign = L.applyAlkkagiLiveForfeit(g, { color: 'white', now: 2, how: 'resign' }).game;
+        assert.equal(resign.forfeitHow, 'resign');
+        assert.equal(L.alkkagiLiveEndText(resign, names), '나님이 기권해서 가님이 이겼어요.');
+        assert.equal(L.alkkagiLiveRecordResult(resign, 'white'), 'loss');
+        const left = L.applyAlkkagiLiveForfeit(g, { color: 'white', now: 2, how: 'left' }).game;
+        assert.equal(left.forfeitHow, 'left');
+        assert.equal(L.alkkagiLiveEndText(left, names), '나님이 나가서 가님이 이겼어요.');
+        // 이상한 값·예전 문서(칸 없음)는 「나가서」로 보여요. 기권이 아닌 끝에는 칸이 비어요.
+        assert.equal(L.applyAlkkagiLiveForfeit(g, { color: 'white', now: 2, how: 'hack' }).game.forfeitHow, 'left');
+        assert.equal(L.sanitizeAlkkagiLiveGame({ ...resign, forfeitHow: 'x' }).forfeitHow, '');
+        assert.equal(L.finishAlkkagiLiveGame(g, { winner: 'black', endReason: 'out', now: 2, forfeitHow: 'resign' }).game.forfeitHow, '');
+        assert.equal(L.alkkagiLiveGameToDoc(resign).forfeitHow, 'resign');
+    });
+
+    it('1단계에서는 실시간 입구 스위치가 꺼져 있어요(#100에서 켜요)', () => {
+        assert.equal(L.ALKKAGI_LIVE_ENABLED, false);
+    });
+
     it('잘못된 값은 걸러요(알 id·좌표·승자 없는 out)', () => {
         const g = L.sanitizeAlkkagiLiveGame({ stones: [{ id: 'x1', x: 1, y: 1 }], endReason: 'out', winner: '' });
         assert.equal(g.stones.length, 10);

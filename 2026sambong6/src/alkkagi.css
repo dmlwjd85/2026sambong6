@@ -351,6 +351,8 @@
     color: #7a4a22;
 }
 .alk-result-line { margin: 8px 0 0; font-size: 15px; line-height: 1.45; color: var(--alk-ink); }
+/* 결과 제목·문장이 글자 중간에서 끊기지 않게(예: '승 / 리!') 낱말 단위로 줄을 바꿔요. 아주 긴 이름만 어쩔 수 없이 나눠요. */
+.alk-result-title, .alk-result-line { word-break: keep-all; overflow-wrap: anywhere; }
 .alk-result-left { margin: 6px 0 0; font-size: 13px; color: #8f6a45; font-variant-numeric: tabular-nums; }
 .alk-spark { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .alk-spark i {

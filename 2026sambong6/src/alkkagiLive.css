@@ -1,0 +1,95 @@
+/* 실시간 알까기 — 기존 알까기 화면(alkkagi.css)의 원목 클래식 모양을 그대로 쓰고, 다른 점만 더해요. */
+.boardgame-panel:has(> #boardgameAlkLivePlayView:not(.hidden)) {
+    padding: 0;
+    background: #efe2c8;
+    color: #3b2412;
+}
+#classtoolFullscreen:has(#boardgameAlkLivePlayView:not(.hidden)) .classtool-fs-bar {
+    background: #e6d4b2;
+    border-color: #d3bb92;
+}
+#classtoolFullscreen:has(#boardgameAlkLivePlayView:not(.hidden)) #classtoolFsCloseBtn {
+    background: #f8efdc;
+    color: #6e4a2c;
+    border-color: #d3bb92;
+    box-shadow: 0 2px 0 #cfb48a;
+}
+#classtoolFullscreen:has(#boardgameAlkLivePlayView:not(.hidden)) #classtoolFullscreenTitle {
+    color: #6e4a2c;
+}
+.alk-live-title { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.alk-live-badge {
+    font-family: 'JJAEM Body', 'Pretendard', sans-serif;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: 0;
+    padding: 4px 7px;
+    border-radius: 9px;
+    color: #fff8ea;
+    background: linear-gradient(#b4553a, #943f28);
+    box-shadow: 0 1px 0 #6a2a18;
+    transform: translateY(-2px);
+    text-shadow: none;
+}
+.alk-live-net {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 13px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #8f3b26;
+    background: #fbe9dc;
+    border: 1px solid #e2b9a0;
+    white-space: nowrap;
+}
+.alk-live-net[hidden] { display: none; }
+/* 카드 아래쪽 얇은 막대: 그 사람이 다시 쏘기까지 남은 시간(꽉 차면 쏠 수 있어요) */
+.alk-live-view .alk-card { position: relative; overflow: hidden; }
+.alk-live-cool {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 5px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(140, 90, 44, 0.16);
+    overflow: hidden;
+    z-index: 1;
+}
+.alk-live-cool::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    transform: scaleX(var(--k, 1));
+    background: linear-gradient(90deg, #b07a43, #d9a64a);
+    border-radius: inherit;
+}
+.alk-live-cool.is-ready::after { background: linear-gradient(90deg, #6f8f3a, #93b24e); }
+.alk-turn.is-ready { background: linear-gradient(#6f8f3a, #57742a); box-shadow: inset 0 1px 0 rgba(235, 255, 200, 0.35), 0 2px 0 #3d5419, 0 4px 10px rgba(50, 70, 15, 0.2); }
+.alk-turn .alk-live-sec { font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; }
+.alk-live-view .alk-modal { position: absolute; }
+@media (prefers-reduced-motion: reduce) {
+    .alk-live-cool::after { transition: none; }
+}
+.boardgame-room-live {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    vertical-align: 1px;
+    color: #fff8ea;
+    background: #b4553a;
+}
+/* 360px 폰: '나' 배지가 있어도 이름(예: '2. 데모학생2')이 잘리지 않게 간격을 줄이고, 안내 끝 '요.'만 따로 떨어지지 않게 줄 길이를 고르게 맞춰요. */
+.alk-live-view .alk-tip { word-break: keep-all; text-wrap: balance; }
+@media (max-width: 400px) {
+    .alk-live-view .alk-who { gap: 4px; padding-right: 10px; font-size: 14px; letter-spacing: -0.2px; }
+    .alk-live-view .alk-me { padding: 0 3px; font-size: 10px; }
+    .alk-live-view .alk-card.on .alk-rib, .alk-live-view .alk-card.is-win .alk-rib { right: 6px; }
+}

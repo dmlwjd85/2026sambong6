@@ -793,6 +793,21 @@ export function shouldAutoEnterBoardRoom(room, o = {}) {
     return since > 0 && r.updatedAt >= since;
 }
 
+/**
+ * 판 화면을 떠날 때 '나온 방'으로 기억할 방 키를 정해요(순수 함수). 없으면 ''.
+ * 끝난 판 결과를 보다가 「목록」 대신 다른 탭·다른 게임 로비로 가도, 그 끝난 방으로 다시 끌려가지 않게 해요(#88 F1).
+ * - 판 화면(play)에서 다른 화면으로 갈 때만, 내가 앉은 끝난 방만 기억해요.
+ * - 두는 중인 방은 기억하지 않아요(다시 열면 판으로 돌아가요).
+ * @param {object|null} room 떠나는 판 화면의 방
+ * @param {{ selfId?: string, fromView?: string, toView?: string }} [o]
+ */
+export function boardRoomKeyToForgetOnLeave(room, o = {}) {
+    if (!room || o.fromView !== 'play' || o.toView === 'play') return '';
+    const r = sanitizeBoardRoom(room);
+    if (!r.id || r.status !== 'finished' || !isRoomMember(r, o.selfId)) return '';
+    return boardRoomInstanceKey(r);
+}
+
 /** 나온 끝난 방 기억(같은 탭 sessionStorage)에 남기는 최대 개수. */
 export const BOARD_LEFT_ROOMS_MAX = 30;
 

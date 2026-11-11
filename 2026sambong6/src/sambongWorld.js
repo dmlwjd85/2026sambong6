@@ -280,6 +280,7 @@ import {
     rememberBoardRoomCleaned,
     remainingSeats,
     shouldAutoEnterBoardRoom,
+    boardRoomKeyToForgetOnLeave,
     requestJoinBoardRoom,
     roomMemberSeat,
     sanitizeBoardRoom,
@@ -12082,6 +12083,9 @@ ${subjectLine}
         })());
         function rememberLeftBoardRoom(room) {
             const key = boardRoomInstanceKey(room);
+            rememberLeftBoardRoomKey(key);
+        }
+        function rememberLeftBoardRoomKey(key) {
             if (!key) return;
             _alkLeftRooms.add(key);
             try {
@@ -12491,8 +12495,20 @@ ${subjectLine}
             return _boardGameType === 'chess' ? 'chess' : 'gomoku';
         }
 
+        // #88 F1: 끝난 판 결과를 보다가 「목록」 없이 다른 탭·다른 로비로 가도 그 방을 '나온 방'으로 기억해요.
+        // 로비를 열 때마다 내 방 구독이 끝난 방을 다시 보내도, 그 결과 화면으로 끌려가지 않아요.
+        function forgetFinishedBoardRoomOnLeave(nextView) {
+            const room = _boardGameActiveId ? currentBoardGameRoom() : null;
+            rememberLeftBoardRoomKey(boardRoomKeyToForgetOnLeave(room, {
+                selfId: boardGameSelfId(),
+                fromView: _boardGameView,
+                toView: nextView,
+            }));
+        }
+
         function showBoardGameView(view) {
             const nextView = view === 'chess-play' ? 'play' : view;
+            forgetFinishedBoardRoomOnLeave(nextView);
             // 다른 화면으로 가면 알까기 창을 닫아요. 방 목록을 다시 그릴 때는 방 목록 창(방 지우기 확인)을 그대로 둬요.
             const keepDialogs = nextView === 'lobby' ? 'lobby' : (nextView === 'play' && activeBoardPlayKind() === 'alkkagi' ? 'play' : '');
             closeAlkkagiDialogs(keepDialogs);
@@ -13850,6 +13866,7 @@ ${subjectLine}
             if (window.playerState && window.playerState.isGuest) {
                 return window.customAlert('👀 게스트는 이용할 수 없어요.');
             }
+            forgetFinishedBoardRoomOnLeave('lobby');
             _boardGameType = def.id;
             _boardGameActiveId = '';
             showBoardGameView('lobby');
@@ -13874,6 +13891,7 @@ ${subjectLine}
 
         window.backBoardGameHome = function () {
             if (_boardGameView === 'lobby' && _boardGameType === 'alkkagi') void closeMyWaitingAlkkagiRooms();
+            forgetFinishedBoardRoomOnLeave('home');
             clearGomokuAiSession();
             clearChessAiSession();
             clearAlkkagiLocal();

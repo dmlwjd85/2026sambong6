@@ -859,3 +859,58 @@ describe('#88 r4: 알까기 id 선점·끝난 방 정리·자리 채우기', () 
         assert.ok(back.lastActivityAt >= r.lastActivityAt);
     });
 });
+
+describe('#88 F1: 기권 뒤 「목록」 없이 다른 탭·다른 로비로 가도 끝난 방으로 끌려가지 않는다', () => {
+    const m = roomLib;
+    function playingPair(now = 1000) {
+        let room = m.createBoardRoom({ gameType: 'gomoku', hostId: '2', hostName: '가', now, id: 'bg_f1' }).room;
+        room = m.requestJoinBoardRoom(room, { studentId: '4', studentName: '나', now: now + 100 }).room;
+        return m.approveJoinBoardRoom(room, { hostId: '2', studentId: '4', now: now + 200 }).room;
+    }
+
+    it('재현: 두는 걸 본 판이 기권으로 끝나면, 나온 방 기억이 없을 때 자동 입장이 참이다(고치기 전 원인)', () => {
+        const playing = playingPair(100_000);
+        assert.equal(playing.status, 'playing');
+        const seen = new Set([boardRoomInstanceKey(playing)]);
+        const fin = finishBoardRoom(playing, { game: { ...playing.game, winner: 2, endReason: 'forfeit' }, now: 100_500 }).room;
+        assert.equal(fin.status, 'finished');
+        // 같은 판(같은 키)이라 '두는 걸 본 판'으로 남아 있어요.
+        assert.equal(boardRoomInstanceKey(fin), boardRoomInstanceKey(playing));
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: '2', leftKeys: new Set(), seenLiveKeys: seen, sinceMs: 1 }), true);
+    });
+
+    it('판 화면에서 홈·다른 게임 로비로 떠나면 끝난 방 키를 기억하고, 그 뒤 로비를 열어도 들어가지 않는다', () => {
+        const playing = playingPair(100_000);
+        const seen = new Set([boardRoomInstanceKey(playing)]);
+        const fin = finishBoardRoom(playing, { game: { ...playing.game, winner: 2, endReason: 'forfeit' }, now: 100_500 }).room;
+        for (const toView of ['home', 'lobby']) {
+            const key = m.boardRoomKeyToForgetOnLeave(fin, { selfId: '2', fromView: 'play', toView });
+            assert.equal(key, boardRoomInstanceKey(fin));
+            const left = new Set(m.parseBoardLeftRooms(m.rememberBoardLeftRoom([], key)));
+            // 체스 로비든 오목 로비든, 내 방 구독이 끝난 방을 다시 보내도 들어가지 않아요.
+            assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: '2', leftKeys: left, seenLiveKeys: seen, sinceMs: 1 }), false);
+            // 상대(4)도 같은 방식으로 떠나면 들어가지 않아요.
+            assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '4', fromView: 'play', toView }), key);
+        }
+    });
+
+    it('두는 중인 방·남의 방·판 화면이 아닌 곳에서는 기억하지 않는다(다시 열면 두던 판으로 돌아간다)', () => {
+        const playing = playingPair(100_000);
+        assert.equal(m.boardRoomKeyToForgetOnLeave(playing, { selfId: '2', fromView: 'play', toView: 'lobby' }), '');
+        assert.equal(m.shouldAutoEnterBoardRoom(playing, { selfId: '2', leftKeys: new Set(), sinceMs: 1 }), true);
+        const fin = finishBoardRoom(playing, { game: { ...playing.game, winner: 1, endReason: 'five' }, now: 100_500 }).room;
+        assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '9', fromView: 'play', toView: 'lobby' }), '');
+        assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '2', fromView: 'lobby', toView: 'lobby' }), '');
+        assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '2', fromView: 'home', toView: 'lobby' }), '');
+        assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '2', fromView: 'play', toView: 'play' }), '');
+        assert.equal(m.boardRoomKeyToForgetOnLeave(null, { selfId: '2', fromView: 'play', toView: 'lobby' }), '');
+    });
+
+    it('떠난 끝난 판에서 「한 판 더」로 새 판이 시작되면 다시 저절로 들어간다', () => {
+        const playing = playingPair(100_000);
+        const fin = finishBoardRoom(playing, { game: { ...playing.game, winner: 1, endReason: 'five' }, now: 100_500 }).room;
+        const key = m.boardRoomKeyToForgetOnLeave(fin, { selfId: '4', fromView: 'play', toView: 'home' });
+        const next = m.continueBoardRoom(fin, { actorId: '2', now: 200_000 }).room;
+        assert.equal(m.shouldAutoEnterBoardRoom(next, { selfId: '4', leftKeys: new Set([key]), sinceMs: 1 }), true);
+    });
+});

@@ -1171,7 +1171,10 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
     async function seedLiveRoom(extra = {}, path = LIVE_ROOM) {
         await testEnv.withSecurityRulesDisabled(async (ctx) => {
             await setDoc(doc(ctx.firestore(), path), {
-                gameType: 'alkkagiLive', hostId: '3', status: 'playing', members: [], game: { mode: 'live', gid: 1000 }, ...extra,
+                // #88 방 모양: 방장 uid(hostUid)와 참가자 uid 목록(memberUids). 방장은 anon-student, 상대는 friend-uid예요.
+                gameType: 'alkkagiLive', hostId: '3', hostUid: 'anon-student', status: 'playing',
+                members: [{ id: '3', uid: 'anon-student', seat: 'black' }, { id: '5', uid: 'friend-uid', seat: 'white' }],
+                memberUids: ['anon-student', 'friend-uid'], game: { mode: 'live', gid: 1000 }, ...extra,
             });
         });
     }
@@ -1421,6 +1424,29 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         // 판이 막 끝난 방(finished)에서도 마지막 스냅샷은 써요
         await seedLiveRoom({ status: 'finished' });
         await assertSucceeds(setDoc(doc(db, `${LIVE_ROOM}/live/state`), await liveState({ seq: 2, over: { endReason: 'forfeit', winner: 'white' } })));
+    });
+
+    it('[#88 QA] live 쓰기는 그 방의 방장·참가자 uid만, 비참가자는 새 판 자리·스냅샷을 차지하지 못해요', async () => {
+        const { serverTimestamp } = await import('firebase/firestore');
+        const friend = testEnv.authenticatedContext('friend-uid', { provider_id: 'anonymous', firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const outsider = testEnv.authenticatedContext('outsider-uid', { provider_id: 'anonymous', firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const seat = (s, extra = {}) => ({ seat: s, sid: s === 'black' ? '3' : '5', gid: 1000, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
+        await seedLiveRoom();
+        // 비참가자: 자리·스냅샷 만들기 거부
+        await assertFails(setDoc(doc(outsider, `${LIVE_ROOM}/live/white`), seat('white')));
+        await assertFails(setDoc(doc(outsider, `${LIVE_ROOM}/live/state`), await liveState()));
+        // 참가자(상대)와 방장은 돼요
+        await assertSucceeds(setDoc(doc(friend, `${LIVE_ROOM}/live/white`), seat('white')));
+        await assertSucceeds(setDoc(doc(anon().firestore(), `${LIVE_ROOM}/live/state`), await liveState()));
+        // 판이 바뀐 틈(game.gid 2000)에도 비참가자는 새 판 자리를 덮어쓰지 못해요(mix R5x-5)
+        await seedLiveRoom({ game: { mode: 'live', gid: 2000 } });
+        await assertFails(setDoc(doc(outsider, `${LIVE_ROOM}/live/white`), seat('white', { gid: 2000, sid: '9' })));
+        await assertFails(setDoc(doc(outsider, `${LIVE_ROOM}/live/state`), await liveState({ gid: 2000 })));
+        await assertSucceeds(setDoc(doc(friend, `${LIVE_ROOM}/live/white`), seat('white', { gid: 2000 })));
+        // hostUid·memberUids가 없는 옛 모양 방에는 아무도 live를 쓰지 못해요
+        await seedLiveRoom({ hostUid: null, memberUids: null, game: { mode: 'live', gid: 3000 } });
+        await assertFails(setDoc(doc(anon().firestore(), `${LIVE_ROOM}/live/black`), seat('black', { gid: 3000 })));
+        await assertFails(setDoc(doc(friend, `${LIVE_ROOM}/live/white`), seat('white', { gid: 3000 })));
     });
 });
 

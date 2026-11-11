@@ -914,3 +914,50 @@ describe('#88 F1: 기권 뒤 「목록」 없이 다른 탭·다른 로비로 �
         assert.equal(m.shouldAutoEnterBoardRoom(next, { selfId: '4', leftKeys: new Set([key]), sinceMs: 1 }), true);
     });
 });
+
+describe('#88 M1: 실시간 알까기 스위치에 따른 로비 질의·상태·자동 입장', () => {
+    const m = roomLib;
+    function livePair(now = 100_000) {
+        let room = m.createBoardRoom({ gameType: 'alkkagiLive', hostId: '2', hostName: '가', now }).room;
+        room = m.requestJoinBoardRoom(room, { studentId: '4', studentName: '나', now: now + 100 }).room;
+        return m.approveJoinBoardRoom(room, { hostId: '2', studentId: '4', now: now + 200 }).room;
+    }
+
+    it('스위치가 꺼져 있으면 지금과 같이 그 게임 하나만 받는다(== 질의)', () => {
+        for (const t of ['alkkagi', 'gomoku', 'chess']) {
+            assert.deepEqual(m.boardLobbyGameTypes(t, { liveEnabled: false }), [t]);
+            assert.deepEqual(m.boardLobbyGameTypes(t), [t]);
+        }
+        // 켜짐을 정확히 true로만 봐요(문자열 등은 꺼짐).
+        assert.deepEqual(m.boardLobbyGameTypes('alkkagi', { liveEnabled: 'true' }), ['alkkagi']);
+    });
+
+    it('스위치가 켜지면 알까기 로비만 실시간 방도 함께 받는다(in 질의), 오목·체스는 그대로', () => {
+        assert.deepEqual(m.boardLobbyGameTypes('alkkagi', { liveEnabled: true }), ['alkkagi', 'alkkagiLive']);
+        assert.deepEqual(m.boardLobbyGameTypes('gomoku', { liveEnabled: true }), ['gomoku']);
+        assert.deepEqual(m.boardLobbyGameTypes('chess', { liveEnabled: true }), ['chess']);
+    });
+
+    it('로비 상태 목록: 실시간 방도 알까기처럼 기다림·두는 중만, in×in 조합은 Firestore 상한 30 안', () => {
+        assert.deepEqual(m.boardLobbyQueryStatuses('alkkagiLive'), ['waiting', 'playing']);
+        for (const t of ['alkkagi', 'gomoku', 'chess']) {
+            for (const liveEnabled of [false, true]) {
+                const n = m.boardLobbyGameTypes(t, { liveEnabled }).length * m.boardLobbyQueryStatuses(t).length;
+                assert.ok(n <= 30, `${t} ${liveEnabled} ${n}`);
+            }
+        }
+    });
+
+    it('자동 입장: 두는 중인 실시간 방에는 들어가고, 끝난 실시간 방에는 들어가지 않는다', () => {
+        const playing = livePair();
+        assert.equal(playing.gameType, 'alkkagiLive');
+        assert.equal(playing.status, 'playing');
+        const key = boardRoomInstanceKey(playing);
+        assert.equal(m.shouldAutoEnterBoardRoom(playing, { selfId: '4', sinceMs: 1 }), true);
+        const fin = finishBoardRoom(playing, { game: playing.game, now: 100_500 }).room;
+        assert.equal(fin.status, 'finished');
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: '4', seenLiveKeys: new Set([key]), sinceMs: 1 }), false);
+        // F1 기억도 실시간 방에 똑같이 맞아요.
+        assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '2', fromView: 'play', toView: 'lobby' }), key);
+    });
+});

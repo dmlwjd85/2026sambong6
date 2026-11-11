@@ -1036,6 +1036,19 @@ export function boardRoomParticipantIds(room) {
     return ids;
 }
 
+/**
+ * 로비 질의에 쓸 게임 종류 목록(순수 함수). 하나면 `==`, 둘 이상이면 `in`으로 받아요.
+ * 실시간 알까기 스위치(ALKKAGI_LIVE_ENABLED)가 켜졌을 때만 알까기 로비에 실시간 방(alkkagiLive)도 함께 받아요(#88 M1).
+ * 꺼져 있으면 예전과 똑같이 그 게임 하나만 받아요.
+ * @param {string} gameType 로비 게임 종류
+ * @param {{ liveEnabled?: boolean }} [o]
+ */
+export function boardLobbyGameTypes(gameType, o = {}) {
+    const t = String(gameType || '');
+    if (t === 'alkkagi' && o.liveEnabled === true) return ['alkkagi', 'alkkagiLive'];
+    return [t];
+}
+
 /** 로비 목록 질의 한 번에 받는 방 수 상한. 방 id가 새 방일수록 앞이라(createBoardRoomId) 넘치면 옛 방부터 빠져요. */
 export const BOARD_LOBBY_QUERY_LIMIT = 30;
 /** 내 방(참가 중·신청 중) 중 `bg_`로 시작하는 방(오목·체스) 질의 상한. 넘치면 옛 방부터 빠져요. */

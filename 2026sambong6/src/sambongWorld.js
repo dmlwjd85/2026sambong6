@@ -240,6 +240,7 @@ import {
     applyBoardRoomGame,
     approveJoinBoardRoom,
     boardLobbyQueryStatuses,
+    boardLobbyGameTypes,
     boardRoomErrorText,
     boardRoomInstanceKey,
     boardRoomScopeKey,
@@ -12295,7 +12296,8 @@ ${subjectLine}
                 if (scope.lobbyGameType) {
                     const t = scope.lobbyGameType;
                     // 실시간 알까기(#99)를 켜면 알까기 목록에 실시간 방(alkkagiLive)도 함께 받아요. 꺼져 있으면 예전 질의 그대로예요.
-                    const typeIs = t === 'alkkagi' && ALKKAGI_LIVE_ENABLED ? where('gameType', 'in', ['alkkagi', 'alkkagiLive']) : where('gameType', '==', t);
+                    const types = boardLobbyGameTypes(t, { liveEnabled: ALKKAGI_LIVE_ENABLED });
+                    const typeIs = types.length > 1 ? where('gameType', 'in', types) : where('gameType', '==', types[0]);
                     listenBoardRoomQuery('lobby',
                         query(roomsCol, typeIs, where('status', 'in', boardLobbyQueryStatuses(t)), limit(BOARD_LOBBY_QUERY_LIMIT)),
                         query(roomsCol, typeIs, limit(BOARD_LOBBY_QUERY_LIMIT)));

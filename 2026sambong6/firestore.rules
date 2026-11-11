@@ -74,6 +74,150 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    // 실시간 알까기 하위 문서(live/state·live/black·live/white)와 그 아래 더 깊은 경로. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
+    function isAlkkagiLiveDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/boardGameRooms/[^/]+/live/.+$');
+    }
+
+    // 보드게임 방 문서. 공개 와일드카드와 OR 되면 아래 방 규칙이 무시되므로 빼 둡니다(방 규칙이 그대로 적용돼요).
+    function isBoardGameRoomDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/boardGameRooms/[^/]+$');
+    }
+
+    // 예전 화면(v1.47)은 모르는 gameType을 오목으로 바꿔 덮어씁니다. 실시간 방은 종류를 바꾸지 못하고,
+    // 다른 방이 실시간 방으로 바뀌지도 못합니다. 실시간 방 id는 alkl_ 로 시작합니다.
+    function boardRoomLiveTypeKept() {
+      return (resource.data.get('gameType', '') == 'alkkagiLive')
+        == (request.resource.data.get('gameType', '') == 'alkkagiLive');
+    }
+
+    function boardRoomLiveIdOk(roomId) {
+      return roomId.matches('^alkl_.*') == (request.resource.data.gameType == 'alkkagiLive');
+    }
+
+    // live 문서는 같은 학급(appId) 아래 실제로 있는 실시간 방이 두는 중(또는 막 끝난)일 때만 씁니다.
+    function alkLiveRoom(appId, roomId) {
+      return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/boardGameRooms/$(roomId)).data;
+    }
+
+    function alkLiveRoomOpen(room) {
+      return room.get('gameType', '') == 'alkkagiLive'
+        && room.get('status', '') in ['playing', 'finished']
+        && room.get('game', {}) is map
+        && room.game.get('gid', null) is int;
+    }
+
+    // 알 하나: id·색·좌표·속도·살아 있음 7칸만 받습니다. 칸 수가 7이고 7칸을 모두 읽으므로 다른 칸은 못 들어가요.
+    // 규칙 식 1000개 한도 안에 넉넉히 들어가도록 묶어서 봅니다.
+    // - id+색 글자는 'b1black'·'w5white' 같은 모양만(흑 알은 black, 백 알은 white, 긴 글자 불가)
+    // - x·y·vx·vy는 숫자(더하기가 숫자여야 함), alive는 참거짓(조건식이 오류 없이 돌아야 함)
+    // 숫자 범위는 앱(sanitizeLiveStones)이 맞추고, 규칙은 문서가 부풀 수 있는 형식(긴 글자·목록·묶음)을 막습니다.
+    function alkLiveStoneOk(s) {
+      return s.size() == 7
+        && (s.id + s.color).matches('^(b[1-5]black|w[1-5]white)$')
+        && (s.x + s.y + s.vx + s.vy + (s.alive ? 0 : 0)) is number;
+    }
+
+    function alkLiveStonesOk(a) {
+      return a is list && a.size() == 10
+        && alkLiveStoneOk(a[0]) && alkLiveStoneOk(a[1]) && alkLiveStoneOk(a[2]) && alkLiveStoneOk(a[3]) && alkLiveStoneOk(a[4])
+        && alkLiveStoneOk(a[5]) && alkLiveStoneOk(a[6]) && alkLiveStoneOk(a[7]) && alkLiveStoneOk(a[8]) && alkLiveStoneOk(a[9]);
+    }
+
+    function alkLiveLastOk(v) {
+      return v == null || (
+        v.size() == 4
+        && v.by in ['black', 'white']
+        && v.id.matches('^[bw][1-5]$')
+        && (v.n + v.step) is int
+      );
+    }
+
+    function alkLiveOverOk(v) {
+      return v == null || (
+        v.size() == 2
+        && v.endReason in ['out', 'forfeit', 'draw', 'disconnect']
+        && v.winner in ['', 'black', 'white']
+      );
+    }
+
+    // 샷 의도: {v:1, id:'b1'~'b5' 또는 'w1'~'w5'(내 자리 색), a: 각도 정수, p: 힘 정수}
+    function alkLiveShotOk(seat, shot) {
+      return shot is map
+        && shot.keys().hasOnly(['v', 'id', 'a', 'p'])
+        && shot.keys().hasAll(['v', 'id', 'a', 'p'])
+        && shot.v == 1
+        && shot.id is string
+        && shot.id.matches(seat == 'black' ? '^b[1-5]$' : '^w[1-5]$')
+        && shot.a is int && shot.a >= -31416 && shot.a <= 31416
+        && shot.p is int && shot.p >= 1 && shot.p <= 10000;
+    }
+
+    function alkLiveSeatShapeOk(seat) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['seat', 'sid', 'gid', 'n', 'shot', 'shotAt', 'seenAt'])
+        && d.keys().hasAll(['seat', 'sid', 'gid', 'n', 'shot', 'shotAt', 'seenAt'])
+        && d.seat == seat
+        && d.sid is string && d.sid.size() > 0 && d.sid.size() <= 20
+        && d.gid is int && d.gid >= 0
+        && d.n is int && d.n >= 0 && d.n <= 1000000
+        && (d.shot == null || alkLiveShotOk(seat, d.shot))
+        && d.shotAt is timestamp
+        && d.seenAt == request.time;
+    }
+
+    // 새 판(gid가 커짐)이나 처음 만들 때: 번호 0, 샷 없음.
+    function alkLiveSeatFresh() {
+      let d = request.resource.data;
+      return d.n == 0 && d.shot == null && d.shotAt == request.time;
+    }
+
+    // 같은 판: 접속 표시만(번호·샷 그대로) 또는 번호를 하나 올려 새 샷(서버 시각으로 4.5초 지나야 함).
+    function alkLiveSeatNext() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return d.gid == o.gid && d.sid == o.sid && (
+        (d.n == o.n && d.shot == o.shot && d.shotAt == o.shotAt)
+        || (d.n == o.n + 1 && d.shot != null && d.shotAt == request.time
+            && request.time > o.shotAt + duration.value(4500, 'ms'))
+      );
+    }
+
+    // 판 스냅샷: 14칸 모두의 형식을 봅니다(알은 꼭 10개). 그래서 문서가 크게 부풀지 못합니다(약 2KB 안).
+    // 14칸이고 아래에서 14칸을 모두 읽으므로 다른 칸은 들어갈 수 없습니다.
+    function alkLiveStateShapeOk() {
+      let d = request.resource.data;
+      return d.size() == 14
+        && (d.gid + d.seq + d.epoch + d.step + d.shots) is int
+        && d.seq >= 0 && d.epoch >= 0 && d.step >= 0 && d.shots >= 0
+        && d.hostSeat in ['black', 'white']
+        && d.moving is bool
+        && alkLiveStonesOk(d.stones)
+        && d.applied.size() == 2 && d.rejected.size() == 2 && d.lastShotAt.size() == 2
+        && (d.applied.black + d.applied.white + d.rejected.black + d.rejected.white + d.lastShotAt.black + d.lastShotAt.white) is int
+        && alkLiveLastOk(d.last)
+        && alkLiveOverOk(d.over)
+        && d.at == request.time;
+    }
+
+    // 새 판(방의 gid가 바뀜)이면 seq·epoch를 처음부터(seq 0~1, epoch 0~1) 시작합니다.
+    function alkLiveStateFresh() {
+      let d = request.resource.data;
+      return d.seq <= 1 && d.epoch <= 1;
+    }
+
+    // 같은 판 스냅샷은 앞으로 한 칸씩만 갑니다. 같은 호스트는 seq+1만,
+    // 호스트를 넘겨받을 때(승계)는 epoch+1이고 seq는 지금 값+1을 넘지 못합니다.
+    // 그래서 큰 값을 한 번 써서 판을 잠글 수 없습니다.
+    function alkLiveStateNext() {
+      let d = request.resource.data;
+      let o = resource.data;
+      return d.gid == o.gid && (
+        (d.epoch == o.epoch && d.seq == o.seq + 1 && d.hostSeat == o.hostSeat)
+        || (d.epoch == o.epoch + 1 && d.seq <= o.seq + 1)
+      );
+    }
+
     function isEstateStateDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/estate/state$');
     }
@@ -425,9 +569,44 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.gameType is string
         && request.resource.data.hostId is string
-        && request.resource.data.status is string;
-      allow update: if signedIn();
+        && request.resource.data.status is string
+        && boardRoomLiveIdOk(roomId);
+      // 실시간 방은 종류(gameType)를 바꾸지 못합니다(예전 화면이 오목 방으로 덮어쓰는 것을 막아요).
+      allow update: if signedIn() && boardRoomLiveTypeKept();
       allow delete: if signedIn();
+    }
+
+    // 실시간 알까기. 판 계산은 방장(호스트) 기기가 하고 live/state 에 스냅샷을 씁니다.
+    // 각자 live/{자리} 에 샷 의도와 접속 표시를 씁니다. 같은 자리 샷은 서버 시각으로 4.5초 간격이 있어야 합니다.
+    // 쓰기는 같은 학급 아래 실제로 있는 실시간 방이 두는 중일 때만, gid는 그 방의 지금 판(game.gid)과 같아야 합니다.
+    // 지우기는 방 문서가 없을 때(방을 지운 뒤나 같은 묶음에서 함께)와 선생님만 됩니다. 그래서 지웠다 다시 만드는 되감기가 막힙니다.
+    // 익명 Auth라 '그 자리 학생'인지는 규칙으로 확인하지 못합니다(오목·체스 방과 같은 한계, 서버 로그인 확인은 후속).
+    match /artifacts/{appId}/public/data/boardGameRooms/{roomId}/live/{docId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && alkLiveRoomOpen(alkLiveRoom(appId, roomId))
+        && request.resource.data.gid == alkLiveRoom(appId, roomId).game.gid
+        && (
+          (docId == 'state' && alkLiveStateShapeOk() && alkLiveStateFresh())
+          || (docId in ['black', 'white'] && alkLiveSeatShapeOk(docId) && alkLiveSeatFresh())
+        );
+      allow update: if signedIn()
+        && alkLiveRoomOpen(alkLiveRoom(appId, roomId))
+        && request.resource.data.gid == alkLiveRoom(appId, roomId).game.gid
+        && (
+          (docId == 'state' && alkLiveStateShapeOk() && (
+            (request.resource.data.gid != resource.data.gid && alkLiveStateFresh())
+            || alkLiveStateNext()
+          ))
+          || (docId in ['black', 'white'] && alkLiveSeatShapeOk(docId) && (
+            (request.resource.data.gid != resource.data.gid && alkLiveSeatFresh())
+            || alkLiveSeatNext()
+          ))
+        );
+      allow delete: if signedIn() && (
+        !existsAfter(/databases/$(database)/documents/artifacts/$(appId)/public/data/boardGameRooms/$(roomId))
+        || isAdmin()
+      );
     }
 
     // 부동산 자리표. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
@@ -568,6 +747,8 @@ service cloud.firestore {
         && !isApprovedClassIdDoc()
         && !isOxQuizBankDoc()
         && !isEstateStateDoc()
+        && !isAlkkagiLiveDoc()
+        && !isBoardGameRoomDoc()
         && studentClassXpSlotAllowed();
     }
 

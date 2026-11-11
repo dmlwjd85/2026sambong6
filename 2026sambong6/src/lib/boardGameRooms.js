@@ -14,6 +14,7 @@
  */
 
 import { alkkagiGameToDoc, emptyAlkkagiGame, sanitizeAlkkagiGame } from './alkkagiGame.js';
+import { alkkagiLiveGameToDoc, emptyAlkkagiLiveGame, sanitizeAlkkagiLiveGame } from './alkkagiLiveGame.js';
 import { emptyChessGame, chessGameToDoc, sanitizeChessGame } from './chessGame.js';
 import { emptyGomokuGame, gomokuGameToDoc, sanitizeGomokuGame } from './gomokuGame.js';
 
@@ -45,6 +46,14 @@ export const BOARD_GAME_CATALOG = Object.freeze({
     alkkagi: Object.freeze({
         id: 'alkkagi',
         label: '알까기',
+        minPlayers: 2,
+        maxPlayers: 2,
+        timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
+    }),
+    // 실시간 알까기: 차례 없이 둘이 동시에 쏘고, 각자 5초에 한 번. 턴 타이머는 쓰지 않아요.
+    alkkagiLive: Object.freeze({
+        id: 'alkkagiLive',
+        label: '실시간 알까기',
         minPlayers: 2,
         maxPlayers: 2,
         timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
@@ -81,8 +90,10 @@ export function createBoardRoomId() {
 export function hostBoardRoomId(gameType, hostId) {
     const def = getBoardGameDef(gameType);
     const hid = String(hostId || '').trim().slice(0, 20).replace(/[^A-Za-z0-9_-]/g, '_');
-    if (!def || !hid || def.id !== 'alkkagi') return '';
-    return `alk_${hid}`;
+    if (!def || !hid) return '';
+    if (def.id === 'alkkagi') return `alk_${hid}`;
+    if (def.id === 'alkkagiLive') return `alkl_${hid}`;
+    return '';
 }
 
 function cleanId(raw) {
@@ -156,6 +167,7 @@ function emptyGameForType(gameType, now) {
     if (gameType === 'gomoku') return emptyGomokuGame({ now });
     if (gameType === 'chess') return emptyChessGame({ now });
     if (gameType === 'alkkagi') return emptyAlkkagiGame({ now });
+    if (gameType === 'alkkagiLive') return emptyAlkkagiLiveGame({ now });
     return null;
 }
 
@@ -163,6 +175,7 @@ function sanitizeGameForType(gameType, raw, now) {
     if (gameType === 'gomoku') return sanitizeGomokuGame(raw, { now });
     if (gameType === 'chess') return sanitizeChessGame(raw, { now });
     if (gameType === 'alkkagi') return sanitizeAlkkagiGame(raw, { now });
+    if (gameType === 'alkkagiLive') return sanitizeAlkkagiLiveGame(raw, { now });
     return raw && typeof raw === 'object' ? raw : null;
 }
 
@@ -242,7 +255,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
         id: hid,
         name: room.hostName,
         role: 'host',
-        seat: def.id === 'gomoku' || def.id === 'alkkagi' ? 'black' : (def.id === 'chess' ? 'white' : ''),
+        seat: def.id === 'gomoku' || def.id === 'alkkagi' || def.id === 'alkkagiLive' ? 'black' : (def.id === 'chess' ? 'white' : ''),
     }];
     return { ok: true, error: '', room };
 }
@@ -298,7 +311,7 @@ export function listLobbyBoardRooms(rooms, { gameType, now } = {}) {
     const type = String(gameType || '');
     return listVisibleBoardRooms(rooms, now)
         .filter((room) => !type || room.gameType === type)
-        .filter((room) => room.gameType !== 'alkkagi' || room.status !== 'finished');
+        .filter((room) => (room.gameType !== 'alkkagi' && room.gameType !== 'alkkagiLive') || room.status !== 'finished');
 }
 
 /**
@@ -371,7 +384,7 @@ export function requestJoinBoardRoom(room, { studentId, studentName, now } = {})
 }
 
 function nextSeatForGame(room) {
-    if (room.gameType !== 'gomoku' && room.gameType !== 'chess' && room.gameType !== 'alkkagi') return '';
+    if (room.gameType !== 'gomoku' && room.gameType !== 'chess' && room.gameType !== 'alkkagi' && room.gameType !== 'alkkagiLive') return '';
     const used = new Set(room.members.map((m) => m.seat).filter(Boolean));
     if (room.gameType === 'chess') {
         if (!used.has('black')) return 'black';
@@ -589,6 +602,6 @@ export function boardRoomToDoc(room) {
     const r = sanitizeBoardRoom(room);
     const game = r.gameType === 'gomoku'
         ? gomokuGameToDoc(r.game)
-        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : r.game));
+        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : (r.gameType === 'alkkagiLive' ? alkkagiLiveGameToDoc(r.game) : r.game)));
     return { ...r, game };
 }

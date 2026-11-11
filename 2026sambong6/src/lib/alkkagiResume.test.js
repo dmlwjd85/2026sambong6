@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ALKKAGI_RESUME_MAX_MS, buildAlkkagiResume, parseAlkkagiResume } from './alkkagiResume.js';
+import { ALKKAGI_RESUME_MAX_MS, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './alkkagiResume.js';
 import { applyAlkkagiForfeit, applyAlkkagiShotTurn, emptyAlkkagiGame } from './alkkagiGame.js';
 import { alkkagiAiEndText, alkkagiAiResultTitle } from './alkkagiAi.js';
 import { serializeAlkkagiShot } from './alkkagiPhysics.js';
@@ -49,4 +49,30 @@ test('AI 대전 결과 문구가 자연스러워요', () => {
     assert.equal(alkkagiAiResultTitle(humanWin, { level: 'hard' }), '내가 이겼어요!');
     assert.equal(alkkagiAiResultTitle(aiWin, { level: 'hard' }), 'AI 고수 승리!');
     assert.equal(alkkagiAiResultTitle({ ...base, endReason: 'draw' }, {}), '비겼어요');
+});
+
+test('#100 새로고침 복귀: 실시간 방은 스위치를 켰을 때 두는 중인 판에만 바로 돌아와요', () => {
+    const live = { id: 'alkl_3', gameType: 'alkkagiLive', status: 'playing' };
+    const turn = { id: 'alk_3', gameType: 'alkkagi', status: 'playing' };
+    // 켬: 내 자리가 있고 스스로 나오지 않은 두는 중 판이면 돌아가요
+    assert.equal(canResumeAlkkagiRoom(live, { isMember: true, liveEnabled: true }), true);
+    // 끔(지금 배포): 실시간 방으로는 돌아가지 않아요
+    assert.equal(canResumeAlkkagiRoom(live, { isMember: true, liveEnabled: false }), false);
+    assert.equal(canResumeAlkkagiRoom(live, { isMember: true }), false);
+    // 끝난 방·닫힌 방·대기 방으로는 끌려가지 않아요(#88 F1)
+    for (const status of ['finished', 'closed', 'waiting']) {
+        assert.equal(canResumeAlkkagiRoom({ ...live, status }, { isMember: true, liveEnabled: true }), false, status);
+        assert.equal(canResumeAlkkagiRoom({ ...turn, status }, { isMember: true }), false, status);
+    }
+    // 스스로 나온 방, 내 자리가 없는 방은 아니에요
+    assert.equal(canResumeAlkkagiRoom(live, { isMember: true, left: true, liveEnabled: true }), false);
+    assert.equal(canResumeAlkkagiRoom(live, { isMember: false, liveEnabled: true }), false);
+    // 턴제 알까기 방은 예전처럼(스위치와 상관없이) 돌아가요
+    assert.equal(canResumeAlkkagiRoom(turn, { isMember: true }), true);
+    assert.equal(canResumeAlkkagiRoom(turn, { isMember: true, liveEnabled: true }), true);
+    // 오목·체스·빈 값은 아니에요
+    assert.equal(canResumeAlkkagiRoom({ gameType: 'gomoku', status: 'playing' }, { isMember: true, liveEnabled: true }), false);
+    assert.equal(canResumeAlkkagiRoom(null, { isMember: true, liveEnabled: true }), false);
+    // 실시간 방 id도 저장·읽기가 그대로 돼요
+    assert.deepEqual(parseAlkkagiResume(buildAlkkagiResume({ roomId: 'alkl_3' }, NOW), NOW + 1000), { kind: 'room', id: 'alkl_3' });
 });

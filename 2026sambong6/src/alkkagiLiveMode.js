@@ -8,6 +8,7 @@ import {
     ALKKAGI_LIVE_COOLDOWN_MS,
     ALKKAGI_LIVE_ENABLED,
     alkkagiLiveEndText,
+    alkkagiLiveGuide,
     alkkagiLiveOther,
     alkkagiLiveResultTitle,
     alkkagiLiveSeat,
@@ -216,9 +217,11 @@ export function createAlkkagiLiveMode(deps) {
         }
         const left = s.cooldownLeft(seat, t);
         const can = s.canShoot(t);
-        let line = '지금 쏠 수 있어요';
-        let cls = 'is-ready';
-        if (!s.isReady()) { line = '판에 연결하는 중이에요'; cls = 'is-wait'; }
+        const guide = alkkagiLiveGuide({ enabled: ALKKAGI_LIVE_ENABLED, over: false, seat, connected: true, ready: s.isReady(), isHost: s.isHost() });
+        const playable = guide.phase === 'play';
+        let line = guide.line;
+        let cls = playable ? 'is-ready' : 'is-wait';
+        if (!playable) { /* 스위치 꺼짐·연결 중·구경: 안내 그대로 */ }
         else if (s.aliveCount(seat) === 0) { line = '남은 알이 없어요'; cls = 'is-wait'; }
         else if (can.error === 'sending') { line = '샷을 보내는 중이에요'; cls = 'is-wait'; }
         else if (left > 0) { line = `다시 쏘기까지 ${liveCooldownLabel(left)}`; cls = 'is-wait'; }
@@ -246,11 +249,10 @@ export function createAlkkagiLiveMode(deps) {
         });
         const tip = $('alkLiveTip');
         if (tip) {
-            const who = s.isHost() ? '판 계산은 내 기기가 맡고 있어요.' : '판 계산은 방장 기기가 해요.';
-            const html = `알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 5초 쉬어요.<span class="alk-guide">${who}</span>`;
+            const html = `${esc(guide.tip)}${guide.who ? `<span class="alk-guide">${esc(guide.who)}</span>` : ''}`;
             if (tip.innerHTML !== html) tip.innerHTML = html;
         }
-        if (board) board.setView({ canShoot: can.ok, cooldown: left / ALKKAGI_LIVE_COOLDOWN_MS });
+        if (board) board.setView({ canShoot: playable && can.ok, cooldown: left / ALKKAGI_LIVE_COOLDOWN_MS });
     }
 
     function renderDots(el, alive, cls) {
@@ -293,13 +295,20 @@ export function createAlkkagiLiveMode(deps) {
         const pillText = $('alkLivePillText');
         const pillDot = $('alkLivePillDot');
         const tip = $('alkLiveTip');
-        let line = '판을 준비하고 있어요';
-        // 실시간 입구가 꺼져 있으면(1단계) '둘이 동시에 쏘고' 안내를 보이지 않아요.
-        let tipHtml = ALKKAGI_LIVE_ENABLED ? '차례가 없어요. 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.' : '실시간 대전은 준비하고 있어요.';
-        if (over) {
-            line = '판이 끝났어요';
-            tipHtml = `내 알까기 전적 ${esc(deps.myRecordText())}`;
-        }
+        // 상단 알약과 아래 안내가 같은 상태를 말하게 한곳(alkkagiLiveGuide)에서 골라요.
+        // 연결이 붙으면 liveChrome()이 같은 함수로 '지금 쏠 수 있어요'·쿨다운 안내로 바꿔요.
+        const s = live && live.session;
+        const guide = alkkagiLiveGuide({
+            enabled: ALKKAGI_LIVE_ENABLED,
+            over,
+            seat,
+            connected: !!s,
+            ready: !!(s && s.isReady()),
+            isHost: !!(s && s.isHost()),
+            recordText: over ? deps.myRecordText() : '',
+        });
+        const line = guide.line;
+        const tipHtml = `${esc(guide.tip)}${guide.who ? `<span class="alk-guide">${esc(guide.who)}</span>` : ''}`;
         if (pill) {
             pill.classList.toggle('is-end', over);
             pill.classList.toggle('is-ready', false);

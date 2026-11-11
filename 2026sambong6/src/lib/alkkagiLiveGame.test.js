@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as L from './alkkagiLiveGame.js';
 import * as R from './boardGameRooms.js';
+import { alkkagiFinalShot } from './alkkagiAim.js';
+import { quantizeAlkkagiShot } from './alkkagiPhysics.js';
 
 describe('실시간 알까기 방', () => {
     it('카탈로그·방장별 고정 id(alkl_)·흑 자리로 만들어요', () => {
@@ -145,8 +147,13 @@ describe('실시간 알까기 쿨다운·샷 의도', () => {
     });
 
     it('샷 형식: 내 색 알만, 정수 각도·힘', () => {
-        assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 0, p: 100 }, 'black').ok, true);
-        assert.equal(L.checkLiveShotShape({ v: 1, id: 'w1', a: 0, p: 100 }, 'black').error, 'not_your_stone');
+        assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 0, p: 500 }, 'black').ok, true);
+        assert.equal(L.checkLiveShotShape({ v: 1, id: 'w1', a: 0, p: 500 }, 'black').error, 'not_your_stone');
+        // #100: 규칙과 같은 범위(힘 500~10000, 방향 ±31416)
+        assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 0, p: 100 }, 'black').ok, false);
+        assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 31416, p: 10000 }, 'black').ok, true);
+        assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 0, p: 10001 }, 'black').ok, false);
+        assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: -31417, p: 5000 }, 'black').ok, false);
         assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 0, p: 0 }, 'black').ok, false);
         assert.equal(L.checkLiveShotShape({ v: 1, id: 'b1', a: 0, p: 10, x: 1 }, 'black').ok, false);
     });
@@ -175,5 +182,54 @@ describe('실시간 알까기 쿨다운·샷 의도', () => {
         const back = L.sanitizeLiveState(d);
         assert.equal(back.gid, 5);
         assert.equal(back.stones.length, 10);
+    });
+});
+
+describe('실시간 알까기 #100: 샷 범위·판 안내 문구', () => {
+    it('앱이 낼 수 있는 샷은 모두 규칙 범위(힘 500~10000, 방향 ±31416) 안이에요', () => {
+        // 판(alkkagiLiveBoard)은 당긴 정도 0.05(MIN_POWER) 미만이면 쏘지 않고, 최대 1이에요.
+        for (const power of [0.05, 0.0500001, 0.3, 0.77, 1, 1.5]) {
+            for (const angle of [-Math.PI, -Math.PI + 1e-9, -1, 0, 1, Math.PI - 1e-9, Math.PI, 7, -7]) {
+                const shot = alkkagiFinalShot({ id: 'b1', angle, power }, () => 0.5);
+                assert.ok(shot, `${power} ${angle}`);
+                assert.ok(shot.p >= L.ALKKAGI_LIVE_SHOT_MIN_P && shot.p <= L.ALKKAGI_LIVE_SHOT_MAX_P, `p=${shot.p}`);
+                assert.ok(Math.abs(shot.a) <= L.ALKKAGI_LIVE_SHOT_MAX_A, `a=${shot.a}`);
+                assert.equal(L.checkLiveShotShape(shot, 'black').ok, true);
+            }
+        }
+        // 끝값 확인: 최대 힘은 10000, 0.05는 500
+        assert.equal(quantizeAlkkagiShot({ id: 'b1', angle: 0, power: 1 }).pi, 10000);
+        assert.equal(quantizeAlkkagiShot({ id: 'b1', angle: 0, power: 0.05 }).pi, 500);
+        assert.equal(quantizeAlkkagiShot({ id: 'b1', angle: Math.PI, power: 1 }).ai, 31416);
+    });
+
+    it('판 안내: 알약과 아래 안내가 같은 상태를 말해요(스위치 켬·끔 모두)', () => {
+        const all = (g) => `${g.line} ${g.tip} ${g.who}`;
+        // 스위치를 끈 배포: '동시에 쏘고' 같은 말을 하지 않아요
+        const off = L.alkkagiLiveGuide({ enabled: false, seat: 'black' });
+        assert.equal(off.phase, 'off');
+        assert.ok(!/동시에|5초/.test(all(off)));
+        // 켠 경우: 연결 전에는 '연결하는 중'이고, 쏠 수 있다고 말하지 않아요
+        const conn = L.alkkagiLiveGuide({ enabled: true, seat: 'black', connected: false });
+        assert.equal(conn.phase, 'connecting');
+        assert.equal(conn.line, '판에 연결하는 중이에요');
+        assert.ok(!/준비하고 있어요/.test(all(conn)));
+        assert.ok(/연결되면/.test(conn.tip));
+        assert.equal(L.alkkagiLiveGuide({ enabled: true, seat: 'white', connected: true, ready: false }).phase, 'connecting');
+        // 연결되면 쏘는 법과 판 계산 기기 안내
+        const host = L.alkkagiLiveGuide({ enabled: true, seat: 'black', connected: true, ready: true, isHost: true });
+        assert.equal(host.phase, 'play');
+        assert.equal(host.line, '지금 쏠 수 있어요');
+        assert.ok(/당겼다 놓아요/.test(host.tip));
+        assert.equal(host.who, '판 계산은 내 기기가 맡고 있어요.');
+        assert.equal(L.alkkagiLiveGuide({ enabled: true, seat: 'white', connected: true, ready: true }).who, '판 계산은 방장 기기가 해요.');
+        // 자리가 없으면 구경, 끝났으면 전적(스위치와 상관없이)
+        assert.equal(L.alkkagiLiveGuide({ enabled: true, seat: '' }).phase, 'watch');
+        const over = L.alkkagiLiveGuide({ enabled: false, over: true, seat: 'black', recordText: '1승 0패' });
+        assert.equal(over.line, '판이 끝났어요');
+        assert.equal(over.tip, '내 알까기 전적 1승 0패');
+        // 기본값은 지금 스위치(꺼짐)를 따라요
+        assert.equal(L.ALKKAGI_LIVE_ENABLED, false);
+        assert.equal(L.alkkagiLiveGuide({ seat: 'black', connected: true, ready: true }).phase, 'off');
     });
 });

@@ -151,6 +151,9 @@ service cloud.firestore {
     }
 
     // 샷 의도: {v:1, id:'b1'~'b5' 또는 'w1'~'w5'(내 자리 색), a: 각도 정수, p: 힘 정수}
+    // #100: 앱이 실제로 낼 수 있는 값만 받아요(alkkagiPhysics·alkkagiLiveBoard 기준).
+    // - 방향 a: 각도(라디안)×10000, (-π, π] → -31416 ~ 31416
+    // - 힘 p: 당긴 정도(0.05~1)×10000 → 500 ~ 10000 (MIN_POWER 0.05 아래는 앱이 쏘지 않아요, 최대 힘 1)
     function alkLiveShotOk(seat, shot) {
       return shot is map
         && shot.keys().hasOnly(['v', 'id', 'a', 'p'])
@@ -159,7 +162,7 @@ service cloud.firestore {
         && shot.id is string
         && shot.id.matches(seat == 'black' ? '^b[1-5]$' : '^w[1-5]$')
         && shot.a is int && shot.a >= -31416 && shot.a <= 31416
-        && shot.p is int && shot.p >= 1 && shot.p <= 10000;
+        && shot.p is int && shot.p >= 500 && shot.p <= 10000;
     }
 
     function alkLiveSeatShapeOk(seat) {
@@ -807,7 +810,9 @@ service cloud.firestore {
     // 각자 live/{자리} 에 샷 의도와 접속 표시를 씁니다. 같은 자리 샷은 서버 시각으로 4.5초 간격이 있어야 합니다.
     // 쓰기는 같은 학급 아래 실제로 있는 실시간 방이 두는 중일 때만, gid는 그 방의 지금 판(game.gid)과 같아야 합니다.
     // 지우기는 방 문서가 없을 때(방을 지운 뒤나 같은 묶음에서 함께)와 선생님만 됩니다. 그래서 지웠다 다시 만드는 되감기가 막힙니다.
-    // 쓰는 기기는 그 방의 방장·참가자 uid여야 합니다(alkLiveParty). 다만 익명 Auth라 '그 자리(흑·백) 학생'인지까지는 확인하지 못합니다(서버 로그인 확인은 후속).
+    // 쓰는 기기는 그 방의 방장·참가자 uid여야 합니다(alkLiveParty).
+    // #100: 자리(흑·백)를 uid에 묶지는 않아요. 선생님 결정으로 '같이 하기'(한 기기·한 계정이 두 자리)를 막지 않기 위해서예요.
+    //   대신 샷 번호 n은 한 칸씩(+1)만, 힘·방향은 앱이 낼 수 있는 범위만, 같은 자리 샷은 서버 시각 4.5초 간격이라 상대 자리에 써도 크게 망가뜨리지 못해요.
     match /artifacts/{appId}/public/data/boardGameRooms/{roomId}/live/{docId} {
       allow read: if true;
       allow create: if signedIn()

@@ -20,8 +20,10 @@ import { parseAlkkagiShot } from './alkkagiPhysics.js';
 
 export const ALKKAGI_LIVE_TYPE = 'alkkagiLive';
 /**
- * 실시간 입구 스위치. 1단계(#99)에서는 꺼 둬요(판에서 아직 쏠 수 없어요).
- * 꺼져 있으면 '실시간 방 만들기' 버튼·로비의 실시간 방·'둘이 동시에 쏘고' 안내가 보이지 않아요. 2단계(#100)에서 켜요.
+ * 실시간 입구 스위치. #99·#100 모두 꺼 둔 채로 내보내요.
+ * 꺼져 있으면 '실시간 방 만들기' 버튼·로비의 실시간 방·'둘이 동시에 쏘고' 안내가 보이지 않아요.
+ * 켤 때는 선생님 답을 받은 뒤 이 한 줄만 true로 바꾸는 커밋을 따로 만들어요.
+ * (화면 문구·새로고침 복귀 함수는 liveEnabled 인자로 켠 경우도 단위 테스트해요.)
  */
 export const ALKKAGI_LIVE_ENABLED = false;
 /** 기권 방식: 기권 버튼(resign)인지 판에서 나가서(left)인지. 결과 문구만 달라요. */
@@ -33,6 +35,14 @@ export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 4000;
 export const ALKKAGI_LIVE_RULE_GAP_MS = 4500;
 export const ALKKAGI_LIVE_END_REASONS = Object.freeze(['out', 'forfeit', 'draw', 'disconnect']);
 export const ALKKAGI_LIVE_SEATS = Object.freeze([ALKKAGI_BLACK, ALKKAGI_WHITE]);
+/**
+ * 샷 의도 숫자 범위(규칙 firestore.rules alkLiveShotOk와 같아요). 앱이 실제로 낼 수 있는 값만이에요.
+ * - 힘 p: 당긴 정도 0.05(판 MIN_POWER)~1(ALKKAGI_MAX_POWER) × 10000
+ * - 방향 a: (-π, π] 라디안 × 10000
+ */
+export const ALKKAGI_LIVE_SHOT_MIN_P = 500;
+export const ALKKAGI_LIVE_SHOT_MAX_P = 10000;
+export const ALKKAGI_LIVE_SHOT_MAX_A = 31416;
 
 function int(raw, min = 0, max = Number.MAX_SAFE_INTEGER) {
     const n = Math.floor(Number(raw) || 0);
@@ -238,7 +248,28 @@ export function checkLiveShotShape(shot, seat) {
     if (typeof shot.id !== 'string' || !new RegExp(`^${s === ALKKAGI_BLACK ? 'b' : 'w'}[1-5]$`).test(shot.id)) return { ok: false, error: 'not_your_stone' };
     const parsed = parseAlkkagiShot(shot);
     if (!parsed.ok) return { ok: false, error: 'bad_shot' };
+    // 규칙과 같은 범위: 앱이 내지 않는 아주 약한 힘(0.05 미만)은 받지 않아요.
+    if (shot.p < ALKKAGI_LIVE_SHOT_MIN_P || shot.p > ALKKAGI_LIVE_SHOT_MAX_P || Math.abs(shot.a) > ALKKAGI_LIVE_SHOT_MAX_A) return { ok: false, error: 'bad_shot' };
     return { ok: true, error: '' };
+}
+
+/**
+ * 판 위 안내 두 줄(상단 알약 line, 아래 안내 tip)을 지금 화면 상태에 맞게 골라요.
+ * 두 줄이 서로 다른 말을 하지 않게(예: '판을 준비하고 있어요'인데 '둘이 동시에 쏘고…') 한곳에서 정해요.
+ * tip은 글자만 돌려줘요(HTML 아님). who는 판 계산을 맡은 기기 안내예요.
+ * @param {{ enabled?: boolean, over?: boolean, seat?: string, connected?: boolean, ready?: boolean, isHost?: boolean, recordText?: string }} o
+ */
+export function alkkagiLiveGuide({ enabled = ALKKAGI_LIVE_ENABLED, over = false, seat = '', connected = false, ready = false, isHost = false, recordText = '' } = {}) {
+    if (over) return { line: '판이 끝났어요', tip: `내 알까기 전적 ${recordText}`.trim(), who: '', phase: 'over' };
+    if (!enabled) return { line: '실시간 대전은 준비하고 있어요', tip: '지금은 쏠 수 없어요. 열리면 여기에서 바로 할 수 있어요.', who: '', phase: 'off' };
+    if (!alkkagiLiveSeat(seat)) return { line: '구경하고 있어요', tip: '두 사람이 차례 없이 동시에 쏘는 판이에요.', who: '', phase: 'watch' };
+    if (!connected || !ready) return { line: '판에 연결하는 중이에요', tip: '연결되면 바로 쏠 수 있어요. 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.', who: '', phase: 'connecting' };
+    return {
+        line: '지금 쏠 수 있어요',
+        tip: '알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 5초 쉬어요.',
+        who: isHost ? '판 계산은 내 기기가 맡고 있어요.' : '판 계산은 방장 기기가 해요.',
+        phase: 'play',
+    };
 }
 
 export function sanitizeLiveSeatDoc(raw, seat) {

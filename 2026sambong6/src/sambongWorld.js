@@ -305,10 +305,10 @@ import {
     isAlkkagiOver,
 } from './lib/alkkagiGame.js';
 import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
-import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey } from './lib/alkkagiLiveGame.js';
+import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey, isAlkkagiLiveOver } from './lib/alkkagiLiveGame.js';
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
-import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, parseAlkkagiResume } from './lib/alkkagiResume.js';
+import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
     DAILY_ALL_CLEAR_BONG,
     DAILY_ALL_CLEAR_XP,
@@ -1325,7 +1325,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.50';
+        const APP_VERSION = 'v1.51';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -12121,9 +12121,12 @@ ${subjectLine}
             recordResult: (room) => maybeRecordBoardGameResult(room),
             myRecordText: () => myBoardGameRecordText('alkkagi'),
             loadFonts: () => loadAlkkagiFontsOnce(),
-            markLeft: (room) => _alkLeftRooms.add(boardRoomInstanceKey(room)),
+            // 나간 방은 이 탭(sessionStorage)에 기억해서 새로고침 뒤에도 다시 끌려가지 않아요.
+            markLeft: (room) => rememberLeftBoardRoomKey(boardRoomInstanceKey(room)),
             toLobby: () => {
                 _boardGameActiveId = '';
+                // 나가기·방 닫기로 로비에 오면 새로고침 복귀 기록도 지워요(끝난·나간 방으로 다시 끌려가지 않게).
+                saveAlkkagiResume('');
                 showBoardGameView('lobby');
                 renderBoardGameLobby();
             },
@@ -14430,6 +14433,8 @@ ${subjectLine}
         function renderAlkkagiLivePlay(room) {
             showBoardGameView('play');
             _alkLive.render(room);
+            // 두는 중인 실시간 판은 새로고침해도 로비를 거치지 않고 바로 돌아오게 기억해요(끝난 판이면 지워요).
+            rememberAlkkagiResume(room && !isAlkkagiLiveOver(room.game) ? room : null);
             startGomokuTick();
         }
 
@@ -14487,7 +14492,13 @@ ${subjectLine}
             if (saved.kind === 'room') {
                 const room = (rows || []).find((r) => r.id === saved.id);
                 const me = boardGameSelfId();
-                if (!room || room.gameType !== 'alkkagi' || room.status !== 'playing' || !isRoomMember(room, me) || _alkLeftRooms.has(boardRoomInstanceKey(room))) {
+                // 턴제 알까기 방과(스위치를 켰을 때) 실시간 방 모두 두는 중인 판에만 돌아가요. 끝난 방·스스로 나온 방은 아니에요.
+                const ok = canResumeAlkkagiRoom(room, {
+                    isMember: !!room && isRoomMember(room, me),
+                    left: !!room && _alkLeftRooms.has(boardRoomInstanceKey(room)),
+                    liveEnabled: ALKKAGI_LIVE_ENABLED,
+                });
+                if (!ok) {
                     saveAlkkagiResume('');
                     return;
                 }

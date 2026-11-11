@@ -1,7 +1,9 @@
 /**
  * 광장 비추천. 같은 친구에게는 하루에 한 번, 사유는 필수입니다.
  * 누른 사람의 경험치만 10 줄어듭니다. 받은 사람은 경험치가 줄지 않습니다.
- * 자정이 지나면 오늘 받은 수만 0이 되고, 최근 사유와 기록은 남습니다.
+ * 자정이 지나면 오늘 받은 수만 0이 되고, 하루 한 번 기록은 남습니다.
+ * 사유와 보낸 사람은 공개 보드(classOps/dislikes)에 새로 쓰지 않습니다.
+ * 받은 학생 본인과 선생님만 보는 사유함(peerFeedback.js)에 따로 저장합니다.
  */
 
 export const DISLIKE_XP_COST = 10;
@@ -103,9 +105,7 @@ export function planPeerDislike(board, { fromId, toId, today, reason } = {}) {
     const received = (src.received[to] || 0) + 1;
     const next = sanitizeDislikeBoard(src);
     next.received[to] = received;
-    next.latestReason[to] = reasonText;
     next.once[pair] = date;
-    next.log = next.log.concat([{ from, to, reason: reasonText, date }]).slice(-DISLIKE_LOG_MAX);
     return {
         ok: true,
         board: next,

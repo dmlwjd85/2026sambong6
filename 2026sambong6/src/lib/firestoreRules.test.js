@@ -1108,6 +1108,60 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             pin: '2468',
         }));
     });
+
+    it('추천·비추천 사유함: 항목 하나씩 만들기만, 형식·길이·uid 검사, 고치기·지우기·비로그인 거부', async () => {
+        const { collection, getDocs, serverTimestamp, query, limit } = await import('firebase/firestore');
+        const kst = (days = 0) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
+        const T = kst(0), Y = kst(-1), N = kst(1);
+        const base = 'artifacts/class1/peerFeedback/7/items';
+        const db = anon().firestore();
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            for (const id of ['3', '5', '6', '7', '8']) await setDoc(doc(context.firestore(), `artifacts/class1/public/data/students/student_${id}`), { name: `학생${id}` });
+        });
+        const good = (extra = {}) => ({ kind: 'dislike', fromId: '3', fromName: '김철수', reason: '떠들어서', date: T, uid: 'anon-student', createdAt: serverTimestamp(), ...extra });
+        await assertSucceeds(setDoc(doc(db, `${base}/${T}_dislike_3`), good()));
+        await assertSucceeds(setDoc(doc(db, `${base}/${T}_praise_3`), good({ kind: 'praise', reason: '가'.repeat(40) })));
+        await assertSucceeds(getDoc(doc(db, `${base}/${T}_dislike_3`)));
+        await assertSucceeds(getDocs(query(collection(db, base), limit(50))));
+        await assertFails(getDocs(collection(db, base)));
+        await assertFails(getDocs(query(collection(db, base), limit(51))));
+        // 미래·과거 날짜(KST 오늘이 아님) 거부
+        await assertFails(setDoc(doc(db, `${base}/${N}_dislike_5`), good({ fromId: '5', date: N })));
+        await assertFails(setDoc(doc(db, `${base}/${Y}_dislike_5`), good({ fromId: '5', date: Y })));
+        await assertFails(setDoc(doc(db, `${base}/2099-01-01_praise_5`), good({ fromId: '5', kind: 'praise', date: '2099-01-01' })));
+        await assertFails(setDoc(doc(db, `${base}/2026-13-45_praise_5`), good({ fromId: '5', kind: 'praise', date: '2026-13-45' })));
+        // 변조·삭제·덮어쓰기
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_3`), good({ reason: '바꿔치기' })));
+        await assertFails(updateDoc(doc(db, `${base}/${T}_dislike_3`), { reason: '바꿔치기' }));
+        await assertFails(deleteDoc(doc(db, `${base}/${T}_dislike_3`)));
+        // 길이·형식
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, reason: '가'.repeat(41) })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, reason: '가'.repeat(10240) })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, reason: '' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, reason: '   ' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_hate_3`), good({ date: T, kind: 'hate' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, extra: 1 })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, fromName: 123 })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, createdAt: 5 })));
+        await assertFails(setDoc(doc(db, `${base}/아무ID`), good({ date: T })));
+        // 위장: 남의 uid를 적거나, 받은 사람과 같은 학번, ID와 다른 보낸 사람
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6', date: T, uid: 'someone-else' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_7`), good({ date: T, fromId: '7' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ date: T, fromId: '4' })));
+        // 학생 목록에 없는 가짜 학번(보낸 쪽·받는 쪽) 거부
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_99`), good({ fromId: '99' })));
+        await assertFails(setDoc(doc(db, `${base}/${T}_dislike_fake1`), good({ fromId: 'fake1' })));
+        await assertFails(setDoc(doc(db, `artifacts/class1/peerFeedback/99/items/${T}_dislike_3`), good()));
+        await assertFails(setDoc(doc(db, `artifacts/class2/peerFeedback/7/items/${T}_dislike_5`), good({ fromId: '5' })));
+        // 위 거부 사례가 모두 '값 때문'임을 확인: 같은 ID로 올바르게 쓰면 통과
+        await assertSucceeds(setDoc(doc(db, `${base}/${T}_dislike_6`), good({ fromId: '6' })));
+        // 예전 단일 문서 방식은 막힘
+        await assertFails(setDoc(doc(db, 'artifacts/class1/peerFeedback/7'), { items: [] }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(getDoc(doc(guest, `${base}/${T}_dislike_3`)));
+        await assertFails(getDocs(query(collection(guest, base), limit(50))));
+        await assertFails(setDoc(doc(guest, `${base}/${T}_dislike_8`), good({ fromId: '8', date: T })));
+    });
 });
 
 describe('firestore rules: 보드게임 방 정리(hostUid·30분)', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {

@@ -6,6 +6,7 @@ import './alkkagiLive.css';
 import { ALKKAGI_BLACK, ALKKAGI_STONES_PER_SIDE, ALKKAGI_WHITE } from './lib/alkkagiGame.js';
 import {
     ALKKAGI_LIVE_COOLDOWN_MS,
+    ALKKAGI_LIVE_ENABLED,
     ALKKAGI_LIVE_HEARTBEAT_MS,
     ALKKAGI_LIVE_HOST_SILENT_MS,
     alkkagiLiveEndText,
@@ -363,7 +364,8 @@ export function createAlkkagiLiveMode(deps) {
         const pillDot = $('alkLivePillDot');
         const tip = $('alkLiveTip');
         let line = '판을 준비하고 있어요';
-        let tipHtml = '차례가 없어요. 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.';
+        // 실시간 입구가 꺼져 있으면(1단계) '둘이 동시에 쏘고' 안내를 보이지 않아요.
+        let tipHtml = ALKKAGI_LIVE_ENABLED ? '차례가 없어요. 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.' : '실시간 대전은 준비하고 있어요.';
         if (over) {
             line = '판이 끝났어요';
             tipHtml = `내 알까기 전적 ${esc(deps.myRecordText())}`;
@@ -470,12 +472,13 @@ export function createAlkkagiLiveMode(deps) {
         });
     }
 
-    async function forfeitNow() {
+    /** how: 'resign'(기권 버튼) | 'left'(나가기). 결과 문구만 달라요. */
+    async function forfeitNow(how = 'left') {
         if (!room) return null;
         const seat = mySeat();
         const id = room.id;
         return deps.mutateRoom(id, (cur) => {
-            const done = applyAlkkagiLiveForfeit(cur.game, { color: seat, stones: live ? live.session.stones() : shownStones, now: Date.now() });
+            const done = applyAlkkagiLiveForfeit(cur.game, { color: seat, stones: live ? live.session.stones() : shownStones, now: Date.now(), how });
             if (!done.ok) return { ok: false, error: done.error };
             return { ok: true, room: deps.applyRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
         });
@@ -487,7 +490,7 @@ export function createAlkkagiLiveMode(deps) {
             { label: '계속할래요', value: false, main: true, cancel: true },
             { label: '기권할게요', value: true, danger: true },
         ]);
-        if (ok) await forfeitNow();
+        if (ok) await forfeitNow('resign');
     }
 
     /** 나가기: 두는 중이면 기권하고 방 목록으로 가요. true를 돌려주면 처리 끝. */
@@ -500,20 +503,12 @@ export function createAlkkagiLiveMode(deps) {
             ]);
             if (!ok) return true;
             const r = room;
-            await forfeitNow();
+            await forfeitNow('left');
             deps.markLeft(r);
         }
         stop();
         deps.toLobby();
         return true;
-    }
-
-    /** 방을 닫을 때 live 하위 문서(state·black·white)도 지워요. 못 지워도 다음 판은 새 gid라 섞이지 않아요. */
-    async function deleteLiveDocs(roomId) {
-        const { doc, deleteDoc } = fsDeps();
-        if (!doc || !deleteDoc) return;
-        const col = liveCol(roomId);
-        await Promise.all(['state', ALKKAGI_BLACK, ALKKAGI_WHITE].map((id) => deleteDoc(doc(col, id)).catch(() => {})));
     }
 
     async function continueGame() {
@@ -532,7 +527,8 @@ export function createAlkkagiLiveMode(deps) {
         const closed = await deps.mutateRoom(id, (cur) => deps.closeRoom(cur, { actorId: me(), now: Date.now() }));
         if (closed) {
             stopLive();
-            await deleteLiveDocs(id);
+            // 방 문서를 먼저 지우면 deps.deleteRoom(deleteBoardRoomDoc)이 live 하위 문서(state·black·white)도 지워요.
+            // 규칙은 방이 남아 있는 동안 live 지우기를 막아요(되감기 방지).
             await deps.deleteRoom(id);
         }
         stop();
@@ -540,6 +536,9 @@ export function createAlkkagiLiveMode(deps) {
     }
 
     function showRules() {
+        if (!ALKKAGI_LIVE_ENABLED) {
+            return dialog('실시간 대전은 준비하고 있어요.<br>열리면 여기에서 규칙을 알려 드릴게요.', [{ label: '알겠어요', value: true, main: true }], '실시간 규칙');
+        }
         return dialog(
             '차례가 없어요. 두 사람이 동시에 쏴요.<br>한 번 쏘면 5초 동안 쉬어요. 카드 아래 막대와 알 둘레 고리가 다 차면 다시 쏠 수 있어요.<br>'
             + '내 알을 꾹 잡고 반대쪽으로 당겼다가 놓으면 튕겨 나가요. 알이 움직이는 중에도 쏠 수 있어요.<br>'

@@ -19,6 +19,13 @@ import { ALKKAGI_BLACK, ALKKAGI_CONFIG, ALKKAGI_WHITE, initialAlkkagiStones } fr
 import { parseAlkkagiShot } from './alkkagiPhysics.js';
 
 export const ALKKAGI_LIVE_TYPE = 'alkkagiLive';
+/**
+ * 실시간 입구 스위치. 1단계(#99)에서는 꺼 둬요(판에서 아직 쏠 수 없어요).
+ * 꺼져 있으면 '실시간 방 만들기' 버튼·로비의 실시간 방·'둘이 동시에 쏘고' 안내가 보이지 않아요. 2단계(#100)에서 켜요.
+ */
+export const ALKKAGI_LIVE_ENABLED = false;
+/** 기권 방식: 기권 버튼(resign)인지 판에서 나가서(left)인지. 결과 문구만 달라요. */
+export const ALKKAGI_LIVE_FORFEIT_HOWS = Object.freeze(['resign', 'left']);
 /** 한 사람이 다시 쏘기까지 기다리는 시간 */
 export const ALKKAGI_LIVE_COOLDOWN_MS = 5000;
 /** 호스트가 받는 쪽에서 허용하는 최소 간격(도착 시간 흔들림 여유). 규칙은 서버 시각으로 4.5초를 봐요. */
@@ -92,6 +99,7 @@ export function emptyAlkkagiLiveGame({ now = 0 } = {}) {
         endReason: '',
         shots: 0,
         endedAt: 0,
+        forfeitHow: '',
     };
 }
 
@@ -101,6 +109,7 @@ export function sanitizeAlkkagiLiveGame(raw, { now = 0 } = {}) {
     const winner = endReason && endReason !== 'draw' && endReason !== 'disconnect' ? alkkagiLiveSeat(raw.winner) : '';
     const stones = sanitizeLiveStones(raw.stones).map(({ vx, vy, ...s }) => s);
     const startedAt = epochMs(raw.startedAt) || epochMs(raw.gid) || int(now);
+    const fin = (endReason === 'out' || endReason === 'forfeit') && !winner ? '' : endReason;
     return {
         mode: 'live',
         gid: epochMs(raw.gid) || startedAt,
@@ -112,6 +121,7 @@ export function sanitizeAlkkagiLiveGame(raw, { now = 0 } = {}) {
         endReason: (endReason === 'out' || endReason === 'forfeit') && !winner ? '' : endReason,
         shots: int(raw.shots, 0, 100000),
         endedAt: epochMs(raw.endedAt),
+        forfeitHow: fin === 'forfeit' && ALKKAGI_LIVE_FORFEIT_HOWS.includes(String(raw.forfeitHow || '')) ? String(raw.forfeitHow) : '',
     };
 }
 
@@ -136,7 +146,7 @@ export function judgeLiveStones(stones) {
 }
 
 /** 끝난 판을 방 문서 game으로 만들어요. 이미 끝났으면 그대로 둬요(먼저 끝난 결과가 이겨요). */
-export function finishAlkkagiLiveGame(game, { winner = '', endReason = '', stones = null, shots = null, now = 0 } = {}) {
+export function finishAlkkagiLiveGame(game, { winner = '', endReason = '', stones = null, shots = null, now = 0, forfeitHow = '' } = {}) {
     const g = sanitizeAlkkagiLiveGame(game, { now });
     if (g.endReason) return { ok: false, error: 'already_over', game: g };
     if (!ALKKAGI_LIVE_END_REASONS.includes(endReason)) return { ok: false, error: 'bad_reason', game: g };
@@ -153,14 +163,17 @@ export function finishAlkkagiLiveGame(game, { winner = '', endReason = '', stone
             winner: w,
             endReason,
             endedAt: int(now),
+            forfeitHow: endReason === 'forfeit' ? forfeitHow : '',
         }),
     };
 }
 
-export function applyAlkkagiLiveForfeit(game, { color, stones = null, now = 0 } = {}) {
+/** how: 'resign'(기권 버튼) | 'left'(판에서 나가기). 전적은 똑같이 패예요. */
+export function applyAlkkagiLiveForfeit(game, { color, stones = null, now = 0, how = 'left' } = {}) {
     const loser = alkkagiLiveSeat(color);
     if (!loser) return { ok: false, error: 'bad_color', game: sanitizeAlkkagiLiveGame(game, { now }) };
-    return finishAlkkagiLiveGame(game, { winner: alkkagiLiveOther(loser), endReason: 'forfeit', stones, now });
+    const forfeitHow = ALKKAGI_LIVE_FORFEIT_HOWS.includes(how) ? how : 'left';
+    return finishAlkkagiLiveGame(game, { winner: alkkagiLiveOther(loser), endReason: 'forfeit', stones, now, forfeitHow });
 }
 
 /** 전적: 'win' | 'loss' | 'draw' | '' */
@@ -186,7 +199,7 @@ export function alkkagiLiveEndText(game, { blackName = '흑', whiteName = '백' 
     if (g.endReason === 'disconnect') return '연결이 오래 끊겨서 비긴 걸로 했어요.';
     const win = g.winner === ALKKAGI_BLACK ? blackName : whiteName;
     const lose = g.winner === ALKKAGI_BLACK ? whiteName : blackName;
-    if (g.endReason === 'forfeit') return `${lose}님이 나가서 ${win}님이 이겼어요.`;
+    if (g.endReason === 'forfeit') return g.forfeitHow === 'resign' ? `${lose}님이 기권해서 ${win}님이 이겼어요.` : `${lose}님이 나가서 ${win}님이 이겼어요.`;
     return `${win}님이 상대 알을 모두 밀어냈어요!`;
 }
 

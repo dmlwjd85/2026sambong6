@@ -1506,6 +1506,25 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         // 자리 색과 다른 알은 여전히 거부
         await assertFails(setDoc(doc(db, `${base}/white`), seat('white', 2, { v: 1, id: 'b1', a: 0, p: 5000 })));
     });
+
+    it('[#100] 남은 live 정리: 방이 없으면 live 목록을 읽고 하나씩 지워요, 방이 있으면 못 지워요', async () => {
+        const { collection, getDocs } = await import('firebase/firestore');
+        const db = anon().firestore();
+        const outsider = testEnv.authenticatedContext('outsider-uid', { provider_id: 'anonymous', firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const base = `${LIVE_ROOM}/live`;
+        // 예전 화면이 방만 지우고 남긴 live 3개(방 문서 없음)
+        for (const id of ['state', 'black', 'white']) await seedLiveDoc(id, { gid: 1000, seat: id, n: 0 });
+        const snap = await assertSucceeds(getDocs(collection(db, base)));
+        assert.equal(snap.size, 3);
+        // 방 문서가 없으니 로그인한 학생(참가자가 아니어도)이 하나씩 지울 수 있어요
+        for (const d of snap.docs) await assertSucceeds(deleteDoc(doc(outsider, d.ref.path)));
+        assert.equal((await getDocs(collection(db, base))).size, 0);
+        // 방이 다시 있으면(같은 id로 새 방) 남은 live도 못 지워요(판 되감기 막기)
+        await seedLiveRoom();
+        await seedLiveDoc('black', { gid: 1000, seat: 'black', n: 0 });
+        await assertFails(deleteDoc(doc(outsider, `${base}/black`)));
+        await assertFails(deleteDoc(doc(db, `${base}/black`)));
+    });
 });
 
 describe('firestore rules: 보드게임 방 정리(hostUid·30분)', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {

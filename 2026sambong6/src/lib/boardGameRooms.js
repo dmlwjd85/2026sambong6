@@ -1092,3 +1092,29 @@ export function boardRoomScopeKey(scope) {
     const s = scope || {};
     return `${s.lobbyGameType || ''}|${s.mineId || ''}|${s.roomId || ''}`;
 }
+
+/**
+ * 남은 실시간 live 문서 정리(#100): 내 학번·기기로 만들 수 있는 실시간 방 id(alkl_학번, alkl_학번_기기)가
+ * 지금 방 목록에 없으면, 그 아래 live 문서가 남아 있는지 하루에 한 번만 봐요.
+ * (예전 화면이 방만 지우고 live를 남긴 경우. 규칙은 방 문서가 없을 때 로그인한 누구나 live 지우기를 허용해요.)
+ * memory: { [roomId]: 'YYYY-MM-DD' } (마지막으로 본 날, KST)
+ * @returns {string[]} 이번에 볼 방 id 목록
+ */
+export function alkkagiLiveOrphanCheckIds({ selfId = '', uid = '', roomIds = [], memory = {}, day = '' } = {}) {
+    const known = new Set((Array.isArray(roomIds) ? roomIds : []).map((x) => String(x || '')));
+    const mem = memory && typeof memory === 'object' ? memory : {};
+    const ids = [hostBoardRoomId('alkkagiLive', selfId), hostBoardRoomFallbackId('alkkagiLive', selfId, uid)];
+    return ids.filter((id, i) => id && ids.indexOf(id) === i && !known.has(id) && (!day || mem[id] !== day));
+}
+
+/** 정리 기억을 읽어요(망가진 값·오래된 날은 버려요). */
+export function parseAlkkagiLiveOrphanMemory(raw, day = '') {
+    let d = null;
+    try { d = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { d = null; }
+    const out = {};
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return out;
+    for (const [k, v] of Object.entries(d)) {
+        if (/^alkl_[A-Za-z0-9_-]{1,40}$/.test(k) && typeof v === 'string' && (!day || v === day)) out[k] = v;
+    }
+    return out;
+}

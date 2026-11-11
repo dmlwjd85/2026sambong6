@@ -961,3 +961,27 @@ describe('#88 M1: 실시간 알까기 스위치에 따른 로비 질의·상태�
         assert.equal(m.boardRoomKeyToForgetOnLeave(fin, { selfId: '2', fromView: 'play', toView: 'lobby' }), key);
     });
 });
+
+describe('#100 남은 실시간 live 문서 정리 대상', () => {
+    it('내 실시간 방 id가 목록에 없을 때만, 하루 한 번 봐요', async () => {
+        const m = await import('./boardGameRooms.js');
+        const fb = m.hostBoardRoomFallbackId('alkkagiLive', '7', 'uid-a');
+        assert.deepEqual(m.alkkagiLiveOrphanCheckIds({ selfId: '7', uid: 'uid-a', roomIds: [], day: '2026-11-11' }), ['alkl_7', fb]);
+        // 목록에 있는 방(살아 있는 방)은 보지 않아요
+        assert.deepEqual(m.alkkagiLiveOrphanCheckIds({ selfId: '7', uid: 'uid-a', roomIds: ['alkl_7'], day: '2026-11-11' }), [fb]);
+        // 오늘 이미 본 id는 건너뛰고, 다음 날 다시 봐요
+        const mem = { alkl_7: '2026-11-11', [fb]: '2026-11-11' };
+        assert.deepEqual(m.alkkagiLiveOrphanCheckIds({ selfId: '7', uid: 'uid-a', roomIds: [], memory: mem, day: '2026-11-11' }), []);
+        assert.equal(m.alkkagiLiveOrphanCheckIds({ selfId: '7', uid: 'uid-a', roomIds: [], memory: mem, day: '2026-11-12' }).length, 2);
+        // 학번·uid가 없으면 볼 것이 없어요
+        assert.deepEqual(m.alkkagiLiveOrphanCheckIds({ selfId: '', uid: 'uid-a' }), []);
+        assert.deepEqual(m.alkkagiLiveOrphanCheckIds({ selfId: '7', uid: '' , day: 'd' }), ['alkl_7']);
+    });
+    it('정리 기억은 alkl_ id와 오늘 날짜만 남겨요', async () => {
+        const m = await import('./boardGameRooms.js');
+        assert.deepEqual(m.parseAlkkagiLiveOrphanMemory('{"alkl_7":"2026-11-11","alkl_8":"2026-11-10","bg_x":"2026-11-11","alkl_9":3}', '2026-11-11'), { alkl_7: '2026-11-11' });
+        assert.deepEqual(m.parseAlkkagiLiveOrphanMemory('망가짐', '2026-11-11'), {});
+        assert.deepEqual(m.parseAlkkagiLiveOrphanMemory(null, '2026-11-11'), {});
+        assert.deepEqual(m.parseAlkkagiLiveOrphanMemory('[1]', '2026-11-11'), {});
+    });
+});

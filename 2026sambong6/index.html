@@ -120,7 +120,7 @@
                     <input type="password" id="loginPin" placeholder="••••" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold text-center tracking-[0.5em] min-h-[44px]" maxlength="4" pattern="[0-9]*" inputmode="numeric">
                 </label>
                 <p class="text-[10px] text-slate-500 text-center">처음 넣은 번호가 내 비밀번호가 됩니다.</p>
-                <p id="loginAutoLoginOffNote" class="hidden text-[11px] text-amber-200 text-center font-bold leading-relaxed">이 반은 자동 로그인을 꺼 두었어요. 들어올 때마다 이름과 비밀번호를 넣어요.</p>
+                <p id="loginAutoLoginOffNote" class="hidden text-[11px] text-amber-200 text-center font-bold leading-relaxed">이 반은 자동 로그인을 꺼 두었어요. 들어올 때마다(새로고침해도) 이름과 비밀번호를 넣어요.</p>
                 <button id="btnLogin" class="w-full bg-gradient-to-r from-sb-blue to-cyan-500 hover:from-blue-500 text-white font-black py-3.5 rounded-xl shadow-lg transition min-h-[48px]">들어가기</button>
             </div>
 
@@ -147,7 +147,7 @@
                     <label class="block text-[11px] text-white font-black">마스터 PIN
                         <input type="password" id="loginPinTeacher" placeholder="••••" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-amber-400 font-bold text-center tracking-[0.5em] min-h-[44px]" maxlength="4" pattern="[0-9]*" inputmode="numeric">
                     </label>
-                    <p id="loginAutoLoginOffNoteTeacher" class="hidden text-[11px] text-amber-200 font-bold leading-relaxed">이 반은 자동 로그인을 꺼 두었어요. 선생님도 들어올 때마다 마스터 PIN을 넣어요.</p>
+                    <p id="loginAutoLoginOffNoteTeacher" class="hidden text-[11px] text-amber-200 font-bold leading-relaxed">이 반은 자동 로그인을 꺼 두었어요. 선생님도 들어올 때마다(새로고침해도) 마스터 PIN을 넣어요.</p>
                     <button type="button" id="btnLoginTeacher" class="w-full bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 text-white font-black py-3.5 rounded-xl shadow-lg min-h-[48px]">선생님으로 들어가기</button>
                 </div>
 
@@ -183,7 +183,7 @@
                     <label class="flex items-start gap-2 text-[11px] text-white font-black cursor-pointer py-1">
                         <input id="createClassStudentAutoLogin" type="checkbox" checked style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600">
                         <span>학생 자동 로그인
-                            <span class="block font-bold text-[10px] text-slate-300 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요. 끄면 선생님(마스터)도 들어올 때마다 PIN을 넣어요.</span>
+                            <span class="block font-bold text-[10px] text-slate-300 mt-0.5">한 번 로그인하면 다음에도 바로 들어와요. 공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣어요.</span>
                         </span>
                     </label>
                     <details class="rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2">
@@ -3437,7 +3437,7 @@
                     <label class="flex items-start gap-2 text-[10px] text-slate-300 font-bold sm:col-span-2">
                         <input id="wsStudentAutoLogin" type="checkbox" checked style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600">
                         <span>학생 자동 로그인
-                            <span class="block font-bold text-[10px] text-slate-400 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요. 끄면 선생님(마스터)도 들어올 때마다 PIN을 넣어요. 바꾼 값은 다음에 앱을 열 때부터 적용돼요. 이미 있던 반은 지금처럼 자동 로그인이 켜져 있어요.</span>
+                            <span class="block font-bold text-[10px] text-slate-400 mt-0.5">공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣고, 새로고침해도 다시 물어요. 바꾼 값은 다음에 열 때부터 적용돼요.</span>
                         </span>
                     </label>
                 </div>
@@ -3465,7 +3465,7 @@
                     <label class="flex items-start gap-2 text-[10px] text-slate-300 font-bold mt-2">
                         <input id="settingsNewClassStudentAutoLogin" type="checkbox" checked style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600">
                         <span>학생 자동 로그인
-                            <span class="block font-bold text-slate-400 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요. 끄면 선생님(마스터)도 들어올 때마다 PIN을 넣어요.</span>
+                            <span class="block font-bold text-slate-400 mt-0.5">한 번 로그인하면 다음에도 바로 들어와요. 공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣어요.</span>
                         </span>
                     </label>
                     <button type="button" onclick="void window.createNewClass({ source: 'settings' })" class="mt-2 w-full min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black rounded-xl">새 학급 추가</button>

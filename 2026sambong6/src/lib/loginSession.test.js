@@ -8,6 +8,8 @@ import {
     clearPersistedLoginIfDisabled,
     consumeAutoLoginHandoff,
     forgetSavedLoginPin,
+    isOtherStudentTakeover,
+    isOwnStudentDocId,
     markAutoLoginHandoff,
     prepareStartupLogin,
     restoreSessionLoginIfCleared,
@@ -224,5 +226,39 @@ describe('로그인 유지', () => {
         const loginBody = login.slice(0, login.indexOf('currentStudentDocRef = docRef;'));
         const offBranch = loginBody.slice(loginBody.lastIndexOf('if (isStudentAutoLoginEnabled(window.classMeta))'));
         assert.equal(/clearPersistedLoginIdentity/.test(offBranch), false);
+    });
+
+    it('M3: 기기 학번과 다른 학생 문서에는 저장하지 않아요(학번이 비면 예전처럼 통과)', () => {
+        assert.equal(isOwnStudentDocId('student_2', '2'), true);
+        assert.equal(isOwnStudentDocId('student_gm', 'gm'), true);
+        // 다른 탭에서 학생3이 들어와 학번이 3이 됐는데, 이 탭은 학생2 문서를 들고 있음
+        assert.equal(isOwnStudentDocId('student_2', '3'), false);
+        assert.equal(isOwnStudentDocId('student_gm', '2'), false);
+        assert.equal(isOwnStudentDocId('student_12', '1'), false);
+        // 학번이 비어 있으면(다른 탭 로그아웃 등) 막지 않아요: main 과 같아요
+        assert.equal(isOwnStudentDocId('student_2', null), true);
+        assert.equal(isOwnStudentDocId('student_2', ''), true);
+    });
+
+    it('M3: 다른 학생으로 바뀐 것만 나가기 대상이고, 같은 학생·지운 경우는 아니에요', () => {
+        assert.equal(isOtherStudentTakeover('2', '3'), true);
+        assert.equal(isOtherStudentTakeover('2', '2'), false);
+        assert.equal(isOtherStudentTakeover('2', null), false);
+        assert.equal(isOtherStudentTakeover('', '3'), false);
+        assert.equal(isOtherStudentTakeover(null, '3'), false);
+    });
+
+    it('M3: 앱은 저장 전·스냅샷 반영 전에 학번을 대조하고, 나가기는 끈 반에서만 해요', () => {
+        const app = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const save = app.slice(app.indexOf('async function saveDataToCloud('));
+        const head = save.slice(0, save.indexOf('const opts = {'));
+        assert.match(head, /isOwnStudentDocId\(currentStudentDocRef\.id, localStorage\.getItem\('sambong_student_id'\)\)/);
+        assert.match(head, /return false;/);
+        assert.equal((app.match(/&& studentSnapshotBelongsToThisTab\(myId\)/g) || []).length, 2);
+        const listener = app.slice(app.indexOf("window.addEventListener('storage', (e) => {"));
+        const body = listener.slice(0, listener.indexOf('});'));
+        const enabledReturn = body.indexOf('if (isStudentAutoLoginEnabled(window.classMeta)) return;');
+        const takeover = body.indexOf('isOtherStudentTakeover(');
+        assert.ok(enabledReturn > 0 && takeover > enabledReturn, '켜진 반은 storage 이벤트에서 먼저 빠져요');
     });
 });

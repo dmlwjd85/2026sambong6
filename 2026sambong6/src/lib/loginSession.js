@@ -173,3 +173,21 @@ export function prepareStartupLogin(storage, session, { classId, enabled } = {})
     clearPersistedLoginIfDisabled(storage, { classId, enabled: false });
     return { savedLogin: null, handoff: false };
 }
+
+/**
+ * 이 탭이 쓰려는 학생 문서(student_학번)가 지금 이 기기에 적힌 학번과 같은지 봅니다.
+ * 같은 브라우저 다른 탭에서 다른 학생이 들어오면 학번이 바뀌어요. 그때 낡은 탭이
+ * 다른 학생 문서(PIN 포함)를 덮지 않게 저장 전에 씁니다. 학번이 비어 있으면 예전처럼 통과.
+ */
+export function isOwnStudentDocId(docId, storedStudentId) {
+    const id = String(storedStudentId ?? '').trim();
+    if (!id) return true;
+    return String(docId || '') === 'student_' + id;
+}
+
+/** 다른 탭이 이 기기 학번을 '다른 학생'으로 바꿨는지(지운 경우는 아님). */
+export function isOtherStudentTakeover(myStudentId, nextStudentId) {
+    const mine = String(myStudentId ?? '').trim();
+    const next = String(nextStudentId ?? '').trim();
+    return !!mine && !!next && mine !== next;
+}

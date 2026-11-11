@@ -462,6 +462,8 @@ import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldP
 import {
     clearPersistedLoginIdentity,
     forgetSavedLoginPin,
+    isOtherStudentTakeover,
+    isOwnStudentDocId,
     isStudentAutoLoginEnabled,
     markAutoLoginHandoff,
     normalizeStudentAutoLoginEnabled,
@@ -817,7 +819,7 @@ async function refreshStudentsCacheFromServer() {
     window.gmaData = gmaD;
 
     const myId = localStorage.getItem('sambong_student_id');
-    if (myId && window.playerState && !window.playerState.isGuest) {
+    if (myId && window.playerState && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
         const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
         if (myData) {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
@@ -3223,11 +3225,39 @@ function redrawPlazaGrantsUi() {
             _sessionLoginIdentity = null;
         }
 
+        /**
+         * 학생 스냅샷을 이 탭 playerState 에 넣어도 되는지: 이 탭이 로그인한 학생 문서와
+         * 기기 학번이 다르면(다른 탭에서 다른 학생이 들어옴) 넣지 않아요. 로그인 전(문서 없음)은 예전처럼.
+         */
+        function studentSnapshotBelongsToThisTab(myId) {
+            if (!currentStudentDocRef) return true;
+            return isOwnStudentDocId(currentStudentDocRef.id, myId);
+        }
+
+        let _otherStudentTakeoverShown = false;
+        /** 낡은 탭 안내(한 번만). 끈 반은 확인 뒤 로그인 화면으로 돌아가요. */
+        function notifyOtherStudentTakeover() {
+            if (_otherStudentTakeoverShown) return;
+            _otherStudentTakeoverShown = true;
+            const off = !isStudentAutoLoginEnabled(window.classMeta);
+            const msg = off
+                ? '다른 탭에서 다른 사람이 들어와서 이 탭은 나갔어요.\n다시 쓰려면 로그인해 주세요.'
+                : '다른 탭에서 다른 사람이 들어왔어요.\n이 탭에서 한 일은 저장되지 않아요. 새로고침해 주세요.';
+            Promise.resolve(window.customAlert ? window.customAlert(msg) : null).finally(() => {
+                if (off) location.reload();
+            });
+        }
+
         window.addEventListener('storage', (e) => {
             if (e.storageArea && e.storageArea !== localStorage) return;
             if (e.key !== null && e.key !== 'sambong_student_id') return;
             if (!_sessionLoginIdentity || !_sambongLoggedIn) return;
             if (isStudentAutoLoginEnabled(window.classMeta)) return;
+            // 끈 반: 다른 탭에서 다른 학생이 들어오면 이 탭은 나가요. 지워진 경우만 내 학번을 다시 적어요.
+            if (isOtherStudentTakeover(_sessionLoginIdentity.studentId, localStorage.getItem('sambong_student_id'))) {
+                notifyOtherStudentTakeover();
+                return;
+            }
             restoreSessionLoginIfCleared(localStorage, _sessionLoginIdentity);
         });
 
@@ -4435,7 +4465,7 @@ function redrawPlazaGrantsUi() {
                     <label class="text-[10px] text-slate-300 sm:col-span-2 flex items-start gap-2">
                         <input id="classMetaStudentAutoLogin" type="checkbox" style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600" ${isStudentAutoLoginEnabled(meta) ? 'checked' : ''}>
                         <span>학생 자동 로그인
-                            <span class="block text-[9px] text-slate-500 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요. 끄면 선생님(마스터)도 들어올 때마다 PIN을 넣어요. 바꾼 값은 다음에 앱을 열 때부터 적용돼요. 이미 있던 반은 지금처럼 자동 로그인이 켜져 있어요.</span>
+                            <span class="block text-[9px] text-slate-500 mt-0.5">공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣고, 새로고침해도 다시 물어요. 바꾼 값은 다음에 열 때부터 적용돼요.</span>
                         </span>
                     </label>
                 </div>
@@ -4469,7 +4499,7 @@ function redrawPlazaGrantsUi() {
                     <label class="flex items-start gap-2 text-[10px] text-slate-300 mb-2">
                         <input id="newClassStudentAutoLogin" type="checkbox" checked style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600">
                         <span>학생 자동 로그인
-                            <span class="block text-[9px] text-slate-500 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요. 끄면 선생님(마스터)도 들어올 때마다 PIN을 넣어요.</span>
+                            <span class="block text-[9px] text-slate-500 mt-0.5">한 번 로그인하면 다음에도 바로 들어와요. 공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣어요.</span>
                         </span>
                     </label>
                     <button type="button" onclick="window.createNewClass({ source: 'panel' })" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
@@ -21726,7 +21756,7 @@ ${subjectLine}
                             if (classtoolSub === 'boardgames' && _boardGameView === 'lobby') renderBoardGameLobby();
                             
                             const myId = localStorage.getItem('sambong_student_id');
-                            if (myId && !window.playerState.isGuest) {
+                            if (myId && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     noteRemoteQuestCompletions(myData);
@@ -27211,6 +27241,11 @@ ${subjectLine}
 
         async function saveDataToCloud(options = {}) {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
+            // 같은 브라우저 다른 탭에서 다른 학생이 들어와 학번이 바뀌었으면, 이 탭은 저장하지 않아요(PIN 덮어쓰기 방지).
+            if (!isOwnStudentDocId(currentStudentDocRef.id, localStorage.getItem('sambong_student_id'))) {
+                notifyOtherStudentTakeover();
+                return false;
+            }
             const opts = {
                 allowXpDecrease: false,
                 allowBongDecrease: false,

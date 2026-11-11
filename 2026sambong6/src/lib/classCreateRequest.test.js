@@ -72,8 +72,17 @@ describe('학급 개설 인증 요청', () => {
         assert.equal(built.request.status, 'pending');
         assert.match(built.request.id, /^ccr_/);
         assert.equal(built.request.teacherPin, '4321');
+        assert.equal(built.request.studentAutoLoginEnabled, true);
         assert.equal(built.request.requestedAt, 100);
         assert.equal(built.request.newClassId, '');
+        const off = buildClassCreateRequest({
+            displayName: '공용실 반',
+            teacherPin: '1234',
+            requesterHint: 'login',
+            studentAutoLoginEnabled: false,
+        }, 100);
+        assert.equal(off.ok, true);
+        assert.equal(off.request.studentAutoLoginEnabled, false);
     });
 
     it('허락되면 반이 생기고, 거절·중복 처리는 건너뛴다', () => {
@@ -108,6 +117,9 @@ describe('학급 개설 인증 요청', () => {
         assert.equal(payload.copyFromClassId, 'src-class');
         assert.equal(payload.copySettingsFromCurrent, false);
         assert.equal(payload.teacherPin, '1111');
+        assert.equal(payload.studentAutoLoginEnabled, true);
+        const offPayload = classCreateWorkspacePayload({ ...pending, studentAutoLoginEnabled: false });
+        assert.equal(offPayload.studentAutoLoginEnabled, false);
         assert.equal(classCreateRequestStatusLabel('pending'), '승인 대기');
         assert.equal(classCreateRequestStatusLabel('approved'), '허락됨');
         assert.equal(pendingClassCreateRequests([pending, approved.request]).length, 1);

@@ -59,6 +59,7 @@ export function sanitizeClassCreateRequest(raw, nowMs = Date.now()) {
         seasonLabel: clipText(src.seasonLabel, 30) || '시즌 1',
         seasonTheme: clipText(src.seasonTheme, 60) || '우리 반 모험',
         applyDefaultTemplate: src.applyDefaultTemplate !== false,
+        studentAutoLoginEnabled: src.studentAutoLoginEnabled !== false,
         copyFromClassId: clipText(src.copyFromClassId, 80),
         requesterHint: clipText(src.requesterHint, 20),
         sourceClassId: clipText(src.sourceClassId, 80),
@@ -164,6 +165,7 @@ export function classCreateWorkspacePayload(request) {
         seasonLabel: r.seasonLabel,
         seasonTheme: r.seasonTheme,
         applyDefaultTemplate: r.applyDefaultTemplate,
+        studentAutoLoginEnabled: r.studentAutoLoginEnabled !== false,
         copySettingsFromCurrent: false,
         copyFromClassId: r.copyFromClassId,
     };

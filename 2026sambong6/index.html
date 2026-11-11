@@ -178,6 +178,12 @@
                     <label class="block text-[11px] text-white font-black">마스터 PIN 4자리
                         <input id="createClassTeacherPin" type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric" placeholder="••••" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2.5 text-sm font-bold text-center tracking-[0.4em] min-h-[44px]">
                     </label>
+                    <label class="flex items-start gap-2 text-[11px] text-white font-black">
+                        <input id="createClassStudentAutoLogin" type="checkbox" checked class="mt-0.5 rounded border-slate-600">
+                        <span>학생 자동 로그인
+                            <span class="block font-bold text-[10px] text-slate-300 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요.</span>
+                        </span>
+                    </label>
                     <details class="rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2">
                         <summary class="text-[11px] text-slate-300 font-bold cursor-pointer">선택 항목</summary>
                         <div class="mt-2 space-y-2">
@@ -3426,6 +3432,12 @@
                     <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">현재 학급 ID (읽기 전용)
                         <input id="wsClassIdReadonly" type="text" readonly class="mt-1 w-full bg-slate-900 border border-slate-700 text-slate-400 rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                     </label>
+                    <label class="flex items-start gap-2 text-[10px] text-slate-300 font-bold sm:col-span-2">
+                        <input id="wsStudentAutoLogin" type="checkbox" checked class="mt-0.5 rounded border-slate-600">
+                        <span>학생 자동 로그인
+                            <span class="block font-bold text-[10px] text-slate-400 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요. 예전에 만든 반은 값이 없으면 켜진 것과 같아요.</span>
+                        </span>
+                    </label>
                 </div>
                 <div class="pt-2 border-t border-slate-800">
                     <h4 class="text-[11px] text-amber-200 font-bold mb-2">이 학급 관리</h4>
@@ -3448,6 +3460,12 @@
                         <input id="settingsNewClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                         <input id="settingsNewClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                     </div>
+                    <label class="flex items-start gap-2 text-[10px] text-slate-300 font-bold mt-2">
+                        <input id="settingsNewClassStudentAutoLogin" type="checkbox" checked class="mt-0.5 rounded border-slate-600">
+                        <span>학생 자동 로그인
+                            <span class="block font-bold text-slate-400 mt-0.5">한 번 로그인하면 이 기기에서 다음에도 바로 들어와요. 교실 공용 컴퓨터라면 꺼 두세요.</span>
+                        </span>
+                    </label>
                     <button type="button" onclick="void window.createNewClass()" class="mt-2 w-full min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black rounded-xl">새 학급 추가</button>
                     </div>
                     <button type="button" onclick="window.openClassSwitchPanel()" class="mt-2 w-full min-h-[44px] bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-xl border-2 border-slate-400">초대 코드로 열기</button>

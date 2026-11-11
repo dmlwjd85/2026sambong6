@@ -54,3 +54,40 @@ export function clearPersistedLoginIdentity(storage) {
 export function shouldRestoreLoginWithoutServerPin({ isAutoLogin, isAdmin, savedPin } = {}) {
     return isAutoLogin === true && isAdmin === true && String(savedPin || '').length > 0;
 }
+
+/** 학급 문서·개설 요청에 저장하는 학생 자동 로그인 설정 이름 */
+export const STUDENT_AUTO_LOGIN_FIELD = 'studentAutoLoginEnabled';
+
+/**
+ * 값이 없거나 true면 켜짐(지금과 같음). 명시적으로 false일 때만 꺼짐.
+ * 기존 학급은 이 필드가 없으니 항상 켜짐으로 봅니다.
+ */
+export function isStudentAutoLoginEnabled(source) {
+    if (typeof source === 'boolean') return source !== false;
+    if (source && typeof source === 'object') {
+        return source[STUDENT_AUTO_LOGIN_FIELD] !== false;
+    }
+    return true;
+}
+
+/** 저장할 때는 true/false만 남깁니다. 없거나 true면 true. */
+export function normalizeStudentAutoLoginEnabled(raw) {
+    return raw !== false;
+}
+
+/**
+ * 이 학급의 자동 로그인이 꺼져 있고, 이 기기에 그 학급 로그인이 남아 있으면 지웁니다.
+ * 학급 연결(sambong_class_id)과 다른 학급 로그인은 그대로 둡니다.
+ */
+export function clearPersistedLoginIfDisabled(storage, { classId, enabled } = {}) {
+    if (!storage) return false;
+    if (isStudentAutoLoginEnabled(enabled)) return false;
+    const saved = readPersistedLogin(storage);
+    if (!saved) return false;
+    const savedClass = String(saved.classId || storage.getItem(CLASS_ID_KEY) || '').trim();
+    const target = String(classId || '').trim();
+    if (target && savedClass && savedClass !== target) return false;
+    clearPersistedLoginIdentity(storage);
+    return true;
+}
+

@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import {
+    STUDENT_AUTO_LOGIN_FIELD,
+    clearPersistedLoginIfDisabled,
     clearPersistedLoginIdentity,
+    isStudentAutoLoginEnabled,
+    normalizeStudentAutoLoginEnabled,
     readPersistedLogin,
     shouldRestoreLoginWithoutServerPin,
     writePersistedLogin,
@@ -81,5 +85,38 @@ describe('로그인 유지', () => {
         assert.equal(/localStorage\.clear\(/.test(sw), false);
         assert.equal(/indexedDB/.test(sw), false);
         assert.match(sw, /get\('sw-clear'\) === SW_CLEAR/);
+    });
+
+    it('학급 설정이 없으면 자동 로그인은 켜짐이고, false일 때만 꺼집니다', () => {
+        assert.equal(STUDENT_AUTO_LOGIN_FIELD, 'studentAutoLoginEnabled');
+        assert.equal(isStudentAutoLoginEnabled(undefined), true);
+        assert.equal(isStudentAutoLoginEnabled(null), true);
+        assert.equal(isStudentAutoLoginEnabled({}), true);
+        assert.equal(isStudentAutoLoginEnabled({ studentAutoLoginEnabled: true }), true);
+        assert.equal(isStudentAutoLoginEnabled({ studentAutoLoginEnabled: false }), false);
+        assert.equal(isStudentAutoLoginEnabled(true), true);
+        assert.equal(isStudentAutoLoginEnabled(false), false);
+        assert.equal(normalizeStudentAutoLoginEnabled(undefined), true);
+        assert.equal(normalizeStudentAutoLoginEnabled(true), true);
+        assert.equal(normalizeStudentAutoLoginEnabled(false), false);
+    });
+
+    it('꺼진 학급의 저장된 로그인만 지우고, 다른 학급 로그인은 남깁니다', () => {
+        const storage = memoryStorage();
+        writePersistedLogin(storage, { studentId: '1', pin: '1357', role: 'student', classId: 'class-a' });
+        assert.equal(clearPersistedLoginIfDisabled(storage, { classId: 'class-a', enabled: true }), false);
+        assert.equal(readPersistedLogin(storage).studentId, '1');
+        assert.equal(clearPersistedLoginIfDisabled(storage, { classId: 'class-b', enabled: false }), false);
+        assert.equal(readPersistedLogin(storage).studentId, '1');
+        assert.equal(clearPersistedLoginIfDisabled(storage, { classId: 'class-a', enabled: false }), true);
+        assert.equal(readPersistedLogin(storage), null);
+        assert.equal(storage.getItem('sambong_class_id'), 'class-a');
+    });
+
+    it('앱은 학급 설정이 꺼져 있으면 자동 로그인을 저장하거나 이어가지 않습니다', () => {
+        const app = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        assert.match(app, /isStudentAutoLoginEnabled/);
+        assert.match(app, /clearPersistedLoginIfDisabled/);
+        assert.match(app, /normalizeStudentAutoLoginEnabled/);
     });
 });

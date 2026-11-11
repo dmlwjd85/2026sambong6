@@ -46,6 +46,26 @@
     white-space: nowrap;
 }
 .alk-live-net[hidden] { display: none; }
+/* 판 위쪽 가운데에 떠 있는 연결 알림(판을 가리지 않게 얇게) */
+#alkLiveNet {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 15px;
+    font-size: 13px;
+    box-shadow: 0 2px 8px rgba(80, 40, 20, 0.18);
+    pointer-events: none;
+    max-width: calc(100% - 24px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#alkLiveNet[data-tone='ok'] { color: #2f5d1e; background: #e6f2d8; border-color: #a9c98c; }
+#alkLiveNet[data-tone='wait'] { color: #7a5312; background: #fbf0d6; border-color: #e0c27f; }
+#alkLiveNet[data-tone='bad'] { color: #8f3b26; background: #fbe2d6; border-color: #e2a88c; }
 /* 카드 아래쪽 얇은 막대: 그 사람이 다시 쏘기까지 남은 시간(꽉 차면 쏠 수 있어요) */
 .alk-live-view .alk-card { position: relative; overflow: hidden; }
 .alk-live-cool {

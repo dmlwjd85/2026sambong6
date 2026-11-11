@@ -11,6 +11,12 @@
  *   아직 호스트가 넣지 않은 내 샷은 스냅샷 위에 다시 얹어 깜빡이지 않게 해요.
  * 둘 다
  * - 각자 5초에 한 번만 쏴요. 보내는 중인 샷이 있으면 기다려요.
+ * 끊김·승계
+ * - 상대 기기 소식(자리 문서의 접속 표시·스냅샷)을 받은 내 시계 시각을 기억해요.
+ * - 게스트: 호스트가 45초 조용하면 내 화면의 판으로 호스트를 넘겨받아요(epoch+1). 규칙이 epoch가 줄어드는 쓰기를 막아요.
+ * - 호스트: 상대가 60초 조용하면(넘겨받은 뒤부터 셈) 연결 끊김 무승부로 끝내요.
+ * - 내가 오프라인(스냅샷이 캐시에서 옴)이면 아무것도 정하지 않고, 다시 연결되면 시간을 새로 세요.
+ * - 예전 호스트가 돌아와 더 높은 epoch 스냅샷을 받으면 게스트가 돼요.
  */
 
 import { createLiveEngine } from './alkkagiLiveEngine.js';
@@ -19,12 +25,14 @@ import {
     alkkagiLiveOther,
     alkkagiLiveSeat,
     decideLiveIntent,
+    decideLivePresence,
     emptyLiveState,
     isNewerLiveState,
     judgeLiveStones,
     liveCooldownLeft,
     sanitizeLiveSeatDoc,
     sanitizeLiveState,
+    takeoverLiveState,
 } from './alkkagiLiveGame.js';
 
 export const ALKKAGI_LIVE_WRITE_GAP_MS = 250;
@@ -45,7 +53,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     let wasMoving = false;
     let finished = false;
     let lastTick = Number(now) || 0;
-    const events = { hits: [], outs: [], launches: [], fails: [] };
+    const events = { hits: [], outs: [], launches: [], fails: [], net: [] };
     // 내 샷
     let myN = 0;
     let myLastAt = 0; // 내 시계
@@ -54,8 +62,13 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     // 상대 샷(표시용 쿨다운)
     let oppLastAt = 0;
     let lastSeenOppShot = '';
-    let otherIntent = null; // 호스트: 상대 자리 문서 최신값
-    const stats = { stateWrites: 0, intentWrites: 0, stateReads: 0, seatReads: 0, rejected: 0, applied: 0 };
+    let otherIntent = null; // 상대 자리 문서 최신값(호스트는 의도를 여기서 읽어요)
+    // 접속
+    let mySeatN = 0; // 내 자리 문서에 적힌 샷 번호(규칙: 다음 의도는 이 값 + 1)
+    let heardAt = 0; // 상대 기기 소식을 받은 내 시계 시각
+    let since = Number(now) || 0; // 조용함을 세기 시작한 시각(시작·승계·재연결)
+    let connected = true;
+    const stats = { stateWrites: 0, intentWrites: 0, stateReads: 0, seatReads: 0, rejected: 0, applied: 0, takeovers: 0, lostHost: 0 };
     const notes = [];
 
     const isHost = () => ready && st.hostSeat === me;
@@ -89,8 +102,9 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
             if (st.hostSeat === me) dirty = true; // 첫 스냅샷을 만들어요
         }
         const mine = seatDoc ? sanitizeLiveSeatDoc(seatDoc, me) : null;
-        if (mine && mine.gid === gid) myN = mine.n;
+        if (mine && mine.gid === gid) { myN = mine.n; mySeatN = mine.n; }
         if (st.hostSeat === me) myN = Math.max(myN, st.applied[me]);
+        since = t;
         ready = true;
         wasMoving = !engine.isResting();
     }
@@ -102,6 +116,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
 
     function canShoot(nowMs) {
         if (!ready || finished || st.over) return { ok: false, error: 'not_ready' };
+        if (!connected) return { ok: false, error: 'offline' }; // 내 연결이 끊긴 동안 쏜 샷은 판에 못 들어가요
         if (inflight || pending) return { ok: false, error: 'sending' };
         if (cooldownLeft(me, nowMs) > 0) return { ok: false, error: 'cooldown' };
         if (engine.aliveCount(me) === 0) return { ok: false, error: 'not_alive' };
@@ -132,6 +147,8 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         inflight = true;
         stats.intentWrites += 1;
         const n = myN;
+        const seatBefore = mySeatN;
+        mySeatN = n;
         Promise.resolve()
             .then(() => send.writeIntent({ n, shot }))
             .then(() => { inflight = false; })
@@ -140,6 +157,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
                 inflight = false;
                 if (pending && pending.n === n) pending = null;
                 myN = Math.max(0, n - 1);
+                if (mySeatN === n) mySeatN = seatBefore;
                 myLastAt = 0;
                 note('intent_failed', { n });
                 events.fails.push({ n, reason: 'send' });
@@ -166,8 +184,18 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         if (!isNewerLiveState(next, st) && ready) return null;
         const wasHost = isHost();
         if (wasHost && next.hostSeat === me && next.epoch === st.epoch) return null; // 내가 쓴 것
+        if (next.hostSeat === other) heardAt = t;
         // 다른 기기가 호스트를 넘겨받았어요(내가 호스트였다면 이제 게스트예요).
-        if (wasHost && next.hostSeat !== me) note('lost_host');
+        if (wasHost && next.hostSeat !== me) {
+            note('lost_host');
+            stats.lostHost += 1;
+            events.net.push({ type: 'lost_host' });
+            myN = mySeatN; // 이제부터는 자리 문서 번호로 의도를 보내요
+            pending = null;
+            dirty = false;
+            finished = false;
+            since = t;
+        }
         const lastKey = next.last ? `${next.last.by}:${next.last.n}` : '';
         if (next.last && next.last.by === other && lastKey !== lastSeenOppShot) {
             lastSeenOppShot = lastKey;
@@ -183,13 +211,71 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     }
 
     /** 상대 자리 문서(샷 의도·접속 표시). 호스트만 샷을 판에 넣어요. */
-    function onSeatDoc(who, doc) {
+    function onSeatDoc(who, doc, nowMs) {
         stats.seatReads += 1;
         const s = alkkagiLiveSeat(who);
         if (s !== other) return;
         const d = sanitizeLiveSeatDoc(doc, s);
         if (d.gid !== gid) return;
         otherIntent = d;
+        if (nowMs != null) heardAt = Math.max(heardAt, Number(nowMs) || 0);
+    }
+
+    /** 스냅샷이 서버에서 오는지(true) 캐시에서 오는지(false). 다시 연결되면 조용함을 새로 세요. */
+    function setConnected(on, nowMs) {
+        const v = !!on;
+        if (v && !connected) since = Number(nowMs) || lastTick;
+        connected = v;
+    }
+
+    function quietMs(nowMs) {
+        const heard = Math.max(heardAt, since);
+        return heard ? Math.max(0, (Number(nowMs) || 0) - heard) : 0;
+    }
+
+    function presence(nowMs) {
+        if (!ready || !connected || finished || st.over) return '';
+        return decideLivePresence({ amHost: isHost(), lastHeardAt: heardAt, since, now: nowMs });
+    }
+
+    /** 게스트가 호스트를 넘겨받아요. 지금 내 화면의 판(예측 포함)을 그대로 이어요. */
+    function takeover(nowMs) {
+        const t = Number(nowMs) || 0;
+        if (!ready || isHost() || finished) return { ok: false, error: 'not_ready' };
+        const r = takeoverLiveState(curState(), { seat: me, stones: engine.stones(), step: engine.step() });
+        if (!r.ok) return r;
+        const base = otherIntent ? otherIntent.n : 0; // 상대가 앞으로 보낼 의도는 이 번호 다음부터
+        if (pending) pending = null; // 내 화면에 이미 굴린 샷은 판에 들어간 걸로 쳐요
+        st = {
+            ...r.state,
+            applied: { ...r.state.applied, [me]: myN, [other]: base },
+            rejected: { ...r.state.rejected, [me]: Math.min(r.state.rejected[me], myN), [other]: base },
+            // 시계가 다른 기기의 시각이라 내 시계로 다시 적어요
+            lastShotAt: { [me]: myLastAt, [other]: oppLastAt },
+        };
+        stats.takeovers += 1;
+        note('takeover', { epoch: st.epoch });
+        events.net.push({ type: 'takeover' });
+        since = t;
+        heardAt = 0;
+        inflight = false;
+        wasMoving = !engine.isResting();
+        dirty = true;
+        writing = false;
+        flush(t, true);
+        return { ok: true, error: '' };
+    }
+
+    function endDisconnect(nowMs) {
+        const t = Number(nowMs) || 0;
+        if (!isHost() || finished) return;
+        finished = true;
+        st = { ...st, over: { endReason: 'disconnect', winner: '' } };
+        dirty = true;
+        note('disconnect');
+        events.net.push({ type: 'disconnect' });
+        flush(t, true);
+        if (send.finish) send.finish({ winner: '', endReason: 'disconnect', stones: engine.stones(), shots: st.shots });
     }
 
     function processIntent(t) {
@@ -240,6 +326,9 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         lastTick = t;
         if (!ready) return;
         pushEvents(engine.advance(t));
+        const p = presence(t);
+        if (p === 'takeover') takeover(t);
+        else if (p === 'disconnect') endDisconnect(t);
         if (isHost() && !finished) {
             processIntent(t);
             const moving = !engine.isResting();
@@ -263,7 +352,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     }
 
     function drainEvents() {
-        const out = { hits: events.hits.splice(0), outs: events.outs.splice(0), launches: events.launches.splice(0), fails: events.fails.splice(0) };
+        const out = { hits: events.hits.splice(0), outs: events.outs.splice(0), launches: events.launches.splice(0), fails: events.fails.splice(0), net: events.net.splice(0) };
         return out;
     }
 
@@ -288,6 +377,11 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         pending: () => pending,
         stats: () => ({ ...stats }),
         notes: () => notes.slice(),
+        setConnected,
+        isConnected: () => connected,
+        quietMs,
+        presence,
+        takeover,
         // 3단계(승계)에서 써요
         _engine: () => engine,
         _setState: (next) => { st = next; },

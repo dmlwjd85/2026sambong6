@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import {
+    NEW_CLASS_FORM_IDS,
+    readNewClassForm,
+    resolveNewClassFormSource,
     CLASS_CREATE_NOTIFY_STORAGE_KEY,
     CLASS_CREATE_REQUEST_COLLECTION,
     CLASS_CREATE_REQUEST_STORAGE_KEY,
@@ -166,5 +171,51 @@ describe('학급 개설 인증 요청', () => {
         writeClassCreateNotifySignature('a|b', sess);
         assert.equal(sess.data[CLASS_CREATE_NOTIFY_STORAGE_KEY], 'a|b');
         assert.equal(readClassCreateNotifySignature(sess), 'a|b');
+    });
+    it('M2: 두 폼이 함께 그려져 있어도 누른 폼의 자동 로그인 값을 읽어요', () => {
+        const els = {
+            newClassDisplayName: { value: '' },
+            newClassSchoolYear: { value: '' },
+            newClassGrade: { value: '' },
+            newClassHomeroom: { value: '' },
+            newClassStudentAutoLogin: { checked: true },
+            settingsNewClassDisplayName: { value: '공용실 반' },
+            settingsNewClassSchoolYear: { value: '2027' },
+            settingsNewClassGrade: { value: '6' },
+            settingsNewClassHomeroom: { value: '3' },
+            settingsNewClassStudentAutoLogin: { checked: false },
+        };
+        const get = (id) => els[id] || null;
+        assert.equal(NEW_CLASS_FORM_IDS.settings.studentAutoLogin, 'settingsNewClassStudentAutoLogin');
+        // 설정 화면 버튼(source 넘김)
+        const viaSettings = readNewClassForm(get, 'settings');
+        assert.equal(viaSettings.source, 'settings');
+        assert.equal(viaSettings.studentAutoLoginEnabled, false);
+        assert.equal(viaSettings.displayName, '공용실 반');
+        assert.deepEqual([viaSettings.schoolYear, viaSettings.grade, viaSettings.homeroom], [2027, 6, 3]);
+        // source 없이 불러도 이름을 넣은 폼(설정)을 골라요.
+        assert.equal(resolveNewClassFormSource(get), 'settings');
+        assert.equal(readNewClassForm(get).studentAutoLoginEnabled, false);
+        // 패널에서 끄고 패널 버튼을 누르면 패널 값을 읽어요.
+        els.newClassDisplayName.value = '패널 반';
+        els.newClassStudentAutoLogin.checked = false;
+        els.settingsNewClassStudentAutoLogin.checked = true;
+        const viaPanel = readNewClassForm(get, 'panel');
+        assert.equal(viaPanel.studentAutoLoginEnabled, false);
+        assert.equal(viaPanel.displayName, '패널 반');
+        assert.equal(resolveNewClassFormSource(get), 'panel');
+        // 설정 버튼이면 패널에 이름이 있어도 설정 체크값(켜짐)을 읽어요.
+        assert.equal(readNewClassForm(get, 'settings').studentAutoLoginEnabled, true);
+        assert.equal(readNewClassForm(get, 'settings').displayName, '공용실 반');
+        // 체크박스가 없으면 켜짐(지금과 같아요).
+        assert.equal(readNewClassForm(() => null, 'settings').studentAutoLoginEnabled, true);
+    });
+
+    it('M2: 앱의 새 학급 버튼은 자기 폼을 넘겨요', () => {
+        const app = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const html = fs.readFileSync(fileURLToPath(new URL('../../index.html', import.meta.url)), 'utf8');
+        assert.match(html, /window\.createNewClass\(\{ source: 'settings' \}\)/);
+        assert.match(app, /window\.createNewClass\(\{ source: 'panel' \}\)/);
+        assert.equal(/getElementById\('newClassStudentAutoLogin'\)\s*\|\|/.test(app), false);
     });
 });

@@ -20,12 +20,12 @@ import { parseAlkkagiShot } from './alkkagiPhysics.js';
 
 export const ALKKAGI_LIVE_TYPE = 'alkkagiLive';
 /**
- * 실시간 입구 스위치. #99·#100 모두 꺼 둔 채로 내보내요.
+ * 실시간 입구 스위치. #99에서는 꺼 두었고, #100(2단계, 발사)에서 켜요.
  * 꺼져 있으면 '실시간 방 만들기' 버튼·로비의 실시간 방·'둘이 동시에 쏘고' 안내가 보이지 않아요.
- * 켤 때는 선생님 답을 받은 뒤 이 한 줄만 true로 바꾸는 커밋을 따로 만들어요.
- * (화면 문구·새로고침 복귀 함수는 liveEnabled 인자로 켠 경우도 단위 테스트해요.)
+ * 급하게 끌 때는 이 한 줄을 false로 바꾸고(테스트 alkkagiLiveGame.test.js의 스위치 확인 한 줄도 함께) 앱만 다시 배포하면 돼요. 규칙은 그대로 둬도 돼요.
+ * (화면 문구·새로고침 복귀 함수는 enabled/liveEnabled 인자로 켬·끔 둘 다 단위 테스트해요.)
  */
-export const ALKKAGI_LIVE_ENABLED = false;
+export const ALKKAGI_LIVE_ENABLED = true;
 /** 기권 방식: 기권 버튼(resign)인지 판에서 나가서(left)인지. 결과 문구만 달라요. */
 export const ALKKAGI_LIVE_FORFEIT_HOWS = Object.freeze(['resign', 'left']);
 /** 한 사람이 다시 쏘기까지 기다리는 시간 */

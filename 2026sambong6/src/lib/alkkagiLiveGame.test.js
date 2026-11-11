@@ -121,8 +121,8 @@ describe('실시간 알까기 판 요약', () => {
         assert.equal(L.alkkagiLiveGameToDoc(resign).forfeitHow, 'resign');
     });
 
-    it('1단계에서는 실시간 입구 스위치가 꺼져 있어요(#100에서 켜요)', () => {
-        assert.equal(L.ALKKAGI_LIVE_ENABLED, false);
+    it('#100에서 실시간 입구 스위치를 켜요(급하게 끌 때는 이 값과 이 테스트만 false로)', () => {
+        assert.equal(L.ALKKAGI_LIVE_ENABLED, true);
     });
 
     it('잘못된 값은 걸러요(알 id·좌표·승자 없는 out)', () => {
@@ -228,8 +228,7 @@ describe('실시간 알까기 #100: 샷 범위·판 안내 문구', () => {
         const over = L.alkkagiLiveGuide({ enabled: false, over: true, seat: 'black', recordText: '1승 0패' });
         assert.equal(over.line, '판이 끝났어요');
         assert.equal(over.tip, '내 알까기 전적 1승 0패');
-        // 기본값은 지금 스위치(꺼짐)를 따라요
-        assert.equal(L.ALKKAGI_LIVE_ENABLED, false);
-        assert.equal(L.alkkagiLiveGuide({ seat: 'black', connected: true, ready: true }).phase, 'off');
+        // 기본값은 지금 스위치를 따라요(켬이면 쏘기, 끔이면 준비 중)
+        assert.equal(L.alkkagiLiveGuide({ seat: 'black', connected: true, ready: true }).phase, L.ALKKAGI_LIVE_ENABLED ? 'play' : 'off');
     });
 });

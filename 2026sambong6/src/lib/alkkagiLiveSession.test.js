@@ -159,6 +159,17 @@ describe('실시간 알까기 동기화(가짜 네트워크)', () => {
         assert.equal(h2.state().seq, 0);
         assert.equal(h2.state().gid, 2000);
     });
+    it('#100 내 자리 번호가 다른 기기 쓰기로 앞서 있으면 따라가서 다음 샷 번호가 막히지 않아요', () => {
+        const g = createLiveSession({ seat: 'white', gid: 1000, now: 0, send: { writeState: async () => {}, writeIntent: async () => {} } });
+        g.init(liveStateToDoc(emptyLiveState({ gid: 1000 })), { hostSeat: 'black', nowMs: 0 });
+        assert.equal(g.myN(), 0);
+        g.onSeatDoc('white', { seat: 'white', sid: '5', gid: 1000, n: 2, shot: { v: 1, id: 'w1', a: 0, p: 5000 } }, 10);
+        assert.equal(g.myN(), 2);
+        // 다른 판·뒤처진 번호는 무시해요
+        g.onSeatDoc('white', { seat: 'white', sid: '5', gid: 999, n: 9, shot: null }, 20);
+        g.onSeatDoc('white', { seat: 'white', sid: '5', gid: 1000, n: 1, shot: null }, 30);
+        assert.equal(g.myN(), 2);
+    });
     it('샷 의도를 못 보내면 내 화면에서 거두고 바로 다시 쏠 수 있어요', async () => {
         const net = makeNet({ failIntent: 1 });
         const start = net.G.stones().map((s) => [s.id, s.x, s.y]);

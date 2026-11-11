@@ -175,7 +175,8 @@ export function createAlkkagiLiveMode(deps) {
                 if (id === 'state') {
                     const before = session.onStateDoc(data, t);
                     if (before && board) { shownStones = session.stones(); board.correct(before); }
-                } else if (id === alkkagiLiveOther(seat)) {
+                } else if (id === alkkagiLiveOther(seat) || id === seat) {
+                    // 내 자리 문서도 넘겨서 샷 번호가 어긋나면 맞춰요(#100).
                     session.onSeatDoc(id, data, t);
                 }
             });

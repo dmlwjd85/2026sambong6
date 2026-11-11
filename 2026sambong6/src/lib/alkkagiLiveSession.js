@@ -186,6 +186,13 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     function onSeatDoc(who, doc) {
         stats.seatReads += 1;
         const s = alkkagiLiveSeat(who);
+        if (s && s === me) {
+            // #100: 내 자리 문서 번호가 내가 아는 것보다 앞서 있으면(다른 기기·같이 하기에서 쓴 샷) 따라가요.
+            // 그래야 다음 샷 번호(n+1)가 규칙에 막혀 계속 '전달되지 않았어요'가 나오지 않아요.
+            const mine = sanitizeLiveSeatDoc(doc, s);
+            if (mine.gid === gid && !inflight && !pending && mine.n > myN) myN = mine.n;
+            return;
+        }
         if (s !== other) return;
         const d = sanitizeLiveSeatDoc(doc, s);
         if (d.gid !== gid) return;

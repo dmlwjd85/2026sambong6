@@ -11,6 +11,13 @@
  *   아직 호스트가 넣지 않은 내 샷은 스냅샷 위에 다시 얹어 깜빡이지 않게 해요.
  * 둘 다
  * - 각자 5초에 한 번만 쏴요. 보내는 중인 샷이 있으면 기다려요.
+ * 같은 기기에서 창을 여러 개 열었을 때(#100 M1)
+ * - 한 판·한 자리는 창 하나만 맡아요(hostRole, alkkagiLiveTabLock.js). 못 맡은 창은 '보기만' 해요:
+ *   스냅샷만 따라가고, 쏘지도·판 계산도·판 끝내기도 하지 않아요.
+ * - 그래도 다른 기기(같은 계정)가 같은 자리로 스냅샷을 쓸 수 있어요. 그래서 호스트도
+ *   · 내가 아는 것보다 seq가 앞선 스냅샷이 오면 그 판을 따라가고(내 판을 버려요),
+ *   · 스냅샷 쓰기가 거절되면(규칙: seq는 +1만) 최신 스냅샷을 다시 읽어 따라가요.
+ *   · 판 끝(over) 스냅샷이 실제로 저장된 뒤에만 방을 끝내요(send.finish). 저장이 안 되면 끝내지 않아요.
  */
 
 import { createLiveEngine } from './alkkagiLiveEngine.js';
@@ -33,7 +40,7 @@ export const ALKKAGI_LIVE_WRITE_GAP_MS = 250;
  * @param {{ seat: string, gid: number, now: number,
  *   send: { writeState: (state:object)=>Promise<any>, writeIntent: (intent:{n:number, shot:object})=>Promise<any>, finish: (result:{winner:string,endReason:string,stones:any[],shots:number})=>void } }} opts
  */
-export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKAGI_LIVE_COOLDOWN_MS, writeGapMs = ALKKAGI_LIVE_WRITE_GAP_MS } = {}) {
+export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKAGI_LIVE_COOLDOWN_MS, writeGapMs = ALKKAGI_LIVE_WRITE_GAP_MS, hostRole = true } = {}) {
     const me = alkkagiLiveSeat(seat);
     const other = alkkagiLiveOther(me);
     let st = emptyLiveState({ gid }); // 마지막으로 알고 있는 스냅샷(호스트면 내가 쓰는 값)
@@ -55,10 +62,17 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     let oppLastAt = 0;
     let lastSeenOppShot = '';
     let otherIntent = null; // 호스트: 상대 자리 문서 최신값
-    const stats = { stateWrites: 0, intentWrites: 0, stateReads: 0, seatReads: 0, rejected: 0, applied: 0 };
+    const stats = { stateWrites: 0, intentWrites: 0, stateReads: 0, seatReads: 0, rejected: 0, applied: 0, stateWriteFailed: 0, resyncs: 0, foreignStates: 0 };
     const notes = [];
+    // #100 M1: 이 창이 이 자리를 맡았는지(같은 기기 창 잠금). false면 보기만 해요.
+    let role = hostRole !== false;
+    // 마지막으로 저장에 성공한 내 스냅샷 seq(판 끝내기 전 다시 확인할 때 써요)
+    let writtenSeq = -1;
+    let resyncing = false;
+    let finishPending = null; // 판 끝 스냅샷이 저장되면 부를 결과
 
-    const isHost = () => ready && st.hostSeat === me;
+    const seatIsHost = () => ready && st.hostSeat === me;
+    const isHost = () => seatIsHost() && role;
 
     function note(type, extra = {}) {
         notes.push({ type, ...extra });
@@ -86,7 +100,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         } else {
             st = { ...emptyLiveState({ gid, hostSeat }), seq: 0 };
             engine = createLiveEngine({ stones: st.stones, now: t });
-            if (st.hostSeat === me) dirty = true; // 첫 스냅샷을 만들어요
+            if (st.hostSeat === me && role) dirty = true; // 첫 스냅샷을 만들어요(이 창이 맡았을 때만)
         }
         const mine = seatDoc ? sanitizeLiveSeatDoc(seatDoc, me) : null;
         if (mine && mine.gid === gid) myN = mine.n;
@@ -102,6 +116,8 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
 
     function canShoot(nowMs) {
         if (!ready || finished || st.over) return { ok: false, error: 'not_ready' };
+        if (!role) return { ok: false, error: 'other_tab' };
+        if (resyncing) return { ok: false, error: 'sending' };
         if (inflight || pending) return { ok: false, error: 'sending' };
         if (cooldownLeft(me, nowMs) > 0) return { ok: false, error: 'cooldown' };
         if (engine.aliveCount(me) === 0) return { ok: false, error: 'not_alive' };
@@ -165,7 +181,13 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         if (next.gid !== gid) return null;
         if (!isNewerLiveState(next, st) && ready) return null;
         const wasHost = isHost();
-        if (wasHost && next.hostSeat === me && next.epoch === st.epoch) return null; // 내가 쓴 것
+        // 내가 쓴 것(seq를 먼저 올리고 쓰므로 내 것은 seq가 지금 값과 같거나 작아요. 그건 위에서 걸러져요).
+        // 여기까지 왔으면 같은 자리·같은 epoch인데 seq가 앞선 스냅샷이에요: 다른 창·다른 기기가 썼어요.
+        // 내 판을 버리고 그 판을 따라가요(#100 M1). 안 그러면 판 계산이 둘로 갈라져요.
+        if (wasHost && next.hostSeat === me && next.epoch === st.epoch) {
+            stats.foreignStates += 1;
+            note('foreign_state', { seq: next.seq, mine: st.seq });
+        }
         // 다른 기기가 호스트를 넘겨받았어요(내가 호스트였다면 이제 게스트예요).
         if (wasHost && next.hostSeat !== me) note('lost_host');
         const lastKey = next.last ? `${next.last.by}:${next.last.n}` : '';
@@ -174,12 +196,69 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
             markOppShot(t);
             events.launches.push({ by: other, id: next.last.id, power: 0.6 });
         }
+        return adoptState(next, t);
+    }
+
+    function adoptState(next, t) {
         st = next;
         const res = engine.adopt(next.stones, { step: next.step, nowMs: t });
         if (next.hostSeat !== me) reapplyPending();
+        else myN = Math.max(myN, st.applied[me]);
         if (next.over) finished = true;
-        wasMoving = !engine.isResting();
+        else if (finished && !finishPending) finished = false;
+        // 맡은 창이면 멈춘 판도 한 번 더 승패를 보게 해요(따라간 판이 이미 끝나 있을 수 있어요).
+        wasMoving = isHost() ? true : !engine.isResting();
+        // 따라간 판은 이미 저장된 판이에요. 내가 들고 있던 안 보낸 변경은 버려요.
+        dirty = false;
         return res.before;
+    }
+
+    /**
+     * 최신 스냅샷으로 강제로 맞춰요(같은 seq라도). 스냅샷 쓰기가 거절됐을 때·판 끝내기 확인이 어긋났을 때 써요.
+     * doc이 없으면(판 시작 전) 아무것도 안 해요.
+     */
+    function resyncTo(doc, nowMs) {
+        const t = Number(nowMs) || lastTick;
+        if (!doc) return null;
+        const next = sanitizeLiveState(doc);
+        if (next.gid !== gid) return null;
+        stats.resyncs += 1;
+        note('resync', { seq: next.seq, mine: st.seq });
+        finishPending = null;
+        // 내가 쓴 판 끝이 저장되지 않았으면 판은 아직 안 끝난 거예요.
+        if (!next.over) finished = false;
+        return adoptState(next, t);
+    }
+
+    function startResync() {
+        if (resyncing) return;
+        if (typeof send.readState !== 'function') return;
+        resyncing = true;
+        Promise.resolve()
+            .then(() => send.readState())
+            .then((doc) => { resyncTo(doc, lastTick); })
+            .catch((e) => { note('resync_failed', { msg: String(e && e.message || e).slice(0, 60) }); })
+            .then(() => { resyncing = false; });
+    }
+
+    /**
+     * 같은 기기 창 잠금이 바뀌었을 때(#100 M1).
+     * - 잃으면: 바로 보기만 해요(쓰기·판 계산·판 끝내기 멈춤). 보내던 판 끝도 취소해요.
+     * - 얻으면: 최신 스냅샷을 다시 읽어 맞춘 뒤 이어서 맡아요.
+     */
+    function setHostRole(on, nowMs) {
+        const next = !!on;
+        if (next === role) return;
+        role = next;
+        note(next ? 'role_gained' : 'role_lost');
+        if (!next) {
+            dirty = false;
+            if (finishPending) { finishPending = null; if (!st.over) finished = false; }
+            return;
+        }
+        lastTick = Number(nowMs) || lastTick;
+        if (ready) startResync();
+        if (seatIsHost()) dirty = true;
     }
 
     /** 상대 자리 문서(샷 의도·접속 표시). 호스트만 샷을 판에 넣어요. */
@@ -224,7 +303,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     }
 
     function flush(t, force = false) {
-        if (!isHost() || !dirty || writing) return;
+        if (!isHost() || !dirty || writing || resyncing) return;
         if (!force && t - lastWriteAt < writeGapMs) return;
         dirty = false;
         lastWriteAt = t;
@@ -234,10 +313,26 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         const snap = st;
         Promise.resolve()
             .then(() => send.writeState(snap))
-            .catch((e) => { note('state_write_failed', { msg: String(e && e.message || e).slice(0, 60) }); })
             .then(() => {
                 writing = false;
+                // 내 창이 아직 맡고 있고, 그사이 남의 스냅샷을 따라가지 않았을 때만 '내 판이 저장됐다'고 봐요.
+                if (st.seq === snap.seq && st.epoch === snap.epoch) writtenSeq = snap.seq;
+                if (finishPending && snap.over && role && writtenSeq === snap.seq) {
+                    const r = finishPending;
+                    finishPending = null;
+                    if (send.finish) send.finish({ ...r, seq: snap.seq, epoch: snap.epoch });
+                }
                 if (dirty) flush(lastTick, false);
+            }, (e) => {
+                // 규칙(seq +1만)에 막혔거나 연결 문제예요. 다른 창·기기가 먼저 썼을 수 있어요:
+                // 내 판을 믿지 말고 최신 스냅샷을 다시 읽어 맞춰요. 판 끝도 취소해요(저장 안 된 승패는 기록하지 않아요).
+                writing = false;
+                stats.stateWriteFailed += 1;
+                note('state_write_failed', { msg: String(e && e.message || e).slice(0, 60), seq: snap.seq });
+                if (finishPending) { finishPending = null; finished = false; st = { ...st, over: null }; }
+                wasMoving = true; // 다시 맞춘 뒤 멈춰 있으면 승패를 다시 봐요
+                if (typeof send.readState === 'function') startResync();
+                else { st = { ...st, seq: Math.max(0, st.seq - 1) }; dirty = true; }
             });
     }
 
@@ -256,8 +351,9 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
                 if (verdict.endReason) {
                     finished = true;
                     st = { ...st, over: { endReason: verdict.endReason, winner: verdict.winner } };
+                    // 판 끝 스냅샷이 저장된 뒤에만 방을 끝내요(flush 성공 쪽에서 send.finish).
+                    finishPending = { ...verdict, stones: engine.stones(), shots: st.shots };
                     flush(t, true);
-                    if (send.finish) send.finish({ ...verdict, stones: engine.stones(), shots: st.shots });
                 }
             }
             wasMoving = moving;
@@ -284,6 +380,13 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         onSeatDoc,
         drainEvents,
         isHost,
+        /** 이 자리가 판 계산 자리인데 다른 창이 맡아서 이 창은 보기만 하는지 */
+        isViewOnly: () => ready && !role,
+        hasRole: () => role,
+        setHostRole,
+        resyncTo,
+        writtenSeq: () => writtenSeq,
+        isResyncing: () => resyncing,
         isReady: () => ready,
         isFinished: () => finished,
         stones: () => engine.stones(),

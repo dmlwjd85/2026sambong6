@@ -256,21 +256,65 @@ export function checkLiveShotShape(shot, seat) {
 /**
  * 판 위 안내 두 줄(상단 알약 line, 아래 안내 tip)을 지금 화면 상태에 맞게 골라요.
  * 두 줄이 서로 다른 말을 하지 않게(예: '판을 준비하고 있어요'인데 '둘이 동시에 쏘고…') 한곳에서 정해요.
- * tip은 글자만 돌려줘요(HTML 아님). who는 판 계산을 맡은 기기 안내예요.
- * @param {{ enabled?: boolean, over?: boolean, seat?: string, connected?: boolean, ready?: boolean, isHost?: boolean, recordText?: string }} o
+ * tip은 글자만 돌려줘요(HTML 아님). who는 어느 화면 판이 기준인지 알려 주는 짧은 말이에요.
+ * viewOnly: 같은 기기 다른 창이 이 판을 맡아서 이 창은 보기만 할 때(#100 M1).
+ * @param {{ enabled?: boolean, over?: boolean, seat?: string, connected?: boolean, ready?: boolean, isHost?: boolean, viewOnly?: boolean, recordText?: string }} o
  */
-export function alkkagiLiveGuide({ enabled = ALKKAGI_LIVE_ENABLED, over = false, seat = '', connected = false, ready = false, isHost = false, recordText = '' } = {}) {
+export function alkkagiLiveGuide({ enabled = ALKKAGI_LIVE_ENABLED, over = false, seat = '', connected = false, ready = false, isHost = false, viewOnly = false, recordText = '' } = {}) {
     if (over) return { line: '판이 끝났어요', tip: `내 알까기 전적 ${recordText}`.trim(), who: '', phase: 'over' };
     if (!enabled) return { line: '실시간 대전은 준비하고 있어요', tip: '지금은 쏠 수 없어요. 열리면 여기에서 바로 할 수 있어요.', who: '', phase: 'off' };
     if (!alkkagiLiveSeat(seat)) return { line: '구경하고 있어요', tip: '두 사람이 차례 없이 동시에 쏘는 판이에요.', who: '', phase: 'watch' };
     if (!connected || !ready) return { line: '판에 연결하는 중이에요', tip: '연결되면 바로 쏠 수 있어요. 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.', who: '', phase: 'connecting' };
+    if (viewOnly) {
+        return {
+            line: '다른 창에서 두고 있어요',
+            tip: '이 창은 보기만 해요. 여기서 두려면 이 창을 새로고침해요.',
+            who: '',
+            phase: 'other_tab',
+        };
+    }
     return {
         line: '지금 쏠 수 있어요',
         tip: '알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 5초 쉬어요.',
-        who: isHost ? '판 계산은 내 기기가 맡고 있어요.' : '판 계산은 방장 기기가 해요.',
+        who: isHost ? '내가 방장이라 내 화면 판이 기준이에요.' : '방장 화면 판이 기준이에요.',
         phase: 'play',
     };
 }
+
+/**
+ * 판을 끝내기 전에 다시 읽은 live/state가 내가 저장한 판 끝과 같은지(#100 M1).
+ * 같은 판(gid)·같은 epoch·같은 seq이고, 판 끝(over) 승패가 같아야 해요. 하나라도 다르면 끝내지 않아요.
+ * @param {object|null} stateDoc 다시 읽은 live/state(없으면 null)
+ * @param {{ gid:number, seq:number, epoch:number, winner:string, endReason:string, hostSeat?:string }} mine
+ */
+export function liveFinishMatches(stateDoc, { gid, seq, epoch, winner = '', endReason = '', hostSeat = '' } = {}) {
+    if (!stateDoc || typeof stateDoc !== 'object') return false;
+    const st = sanitizeLiveState(stateDoc);
+    if (!st.over) return false;
+    if (st.gid !== int(gid) || st.seq !== int(seq) || st.epoch !== int(epoch)) return false;
+    if (hostSeat && st.hostSeat !== hostSeat) return false;
+    return st.over.endReason === String(endReason || '') && st.over.winner === (alkkagiLiveSeat(winner) || '');
+}
+
+/**
+ * 당기던 중에 상대 샷 때문에 내 알이 밀리거나 떨어져서 샷이 안 나갔는지(#100 권장①).
+ * 조용히 취소되면 학생이 '왜 안 나가지?' 하므로 짧게 알려 줘요.
+ * - 'gone': 잡고 있던 알이 판 밖으로 떨어졌어요.
+ * - 'pushed': 제대로 당겼었는데(maxPull ≥ 최소 힘) 알이 밀려나 당김이 풀렸어요.
+ * - '': 학생이 스스로 취소했거나(화면 밖에서 놓음·살짝만 당김) 정상 발사예요.
+ */
+export function alkkagiAimLostReason({ alive = true, startX = 0, startY = 0, x = 0, y = 0, maxPull = 0, pull = 0, outside = false, minPower = 0.05, moveDist = ALKKAGI_CONFIG.radius * 0.6 } = {}) {
+    if (outside) return '';
+    if (!alive) return Number(maxPull) >= minPower ? 'gone' : '';
+    if (Number(maxPull) < minPower || Number(pull) >= minPower) return '';
+    const moved = Math.hypot(Number(x) - Number(startX), Number(y) - Number(startY));
+    return moved > moveDist ? 'pushed' : '';
+}
+
+export const ALKKAGI_LIVE_AIM_LOST_TEXT = Object.freeze({
+    pushed: '상대 알에 밀려서 다시 겨눠요',
+    gone: '잡은 알이 떨어졌어요. 다른 알로 겨눠요',
+});
 
 export function sanitizeLiveSeatDoc(raw, seat) {
     const s = alkkagiLiveSeat(seat || (raw && raw.seat));
@@ -432,6 +476,7 @@ export const ALKKAGI_LIVE_ERROR_LABEL = Object.freeze({
     already_over: '이미 끝난 판이에요.',
     not_alive: '이미 떨어진 알이에요.',
     bad_color: '이 판의 사람만 할 수 있어요.',
+    other_tab: '다른 창에서 두고 있어요.',
 });
 
 export function alkkagiLiveErrorText(code) {

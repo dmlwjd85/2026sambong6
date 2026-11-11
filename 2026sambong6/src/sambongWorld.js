@@ -290,7 +290,7 @@ import {
     setBoardRoomTimer,
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
-import { createIdleRoomSweeper } from './lib/boardRoomSweep.js';
+import { createIdleRoomSweeper, createRoomDeleteOnce } from './lib/boardRoomSweep.js';
 import {
     ALKKAGI_BLACK,
     ALKKAGI_STONES_PER_SIDE,
@@ -12110,7 +12110,7 @@ ${subjectLine}
         // 실시간 입구 스위치가 켜졌을 때만 '· 실시간 대전' 같은 안내를 보여요.
         document.querySelectorAll('[data-alk-live-only]').forEach((el) => el.classList.toggle('hidden', !ALKKAGI_LIVE_ENABLED));
         const _alkLive = createAlkkagiLiveMode({
-            fs: { doc, collection, setDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, getDb: () => db },
+            fs: { doc, collection, setDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, getDocFromServer, getDb: () => db },
             roomRef: (roomId) => boardGameRoomRef(roomId),
             selfId: () => boardGameSelfId(),
             seatOf: (room, id) => roomMemberSeat(room, id),
@@ -12227,15 +12227,27 @@ ${subjectLine}
             }
         }
 
+        // #100 권장③: 이 화면에서 같은 방 지우기가 겹쳐 두 번 나가지 않게 방 id로 막아요(정리기·방 닫기 모두).
+        // (함수 선언이 먼저 불려도 안전하게 처음 쓸 때 만들어요)
+        function boardRoomDeleteOnce() {
+            if (!boardRoomDeleteOnce.v) boardRoomDeleteOnce.v = createRoomDeleteOnce();
+            return boardRoomDeleteOnce.v;
+        }
+
         /** 방 문서를 지우고(실패하면 조용히 넘어가요) 실시간 방이면 live 문서도 정리해요. */
         async function deleteBoardRoomDoc(roomId) {
-            try { await deleteDoc(boardGameRoomRef(roomId)); } catch (_) {
-                // 이미 다른 기기(예전 화면 포함)가 방만 지웠으면 지우기가 거절돼요. 그때 남은 live를 정리해요.
-                void cleanupOrphanAlkkagiLive(roomId);
-                return false; /* 목록 필터로도 빠져요 */
+            if (!boardRoomDeleteOnce().tryStart(roomId)) return false; // 이미 지우는 중이에요
+            try {
+                try { await deleteDoc(boardGameRoomRef(roomId)); } catch (_) {
+                    // 이미 다른 기기(예전 화면 포함)가 방만 지웠으면 지우기가 거절돼요. 그때 남은 live를 정리해요.
+                    void cleanupOrphanAlkkagiLive(roomId);
+                    return false; /* 목록 필터로도 빠져요 */
+                }
+                await deleteAlkkagiLiveDocs(roomId);
+                return true;
+            } finally {
+                boardRoomDeleteOnce().release(roomId);
             }
-            await deleteAlkkagiLiveDocs(roomId);
-            return true;
         }
 
         // 내 실시간 방 id(alkl_학번, alkl_학번_기기)가 목록에 없으면 남은 live가 있는지 하루 한 번 봐요(스위치 켰을 때, 알까기 로비에서).
@@ -12511,23 +12523,30 @@ ${subjectLine}
                 if (!auth.currentUser || auth.currentUser.uid !== myUid) return;
                 if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) return;
                 // 지우기는 트랜잭션으로 해요. 먼저 지운 기기가 있으면 다시 읽어 없는 방이라 건너뛰어요(중복 지우기 0).
+                // #100 권장③: 이 화면에서 같은 방을 이미 지우는 중이면(다른 정리 키·방 닫기) 건너뛰어요.
+                // 트랜잭션은 한 번만 시도해요(maxAttempts 1). 다른 기기와 부딪혀 실패하면 다시 보내지 않고, 다음 정리나 그 기기가 맡아요.
+                if (!boardRoomDeleteOnce().tryStart(room.id)) return;
                 const ref = boardGameRoomRef(room.id);
                 let removed = false;
                 let gone = false;
-                await runTransaction(db, async (tx) => {
-                    removed = false;
-                    gone = false;
-                    const snap = await tx.get(ref);
-                    // 이미 다른 기기가 방을 지웠어요. 예전 화면(v1.47)은 live를 남기므로 아래에서 남은 것만 정리해요.
-                    if (!snap.exists()) { gone = true; return; }
-                    const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
-                    if (boardRoomCleanupKey(cur) !== key) return;
-                    if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
-                    tx.delete(ref);
-                    removed = true;
-                });
-                if (removed) await deleteAlkkagiLiveDocs(room.id);
-                else if (gone) await cleanupOrphanAlkkagiLive(room.id);
+                try {
+                    await runTransaction(db, async (tx) => {
+                        removed = false;
+                        gone = false;
+                        const snap = await tx.get(ref);
+                        // 이미 다른 기기가 방을 지웠어요. 예전 화면(v1.47)은 live를 남기므로 아래에서 남은 것만 정리해요.
+                        if (!snap.exists()) { gone = true; return; }
+                        const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                        if (boardRoomCleanupKey(cur) !== key) return;
+                        if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
+                        tx.delete(ref);
+                        removed = true;
+                    }, { maxAttempts: 1 });
+                    if (removed) await deleteAlkkagiLiveDocs(room.id);
+                    else if (gone) await cleanupOrphanAlkkagiLive(room.id);
+                } finally {
+                    boardRoomDeleteOnce().release(room.id);
+                }
             },
             onError: (e, room) => console.warn('sweepIdleBoardRooms', room && room.id, e && e.code),
         });
@@ -13587,6 +13606,8 @@ ${subjectLine}
                     docSeen = snap.exists();
                     if (!snap.exists()) throw new Error('expired');
                     const room = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                    // #100 M1: 같은 트랜잭션에서 다른 문서(실시간 알까기 live/state)를 다시 확인해야 할 때만 써요.
+                    if (opts && typeof opts.txCheck === 'function' && !(await opts.txCheck(tx, room))) throw new Error('stale_live');
                     const result = mutator(room);
                     if (!result || result.ok === false) throw new Error((result && result.error) || 'invalid');
                     // 옛 화면이 hostUid 없이 덮어쓴 내 방이면 내 uid를 다시 적어 둬요.

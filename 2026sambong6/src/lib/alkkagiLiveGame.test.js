@@ -221,8 +221,13 @@ describe('실시간 알까기 #100: 샷 범위·판 안내 문구', () => {
         assert.equal(host.phase, 'play');
         assert.equal(host.line, '지금 쏠 수 있어요');
         assert.ok(/당겼다 놓아요/.test(host.tip));
-        assert.equal(host.who, '판 계산은 내 기기가 맡고 있어요.');
-        assert.equal(L.alkkagiLiveGuide({ enabled: true, seat: 'white', connected: true, ready: true }).who, '판 계산은 방장 기기가 해요.');
+        assert.equal(host.who, '내가 방장이라 내 화면 판이 기준이에요.');
+        assert.equal(L.alkkagiLiveGuide({ enabled: true, seat: 'white', connected: true, ready: true }).who, '방장 화면 판이 기준이에요.');
+        // #100 M1: 같은 기기 다른 창이 맡으면 이 창은 보기만 해요
+        const other = L.alkkagiLiveGuide({ enabled: true, seat: 'black', connected: true, ready: true, isHost: false, viewOnly: true });
+        assert.equal(other.phase, 'other_tab');
+        assert.equal(other.line, '다른 창에서 두고 있어요');
+        assert.match(other.tip, /새로고침/);
         // 자리가 없으면 구경, 끝났으면 전적(스위치와 상관없이)
         assert.equal(L.alkkagiLiveGuide({ enabled: true, seat: '' }).phase, 'watch');
         const over = L.alkkagiLiveGuide({ enabled: false, over: true, seat: 'black', recordText: '1승 0패' });
@@ -230,5 +235,30 @@ describe('실시간 알까기 #100: 샷 범위·판 안내 문구', () => {
         assert.equal(over.tip, '내 알까기 전적 1승 0패');
         // 기본값은 지금 스위치를 따라요(켬이면 쏘기, 끔이면 준비 중)
         assert.equal(L.alkkagiLiveGuide({ seat: 'black', connected: true, ready: true }).phase, L.ALKKAGI_LIVE_ENABLED ? 'play' : 'off');
+    });
+    it('#100 M1 판 끝내기 전 다시 읽은 live/state가 내 판 끝과 같을 때만 끝내요', () => {
+        const base = { ...L.emptyLiveState({ gid: 77, hostSeat: 'black' }), seq: 9, epoch: 0, over: { endReason: 'out', winner: 'black' } };
+        const doc = L.liveStateToDoc(base);
+        const mine = { gid: 77, seq: 9, epoch: 0, winner: 'black', endReason: 'out', hostSeat: 'black' };
+        assert.equal(L.liveFinishMatches(doc, mine), true);
+        assert.equal(L.liveFinishMatches(null, mine), false, '문서가 없으면 끝내지 않아요');
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, seq: 10 }), mine), false, '다른 창이 더 앞선 판을 썼어요');
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, seq: 8 }), mine), false);
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, epoch: 1 }), mine), false);
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, gid: 78 }), mine), false);
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, over: null }), mine), false, '저장된 판이 안 끝났으면 끝내지 않아요');
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, over: { endReason: 'out', winner: 'white' } }), mine), false, '승자가 다르면 끝내지 않아요');
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, hostSeat: 'white' }), mine), false);
+        assert.equal(L.liveFinishMatches(L.liveStateToDoc({ ...base, over: { endReason: 'draw', winner: '' } }), { ...mine, winner: '', endReason: 'draw' }), true);
+    });
+    it('#100 권장① 당기던 알이 밀리거나 떨어지면 이유를 알려 줘요(스스로 취소는 조용히)', () => {
+        const R0 = L.ALKKAGI_CONFIG.radius;
+        assert.equal(L.alkkagiAimLostReason({ alive: false, maxPull: 0.5 }), 'gone');
+        assert.equal(L.alkkagiAimLostReason({ alive: false, maxPull: 0.01 }), '', '거의 안 당겼으면 조용히');
+        assert.equal(L.alkkagiAimLostReason({ alive: true, startX: 0, startY: 0, x: R0 * 2, y: 0, maxPull: 0.6, pull: 0 }), 'pushed');
+        assert.equal(L.alkkagiAimLostReason({ alive: true, startX: 0, startY: 0, x: 1, y: 0, maxPull: 0.6, pull: 0 }), '', '알이 그대로면 스스로 취소');
+        assert.equal(L.alkkagiAimLostReason({ alive: true, startX: 0, startY: 0, x: R0 * 2, y: 0, maxPull: 0.6, pull: 0.4 }), '', '아직 당겨져 있으면 그대로 쏴요');
+        assert.equal(L.alkkagiAimLostReason({ alive: false, maxPull: 0.9, outside: true }), '', '화면 밖에서 놓은 건 스스로 취소');
+        assert.equal(L.ALKKAGI_LIVE_AIM_LOST_TEXT.pushed, '상대 알에 밀려서 다시 겨눠요');
     });
 });

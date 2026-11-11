@@ -7,6 +7,8 @@ import {
     buildGuestNameRegExp,
     collectGuestMaskNames,
     displayStudentNameFor,
+    givenNameFromFullName,
+    givenNamesForMask,
     installGuestNameShield,
     isGuestViewer,
     isStudentNameId,
@@ -81,6 +83,48 @@ describe('손님 이름 가리기: 글 속 이름 찾기', () => {
     it('지킴이는 문서가 없으면 아무것도 하지 않아요', () => {
         assert.equal(installGuestNameShield(null, { getNames: () => [] }), null);
         assert.equal(installGuestNameShield({ documentElement: {} }, {}), null);
+    });
+});
+
+describe('손님 이름 가리기: 띄어 쓴 이름과 이름만 쓴 경우', () => {
+    it('명단에 빈칸이 있는 성+이름도 빈칸 없는 이름으로 모아요', () => {
+        const list = collectGuestMaskNames({
+            roster: [{ id: '1', name: '윤 지아' }, { id: '2', name: '강서준' }],
+        });
+        assert.deepEqual(list, ['강서준', '윤지아']);
+    });
+    it('세 글자·네 글자 한글 이름에서 두 글자 이름을 꺼내요', () => {
+        assert.equal(givenNameFromFullName('윤지아'), '지아');
+        assert.equal(givenNameFromFullName('윤 지아'), '지아');
+        assert.equal(givenNameFromFullName('강서준'), '서준');
+        assert.equal(givenNameFromFullName('남궁하린'), '하린');
+        assert.equal(givenNameFromFullName('제갈민호'), '민호');
+        assert.equal(givenNameFromFullName('이'), '');
+        assert.equal(givenNameFromFullName('지아'), '');
+    });
+    it('띄어 쓴 성+이름을 가린 글자로 바꿔요', () => {
+        const re = buildGuestNameRegExp(['윤지아', '강서준']);
+        assert.equal(maskNamesInText('윤 지아 고마워', re), '○○○ 고마워');
+        assert.equal(maskNamesInText('윤지아 고마워', re), '○○○ 고마워');
+        assert.equal(maskNamesInText('강서준 고마워', re), '○○○ 고마워');
+        assert.equal(maskNamesInText('강 서 준 최고', re), '○○○ 최고');
+    });
+    it('두 글자 이름은 한글이 앞뒤에 이어지지 않을 때만 가려요', () => {
+        const re = buildGuestNameRegExp(['윤지아', '강서준', '한도윤', '김현수']);
+        assert.deepEqual(givenNamesForMask(['윤지아', '강서준', '한도윤', '김현수']), ['도윤', '서준', '지아', '현수']);
+        assert.equal(maskNamesInText('지아 서준 도윤', re), '○○○ ○○○ ○○○');
+        assert.equal(maskNamesInText('지아', re), '○○○');
+        // 호칭·다른 낱말 속에서는 가리지 않아요.
+        assert.equal(maskNamesInText('지아야', re), '지아야');
+        assert.equal(maskNamesInText('현수막', re), '현수막');
+        assert.equal(maskNamesInText('현수 최고', re), '○○○ 최고');
+    });
+    it('보통 말로 자주 쓰는 두 글자 이름은 가리지 않아요', () => {
+        const re = buildGuestNameRegExp(['박최고', '김오늘', '이친구']);
+        assert.deepEqual(givenNamesForMask(['박최고', '김오늘', '이친구']), []);
+        assert.equal(maskNamesInText('오늘 최고', re), '오늘 최고');
+        assert.equal(maskNamesInText('친구 최고', re), '친구 최고');
+        assert.equal(maskNamesInText('박최고 최고', re), '○○○ 최고');
     });
 });
 

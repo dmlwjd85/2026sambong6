@@ -6882,3 +6882,11 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
     letter-spacing: 0.05em;
     pointer-events: none;
 }
+
+/* 상태메시지 알약은 글자가 작고 배경이 어두워서, 흐림을 줄이고 옅은 바탕을 씌워 가린 자리가 보이게 해요. 다른 곳의 흐림은 그대로 둬요. */
+.plaza-card-status .guest-name-mask {
+    filter: blur(1.5px);
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 4px;
+    padding: 0 0.12em;
+}

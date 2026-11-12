@@ -1,0 +1,67 @@
+# 2026sambong6 Firestore 보안 규칙: 테스트 후 배포
+# - main 에 firestore.rules 가 바뀌어 올라오면 자동 실행, Actions 탭에서 손으로도 실행 가능
+# - 단위 테스트(npm test) + 규칙 테스트(에뮬레이터)가 통과해야 배포합니다.
+# - 배포에는 저장소 시크릿 FIREBASE_SERVICE_ACCOUNT (서비스 계정 키 JSON 전체)가 필요합니다.
+#   없으면 테스트만 하고 배포는 건너뜁니다(실패로 표시하지 않음).
+name: Deploy Firestore rules
+
+on:
+    push:
+        branches: [main, master]
+        paths:
+            - '2026sambong6/firestore.rules'
+            - '.github/workflows/deploy-firestore-rules.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: firestore-rules
+    cancel-in-progress: false
+
+jobs:
+    rules:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: 2026sambong6
+        env:
+            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+            HAS_FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+                  cache: npm
+                  cache-dependency-path: 2026sambong6/package-lock.json
+
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: '21'
+
+            - name: 의존성 설치
+              run: npm ci
+
+            - name: 단위 테스트
+              run: npm test
+
+            - name: 규칙 테스트 (Firestore 에뮬레이터)
+              run: npm run test:rules
+
+            - name: 규칙 배포
+              if: env.HAS_FIREBASE_SA == 'true'
+              env:
+                  FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+              run: |
+                  printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+                  export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
+                  npx firebase deploy --only firestore:rules --project sambong-world-2026 --non-interactive
+                  rm -f "$RUNNER_TEMP/firebase-sa.json"
+
+            - name: 배포 건너뜀 안내
+              if: env.HAS_FIREBASE_SA != 'true'
+              run: echo "::warning::FIREBASE_SERVICE_ACCOUNT 시크릿이 없어 테스트만 하고 규칙 배포는 건너뛰었습니다. 2026sambong6/docs/admin-setup.md 의 '규칙 자동 배포' 절을 보세요."

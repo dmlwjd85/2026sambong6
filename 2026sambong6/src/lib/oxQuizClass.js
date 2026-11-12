@@ -19,6 +19,10 @@ export const OX_CLASS_REVEAL_MS = 5000;
 /** 선생님 기기에서 시간이 끝난 뒤 학생 답이 도착할 틈 */
 export const OX_CLASS_GRACE_MS = 800;
 export const OX_CLASS_STATUSES = ['lobby', 'question', 'reveal', 'done', 'off'];
+/** 선생님 화면이 이만큼 진행이 없으면 학생 화면은 '선생님을 기다려요'로 보여요(예정 시간 뒤 여유). */
+export const OX_CLASS_STALL_MS = 20000;
+/** 이만큼 아무 변화가 없는 판은 버려진 판으로 보고 참여 안내를 숨겨요. */
+export const OX_CLASS_ABANDON_MS = 30 * 60 * 1000;
 
 function text(value, max) {
     return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -129,8 +133,16 @@ export function teacherShouldAdvance(live, now) {
     return now - (Number(live.revealAt) || now) >= OX_CLASS_REVEAL_MS;
 }
 
-function pickOf(doc, index) {
-    const entry = doc && doc.picks && doc.picks[String(index)];
+/**
+ * 그 문제의 답. 정답을 공개할 때 선생님 기기가 판 문서(frozen)에 그때까지 들어온 답을 고정해 두므로,
+ * 공개된 문제는 고정된 답만 셉니다(공개 뒤에 들어온 답은 점수에 들어가지 않아요).
+ */
+function pickOf(doc, index, live) {
+    const key = String(index);
+    const frozen = live && live.frozen && typeof live.frozen === 'object' ? live.frozen[key] : null;
+    const entry = frozen && typeof frozen === 'object'
+        ? frozen[String(doc && doc.id)]
+        : doc && doc.picks && doc.picks[key];
     return entry && (entry.p === 'O' || entry.p === 'X') ? entry : null;
 }
 
@@ -142,6 +154,7 @@ export function scoreClassEntry(live, doc, upTo = revealedCount(live)) {
     const items = (live && Array.isArray(live.items)) ? live.items : [];
     const joinIndex = Math.max(0, Number(doc && doc.joinIndex) || 0);
     const lives = Number(live && live.lives) || 0;
+    const limitMs = (Number(live && live.timeSec) || 15) * 1000;
     let correct = 0;
     let wrong = 0;
     let answered = 0;
@@ -150,10 +163,13 @@ export function scoreClassEntry(live, doc, upTo = revealedCount(live)) {
     for (let i = 0; i < Math.min(upTo, items.length); i += 1) {
         if (i < joinIndex) continue;
         if (outAt >= 0) break;
-        const pick = pickOf(doc, i);
+        const pick = pickOf(doc, i, live);
         if (pick) {
             answered += 1;
-            timeMs += Math.max(0, Math.min(600000, Number(pick.ms) || 0));
+            timeMs += Math.max(0, Math.min(limitMs, Number(pick.ms) || 0));
+        } else {
+            // 고르지 않은 문제는 제한 시간 전부로 쳐요(동점일 때 안 고른 쪽이 유리하지 않게).
+            timeMs += limitMs;
         }
         if (pick && pick.p === items[i].answer) correct += 1;
         else {
@@ -210,7 +226,7 @@ export function tallyClassQuestion(live, docs) {
     participantsOf(live, docs).forEach((p) => {
         if (index < (Number(p.joinIndex) || 0)) return;
         if (p.out && p.outAt < index) return;
-        const pick = pickOf(p, index);
+        const pick = pickOf(p, index, live);
         if (pick) tally[pick.p] += 1;
         else tally.none += 1;
     });
@@ -223,9 +239,43 @@ export function startPatch(live, now) {
     return { status: 'question', index: 0, qStartAt: now, revealAt: 0, tally: null, updatedAt: now };
 }
 
+export function freezePicks(live, docs) {
+    const index = Number(live && live.index) || 0;
+    const key = String(index);
+    const frozen = {};
+    participantsOf(live, docs).forEach((p) => {
+        const entry = p.picks && p.picks[key];
+        if (entry && (entry.p === 'O' || entry.p === 'X')) {
+            frozen[String(p.id).slice(0, 24)] = { p: entry.p, ms: Math.max(0, Math.min(600000, Math.floor(Number(entry.ms) || 0))) };
+        }
+    });
+    return frozen;
+}
+
 export function revealPatch(live, docs, now) {
     if (!live || live.status !== 'question') return null;
-    return { status: 'reveal', revealAt: now, tally: tallyClassQuestion(live, docs), updatedAt: now };
+    const index = Number(live.index) || 0;
+    const frozen = { ...(live.frozen && typeof live.frozen === 'object' ? live.frozen : {}), [String(index)]: freezePicks(live, docs) };
+    const fixed = { ...live, frozen };
+    return { status: 'reveal', revealAt: now, tally: tallyClassQuestion(fixed, docs), frozen, updatedAt: now };
+}
+
+/** 학생 화면: 선생님 화면이 멈춘 것 같은지(이 기기가 판 문서를 마지막으로 받은 시각 기준) */
+export function classRoundStalled(live, now, lastSeenAt) {
+    if (!live || !['question', 'reveal'].includes(live.status)) return false;
+    const seen = Number(lastSeenAt) || now;
+    let expect;
+    if (live.status === 'question') expect = (Number(live.timeSec) || 15) * 1000 + OX_CLASS_GRACE_MS;
+    else if (live.advance === 'auto') expect = OX_CLASS_REVEAL_MS;
+    else return false; // 선생님이 넘기는 판은 설명하느라 오래 머물 수 있어요.
+    return now - seen > expect + OX_CLASS_STALL_MS;
+}
+
+/** 오래 아무 변화가 없는 판(선생님이 브라우저를 닫음 등) */
+export function isClassRoundAbandoned(live, now) {
+    if (!isClassRoundActive(live)) return false;
+    const at = Number(live.updatedAt) || Number(live.openedAt) || 0;
+    return at > 0 && now - at > OX_CLASS_ABANDON_MS;
 }
 
 export function finishPatch(live, docs, now) {
@@ -282,4 +332,77 @@ export function classConditionSummary(live) {
         live.advance === 'manual' ? '선생님이 넘겨요' : '자동으로 넘어가요',
     ];
     return parts.join(' · ');
+}
+
+function intIn(value, min, max, fallback) {
+    const n = Math.floor(Number(value));
+    return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
+}
+
+function str(value, max) {
+    return typeof value === 'string' || typeof value === 'number' ? String(value).slice(0, max) : '';
+}
+
+/**
+ * 판 문서는 로그인한 기기라면 쓸 수 있으니 믿지 않아요. 화면에 쓰기 전에 모양과 타입을 맞춥니다.
+ * 숫자는 숫자로, 글자는 길이를 자르고, 모르는 칸은 버려요.
+ */
+export function sanitizeClassLive(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.roundId !== 'string' || !raw.roundId) return null;
+    const items = (Array.isArray(raw.items) ? raw.items : []).slice(0, 20)
+        .filter((it) => it && typeof it === 'object')
+        .map((it) => ({
+            id: str(it.id, 20),
+            subject: str(it.subject, 40),
+            prompt: str(it.prompt, 240),
+            answer: it.answer === 'X' ? 'X' : 'O',
+            explain: str(it.explain, 240),
+        }));
+    const status = OX_CLASS_STATUSES.includes(raw.status) ? raw.status : 'off';
+    const tallyRaw = raw.tally && typeof raw.tally === 'object' ? raw.tally : null;
+    const results = Array.isArray(raw.results) ? raw.results.slice(0, 60)
+        .filter((r) => r && typeof r === 'object')
+        .map((r) => ({
+            id: str(r.id, 24),
+            name: str(r.name, 24),
+            rank: intIn(r.rank, 1, 999, 0),
+            correct: intIn(r.correct, 0, 999, 0),
+            answered: intIn(r.answered, 0, 999, 0),
+            timeMs: intIn(r.timeMs, 0, 1e8, 0),
+            out: r.out === true,
+        })) : null;
+    const frozen = {};
+    if (raw.frozen && typeof raw.frozen === 'object') {
+        Object.keys(raw.frozen).slice(0, 20).forEach((k) => {
+            const m = raw.frozen[k];
+            if (!/^[0-9]{1,2}$/.test(k) || !m || typeof m !== 'object') return;
+            const clean = {};
+            Object.keys(m).slice(0, 80).forEach((sid) => {
+                const e = m[sid];
+                if (e && (e.p === 'O' || e.p === 'X')) clean[str(sid, 24)] = { p: e.p, ms: intIn(e.ms, 0, 600000, 0) };
+            });
+            frozen[k] = clean;
+        });
+    }
+    return {
+        roundId: str(raw.roundId, 40),
+        status,
+        index: intIn(raw.index, 0, Math.max(0, items.length - 1), 0),
+        items,
+        total: items.length,
+        subjects: (Array.isArray(raw.subjects) ? raw.subjects : []).slice(0, 20).map((s) => str(s, 40)),
+        timeSec: OX_TIME_CHOICES.includes(Number(raw.timeSec)) ? Number(raw.timeSec) : 15,
+        lives: OX_CLASS_LIVES_CHOICES.includes(Number(raw.lives)) ? Number(raw.lives) : 0,
+        order: raw.order === 'sheet' ? 'sheet' : 'random',
+        advance: raw.advance === 'manual' ? 'manual' : 'auto',
+        qStartAt: intIn(raw.qStartAt, 0, 1e14, 0),
+        revealAt: intIn(raw.revealAt, 0, 1e14, 0),
+        tally: tallyRaw ? { O: intIn(tallyRaw.O, 0, 999, 0), X: intIn(tallyRaw.X, 0, 999, 0), none: intIn(tallyRaw.none, 0, 999, 0) } : null,
+        results,
+        ...(raw.revealed == null ? {} : { revealed: intIn(raw.revealed, 0, items.length, 0) }),
+        frozen,
+        openedAt: intIn(raw.openedAt, 0, 1e14, 0),
+        updatedAt: intIn(raw.updatedAt, 0, 1e14, 0),
+        finishedAt: intIn(raw.finishedAt, 0, 1e14, 0),
+    };
 }

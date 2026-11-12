@@ -6639,6 +6639,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .oxc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 8px; margin-top: auto; }
         .oxc-actions .ox-go { margin-top: 0; }
         .oxc-foot { margin-top: auto; }
+        .oxx-note { font-size: 0.9rem; font-weight: 800; line-height: 1.4; color: #fde68a; background: rgba(180, 83, 9, 0.25); border: 1px solid rgba(253, 230, 138, 0.5); border-radius: 12px; padding: 8px 10px; white-space: pre-line; }
+        .oxc-tabs .ox-choice { padding: 0 6px; font-size: 0.95rem; }
         .oxc-foot .ox-go { margin-top: 0; }
         .oxc-actions .ox-choice { min-height: 64px; }
         .oxc-wait { min-height: 28vh; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.15rem; font-weight: 900; line-height: 1.4; color: #e0f2fe; }

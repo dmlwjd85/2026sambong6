@@ -587,6 +587,7 @@ import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
 import { levelXpForDisplay } from './lib/levelDisplay.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
+import { OX_CHALLENGE_REASON, OX_CHALLENGE_SOURCE, planChallengeFinish, planChallengeStart } from './lib/oxQuizChallenge.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
@@ -10099,7 +10100,9 @@ ${subjectLine}
             writeJoin: async (studentId, data) => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)), data);
+                // 규칙은 답 문서를 처음 쓴 기기(uid)에 묶어요. 같은 판에서는 그 기기만 답을 더할 수 있어요.
+                const uid = auth && auth.currentUser ? auth.currentUser.uid : '';
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)), { ...data, uid });
             },
             writePick: async (studentId, roundId, index, entry) => {
                 const authOk = await ensureAnonAuthReady();
@@ -10109,6 +10112,81 @@ ${subjectLine}
                     picks: { [String(index)]: entry },
                     updatedAt: Date.now(),
                 }, { merge: true });
+            },
+            // 무제한 도전: 반 랭킹 문서 하나(oxQuizBank/challengeBoard)에 학번별 최고 기록과 '오늘 봉 받는 판'을 둡니다.
+            // 봉은 그날 첫 판이 끝날 때 한 번만, 랭킹 문서와 학생 문서를 같은 트랜잭션으로 고쳐 줍니다
+            // (스킨 구매·환불과 같은 방식: 서버 봉을 읽고 bong·bongChangeLog를 함께 씀).
+            appKey: () => String(appId || ''),
+            loadChallengeBoard: async () => {
+                if (!db) return null;
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'));
+                return snap.exists() ? (snap.data() || null) : null;
+            },
+            startChallenge: async (studentId, name, runId, today) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard');
+                let out = null;
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const board = snap.exists() ? (snap.data() || {}) : {};
+                    const plan = planChallengeStart(board, { studentId, name, runId, today, uid: auth && auth.currentUser ? auth.currentUser.uid : '' });
+                    if (plan.changed) tx.set(ref, { entries: { [String(studentId)]: plan.entry }, lastSid: String(studentId), updatedAt: Date.now() }, { merge: true });
+                    out = {
+                        rewardRun: plan.rewardRun,
+                        board: { ...board, entries: { ...(board.entries || {}), [String(studentId)]: plan.entry } },
+                    };
+                });
+                return out;
+            },
+            finishChallenge: async (studentId, name, run) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const boardRef = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard');
+                const studentRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + String(studentId));
+                let out = null;
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(boardRef);
+                    const board = snap.exists() ? (snap.data() || {}) : {};
+                    const plan = planChallengeFinish(board, { studentId, name, run, now: Date.now() });
+                    let paid = null;
+                    if (plan.paidNow && plan.bong > 0) {
+                        const sSnap = await tx.get(studentRef);
+                        if (!sSnap.exists()) throw new Error('학생 문서를 찾지 못했어요.');
+                        const data = sSnap.data() || {};
+                        const serverBong = normalizeBongValue(Number(data.bong) || 0);
+                        const nextBong = normalizeBongValue(serverBong + plan.bong);
+                        const bongLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                        bongLogs.push(buildBongChangeLogEntry(OX_CHALLENGE_REASON, serverBong, nextBong, {
+                            source: OX_CHALLENGE_SOURCE,
+                            runId: String(run.runId),
+                            correct: Number(run.correct) || 0,
+                            date: String(run.date || ''),
+                        }));
+                        tx.set(studentRef, { bong: nextBong, bongChangeLog: bongLogs }, { merge: true });
+                        paid = { nextBong, bongLogs };
+                    }
+                    if (plan.changed) tx.set(boardRef, { entries: { [String(studentId)]: plan.entry }, lastSid: String(studentId), updatedAt: Date.now() }, { merge: true });
+                    out = {
+                        plan,
+                        paid,
+                        board: { ...board, entries: { ...(board.entries || {}), [String(studentId)]: plan.entry } },
+                    };
+                });
+                // 지금 로그인한 학생에게 준 봉이면 화면 값도 바로 맞춥니다(다음 저장이 옛 값으로 덮지 않게).
+                if (out && out.paid && window.playerState && !window.playerState.isGuest
+                    && String(localStorage.getItem('sambong_student_id') || '') === String(studentId)) {
+                    window.playerState.bong = out.paid.nextBong;
+                    window.playerState.bongChangeLog = out.paid.bongLogs;
+                    if (typeof updateUI === 'function') updateUI();
+                }
+                return out;
+            },
+            // 명단에 있는 학번의 이름. 답 문서·랭킹의 이름 칸은 믿지 않고 이 이름으로 보여 줘요.
+            rosterName: (id) => {
+                const key = String(id || '');
+                if (!key || key === 'guest' || key === 'gm' || key === 'gm_a') return '';
+                return String((STUDENT_NAMES && STUDENT_NAMES[key]) || '');
             },
             studentName: () => {
                 const id = localStorage.getItem('sambong_student_id') || '';

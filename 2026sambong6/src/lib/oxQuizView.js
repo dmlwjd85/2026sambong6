@@ -15,6 +15,7 @@ import {
     pickOxRound,
 } from './oxQuiz.js';
 import { createOxClassRound } from './oxQuizClassView.js';
+import { createOxChallenge } from './oxQuizChallengeView.js';
 
 function esc(value) {
     return String(value ?? '')
@@ -57,6 +58,15 @@ export function bindOxQuiz(stage, api) {
         timer: 0,
     };
 
+    // 화면 위 탭: 혼자 연습 · 무제한 도전 · (선생님만) 함께 풀기
+    function modeTabs(current) {
+        const tabs = [['practice', '혼자 연습'], ['challenge', '무제한 도전']];
+        if (api.isAdmin() && api.watchLive) tabs.push(['class', '함께 풀기']);
+        return `<div class="ox-row oxc-tabs">${tabs.map(([key, label]) => (
+            `<button type="button" class="ox-choice${current === key ? ' is-on' : ''}" data-oxm-mode="${key}">${label}</button>`
+        )).join('')}</div>`;
+    }
+
     // 함께 풀기(반 전체가 같은 문제). 연습 흐름은 그대로 두고, 함께 풀기일 때만 같은 무대를 빌려 씁니다.
     const classUi = api.watchLive ? createOxClassRound({
         body,
@@ -66,6 +76,7 @@ export function bindOxQuiz(stage, api) {
         setSubjectsOn: (list) => { state.subjectsOn = list; },
         onExit: (message, refreshOnly) => {
             if (refreshOnly) {
+                if (challengeUi && challengeUi.isActive()) return;
                 if (state.mode === 'setup' && !stage.classList.contains('hidden')) render();
                 return;
             }
@@ -77,7 +88,35 @@ export function bindOxQuiz(stage, api) {
             if (meta) meta.textContent = text;
             stage.classList.add('is-play');
         },
+        modeTabs,
     }) : null;
+
+    // 무제한 도전(틀릴 때까지, 반 랭킹, 하루 첫 판만 10문제마다 1봉)
+    const challengeUi = api.loadChallengeBoard ? createOxChallenge({
+        body,
+        api,
+        getBank: () => state.bank,
+        setMeta: (text) => {
+            if (meta) meta.textContent = text;
+        },
+        modeTabs,
+    }) : null;
+
+    function switchMode(mode) {
+        if (classUi && classUi.isActive() && mode !== 'class') classUi.leave();
+        if (challengeUi && challengeUi.isActive() && mode !== 'challenge') challengeUi.leave();
+        if (mode === 'class' && classUi) {
+            void classUi.enter();
+            return;
+        }
+        if (mode === 'challenge' && challengeUi) {
+            stopTimer();
+            void challengeUi.enter();
+            return;
+        }
+        state.mode = 'setup';
+        render();
+    }
 
     function myRecord() {
         const id = api.studentId();
@@ -97,6 +136,10 @@ export function bindOxQuiz(stage, api) {
             meta.textContent = record
                 ? `최고 ${record.correct}문제 · ${Math.round((record.elapsedMs || 0) / 1000)}초`
                 : '최고 기록 없음';
+        }
+        if (challengeUi && challengeUi.isActive()) {
+            challengeUi.render();
+            return;
         }
         if (classUi && classUi.isActive()) {
             classUi.render();
@@ -143,6 +186,7 @@ export function bindOxQuiz(stage, api) {
                </div>`
             : '';
         body.innerHTML = `
+            ${challengeUi || classUi ? modeTabs('practice') : ''}
             ${classUi ? classUi.practiceHeader() : ''}
             <p class="ox-label">과목</p>
             <div class="ox-row">${subjectHtml}</div>
@@ -333,6 +377,12 @@ export function bindOxQuiz(stage, api) {
     }
 
     body.addEventListener('click', (event) => {
+        const modeBtn0 = event.target.closest('[data-oxm-mode]');
+        if (modeBtn0) {
+            switchMode(modeBtn0.getAttribute('data-oxm-mode'));
+            return;
+        }
+        if (challengeUi && challengeUi.isActive() && challengeUi.handleClick(event)) return;
         if (classUi && classUi.handleClick(event)) return;
         const subjectBtn = event.target.closest('[data-ox-subject]');
         if (subjectBtn) {
@@ -393,6 +443,7 @@ export function bindOxQuiz(stage, api) {
     stage.querySelector('[data-ox-close]')?.addEventListener('click', () => {
         stopTimer();
         if (classUi) classUi.close();
+        if (challengeUi) challengeUi.close();
         stage.classList.remove('is-play');
         stage.classList.add('hidden');
     });
@@ -418,10 +469,12 @@ export function bindOxQuiz(stage, api) {
             state.mode = 'setup';
             render();
             if (classUi) classUi.open();
+            if (challengeUi) challengeUi.open();
         },
         close() {
             stopTimer();
             if (classUi) classUi.close();
+            if (challengeUi) challengeUi.close();
             stage.classList.remove('is-play');
             stage.classList.add('hidden');
         },

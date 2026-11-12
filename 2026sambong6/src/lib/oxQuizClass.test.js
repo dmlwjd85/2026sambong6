@@ -2,8 +2,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     OX_CLASS_GRACE_MS,
+    OX_CLASS_ABANDON_MS,
     OX_CLASS_REVEAL_MS,
+    OX_CLASS_STALL_MS,
     buildClassRound,
+    classRoundStalled,
+    isClassRoundAbandoned,
+    sanitizeClassLive,
     canPickNow,
     classConditionSummary,
     classRemainingMs,
@@ -151,7 +156,7 @@ describe('OX 함께 풀기 채점', () => {
         assert.equal(canPickNow(live, late), true);
         const inReveal = joinDoc({ ...live, status: 'reveal' }, '4', '넷', 5);
         assert.equal(inReveal.joinIndex, 2, '정답 공개 중에 들어오면 다음 문제부터예요');
-        const picked = { ...late, picks: { 1: { p: 'X', ms: 900 } } };
+        const picked = { ...late, id: '3', picks: { 1: { p: 'X', ms: 900 } } };
         assert.equal(canPickNow(live, picked), false, '한 문제에 한 번만 골라요');
         live = apply(live, revealPatch(live, [picked], 3));
         const s = scoreClassEntry(live, picked);
@@ -162,9 +167,10 @@ describe('OX 함께 풀기 채점', () => {
         let live = sheetRound({ lives: 1 });
         live = apply(live, startPatch(live, 0));
         const me = { id: '1', roundId: 'oxr_t', joinIndex: 0, picks: { 0: { p: 'X', ms: 10 } } };
-        live = apply(live, revealPatch(live, [me], 1));
+        const other = { ...me, id: '2', picks: { 0: { p: 'O', ms: 1 } } };
+        live = apply(live, revealPatch(live, [me, other], 1));
         assert.equal(scoreClassEntry(live, me).out, true);
-        live = apply(live, nextPatch(live, [{ ...me, id: '2', picks: { 0: { p: 'O', ms: 1 } } }, me], 2));
+        live = apply(live, nextPatch(live, [other, me], 2));
         assert.equal(live.status, 'question');
         assert.equal(canPickNow(live, me), false);
     });
@@ -220,3 +226,79 @@ describe('OX 함께 풀기 채점', () => {
         assert.equal(canPickNow(base(), { ...me, roundId: 'other' }), false);
     });
 });
+
+describe('OX 함께 풀기 검수 보완', () => {
+    const base = () => {
+        let live = sheetRound();
+        live = apply(live, startPatch(live, 0));
+        return live;
+    };
+
+    it('정답 공개 뒤에 들어온 답은 점수와 집계에 넣지 않아요', () => {
+        let live = base();
+        const ontime = { id: '1', name: '하나', roundId: 'oxr_t', joinIndex: 0, picks: { 0: { p: 'O', ms: 900 } } };
+        const late = { id: '2', name: '둘', roundId: 'oxr_t', joinIndex: 0, picks: {} };
+        live = apply(live, revealPatch(live, [ontime, late], 1));
+        assert.deepEqual(Object.keys(live.frozen['0']), ['1']);
+        const lateNow = { ...late, picks: { 0: { p: 'O', ms: 50 } } }; // 공개 뒤에 써진 답
+        assert.equal(scoreClassEntry(live, lateNow).correct, 0);
+        assert.deepEqual(tallyClassQuestion(live, [ontime, lateNow]), { O: 1, X: 0, none: 1 });
+        const done = apply(live, finishPatch(live, [ontime, lateNow], 2));
+        assert.deepEqual(done.results.map((r) => [r.name, r.rank, r.correct]), [['하나', 1, 1], ['둘', 2, 0]]);
+    });
+
+    it('동점이면 안 고른 문제는 그 문제 제한 시간 전부로 쳐요', () => {
+        let live = base();
+        const limit = live.timeSec * 1000;
+        const fast = { id: '1', name: '하나', roundId: 'oxr_t', joinIndex: 0, picks: { 0: { p: 'O', ms: limit - 1000 }, 1: { p: 'O', ms: 500 } } };
+        const skip = { id: '2', name: '둘', roundId: 'oxr_t', joinIndex: 0, picks: { 0: { p: 'O', ms: 100 } } };
+        live = apply(live, revealPatch(live, [fast, skip], 1));
+        live = apply(live, nextPatch(live, [fast, skip], 2));
+        live = apply(live, revealPatch(live, [fast, skip], 3));
+        assert.equal(scoreClassEntry(live, skip).timeMs, 100 + limit);
+        assert.equal(scoreClassEntry(live, fast).timeMs, limit - 1000 + 500);
+        const slowDoc = { ...fast, id: '9', picks: { 0: { p: 'O', ms: 999999 } } };
+        let one = base();
+        one = apply(one, revealPatch(one, [slowDoc], 1));
+        assert.equal(scoreClassEntry(one, slowDoc).timeMs, limit, '고른 시간도 제한 시간까지만 쳐요');
+        const done = apply(live, finishPatch(live, [fast, skip], 4));
+        assert.deepEqual(done.results.map((r) => r.name), ['하나', '둘'], '둘 다 1개 맞혔고, 안 고른 쪽이 더 느린 것으로 쳐져요');
+    });
+
+    it('오래 진행이 없으면 멈춘 판으로 보고, 30분이 지나면 버려진 판이에요', () => {
+        const live = { ...base(), updatedAt: 1000, timeSec: 10 };
+        const seen = 1000;
+        assert.equal(classRoundStalled(live, seen + 10000 + OX_CLASS_GRACE_MS + OX_CLASS_STALL_MS, seen), false);
+        assert.equal(classRoundStalled(live, seen + 10000 + OX_CLASS_GRACE_MS + OX_CLASS_STALL_MS + 1, seen), true);
+        assert.equal(classRoundStalled({ ...live, status: 'reveal', advance: 'manual' }, seen + 3600000, seen), false, '선생님이 넘기는 정답 화면은 기다려요');
+        assert.equal(isClassRoundAbandoned(live, 1000 + OX_CLASS_ABANDON_MS), false);
+        assert.equal(isClassRoundAbandoned(live, 1000 + OX_CLASS_ABANDON_MS + 1), true);
+        assert.equal(isClassRoundAbandoned({ ...live, status: 'done' }, 1e13), false);
+    });
+
+    it('판 문서의 이상한 값은 숫자·정해진 값으로 바꿔서 화면에 넘겨요', () => {
+        const evil = '<img src=x onerror=alert(1)>';
+        const raw = {
+            ...base(),
+            status: evil,
+            index: evil,
+            timeSec: evil,
+            lives: 99,
+            tally: { O: evil, X: '3', none: null },
+            results: [{ id: evil, name: evil, rank: evil, correct: evil, timeMs: '12' }],
+            items: [...base().items, ...Array.from({ length: 40 }, () => base().items[0])],
+        };
+        const s = sanitizeClassLive(raw);
+        assert.equal(s.status, 'off');
+        assert.equal(s.index, 0);
+        assert.equal(s.timeSec, 15);
+        assert.equal(s.lives, 0);
+        assert.ok(s.items.length <= 20);
+        assert.deepEqual(s.tally, { O: 0, X: 3, none: 0 });
+        assert.equal(s.results[0].rank, 0);
+        assert.equal(s.results[0].correct, 0);
+        assert.equal(typeof s.results[0].name, 'string');
+        assert.equal(sanitizeClassLive(null), null);
+    });
+});
+

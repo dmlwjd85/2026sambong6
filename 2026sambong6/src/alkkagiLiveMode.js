@@ -13,6 +13,8 @@ import {
     alkkagiLiveOther,
     alkkagiLiveResultTitle,
     alkkagiLiveSeat,
+    ALKKAGI_LIVE_COUNTDOWN_MS,
+    liveCountdownEndAt,
     applyAlkkagiLiveForfeit,
     emptyAlkkagiLiveGame,
     finishAlkkagiLiveGame,
@@ -127,6 +129,7 @@ export function createAlkkagiLiveMode(deps) {
 
     function onBoardShot(shot) {
         if (!live || !room || room.status !== 'playing') return { ok: false, error: 'not_ready' };
+        if (countdownLeft() > 0) return { ok: false, error: 'not_ready' };
         const r = live.session.shoot(shot, Date.now());
         if (!r.ok && r.error === 'cooldown') flashUntil = Date.now() + 700;
         if (board) board.kick();
@@ -135,6 +138,8 @@ export function createAlkkagiLiveMode(deps) {
     }
 
     function stopLive() {
+        const cd = $('alkLiveCountdown');
+        if (cd) cd.classList.add('hidden');
         if (!live) return;
         try { if (live.unsub) live.unsub(); } catch (_) { /* 무시 */ }
         try { if (live.lock) live.lock.release(); } catch (_) { /* 무시 */ }
@@ -175,7 +180,7 @@ export function createAlkkagiLiveMode(deps) {
                 finish: (r) => { void finishFromHost(roomId, gid, seat, r); },
             },
         });
-        const cur = { key, roomId, gid, seat, session, unsub: null, timer: null, col, first: true, lock: null };
+        const cur = { key, roomId, gid, seat, session, unsub: null, timer: null, col, first: true, lock: null, startAt: liveCountdownEndAt({ startedAt: g.startedAt, seenAt: Date.now() }) };
         live = cur;
         // #100 M1: 같은 기기(브라우저)에서는 한 판·한 자리를 창 하나만 맡아요. 가장 나중에 연 창이 맡고, 앞 창은 보기만 해요.
         cur.lock = createLiveTabLock({
@@ -202,6 +207,8 @@ export function createAlkkagiLiveMode(deps) {
                     if (d.id === seat) mine = d.data();
                 });
                 session.init(stateDoc, { hostSeat, nowMs: t, seatDoc: mine });
+                // 이미 누가 쏜 판이면(새로고침·늦게 들어옴) 카운트다운 없이 바로 이어 해요.
+                if (session.state().shots > 0) cur.startAt = 0;
                 snap.forEach((d) => { if (d.id === alkkagiLiveOther(seat)) session.onSeatDoc(d.id, d.data(), t); });
                 // 내 자리 문서를 이번 판으로 만들어 둬요(번호 0). 같은 판을 새로고침한 거면 그대로 써요.
                 if (!mine || Number(mine.gid) !== gid) {
@@ -231,6 +238,7 @@ export function createAlkkagiLiveMode(deps) {
         cur.timer = setInterval(() => {
             if (live !== cur) return;
             session.tick(Date.now());
+            renderCountdown(Date.now());
             liveChrome();
             if (board && (session.isMoving() || session.cooldownLeft(seat, Date.now()) > 0)) board.kick();
         }, TICK_MS);
@@ -260,7 +268,7 @@ export function createAlkkagiLiveMode(deps) {
                 finish: (r) => finishAi(gid, r),
             },
         });
-        const cur = { key, roomId: room.id, gid, seat, session, unsub: null, timer: null, lock: null, driver: null, aiN: 0 };
+        const cur = { key, roomId: room.id, gid, seat, session, unsub: null, timer: null, lock: null, driver: null, aiN: 0, startAt: Date.now() + ALKKAGI_LIVE_COUNTDOWN_MS };
         live = cur;
         session.init(null, { hostSeat: seat, nowMs: Date.now() });
         cur.driver = createLiveAiDriver({
@@ -280,6 +288,8 @@ export function createAlkkagiLiveMode(deps) {
             if (live !== cur) return;
             const t = Date.now();
             session.tick(t);
+            renderCountdown(t);
+            if (t < cur.startAt) { liveChrome(); return; }
             cur.driver.tick(t, {
                 cooldownLeft: session.cooldownLeft(aiSeat, t),
                 moving: session.isMoving(),
@@ -291,6 +301,31 @@ export function createAlkkagiLiveMode(deps) {
             liveChrome();
             if (board && (session.isMoving() || session.cooldownLeft(seat, t) > 0)) board.kick();
         }, TICK_MS);
+    }
+
+    /** 판 시작 카운트다운이 몇 ms 남았는지(끝났거나 없으면 0). */
+    function countdownLeft(t = Date.now()) {
+        if (!live || !live.startAt) return 0;
+        return Math.max(0, live.startAt - t);
+    }
+
+    /** 판 가운데 3 → 2 → 1 → 시작! 을 보여 줘요. '시작!'은 0.6초 동안 남겨요. */
+    function renderCountdown(t = Date.now()) {
+        const el = $('alkLiveCountdown');
+        if (!el) return;
+        const left = countdownLeft(t);
+        const showGo = live && live.startAt && left <= 0 && t - live.startAt < 600;
+        const text = left > 0 ? String(Math.ceil(left / 1000)) : (showGo ? '시작!' : '');
+        el.classList.toggle('hidden', !text);
+        const num = el.querySelector('.alk-countdown-num');
+        if (num && num.textContent !== text) {
+            num.textContent = text;
+            num.classList.toggle('is-go', !(left > 0));
+            // 숫자가 바뀔 때마다 톡 튀어나오게 애니메이션을 다시 시작해요.
+            num.style.animation = 'none';
+            void num.offsetWidth;
+            num.style.animation = '';
+        }
     }
 
     /** AI 대전 판이 끝났어요(세션이 알이 멈춘 판을 보고 정한 결과). */
@@ -378,6 +413,7 @@ export function createAlkkagiLiveMode(deps) {
         let line = guide.line;
         let cls = playable ? 'is-ready' : 'is-wait';
         if (!playable) { /* 스위치 꺼짐·연결 중·구경: 안내 그대로 */ }
+        else if (countdownLeft(t) > 0) { line = `${Math.ceil(countdownLeft(t) / 1000)}초 뒤에 시작해요`; cls = 'is-wait'; }
         else if (s.aliveCount(seat) === 0) { line = '남은 알이 없어요'; cls = 'is-wait'; }
         else if (can.error === 'sending') { line = '샷을 보내는 중이에요'; cls = 'is-wait'; }
         else if (left > 0) { line = `다시 쏘기까지 ${liveCooldownLabel(left)}`; cls = 'is-wait'; }
@@ -409,7 +445,7 @@ export function createAlkkagiLiveMode(deps) {
             const html = `${esc(guide.tip)}${guide.who ? `<span class="alk-guide">${esc(guide.who)}</span>` : ''}`;
             if (tip.innerHTML !== html) tip.innerHTML = html;
         }
-        if (board) board.setView({ canShoot: playable && can.ok, cooldown: left / ALKKAGI_LIVE_COOLDOWN_MS });
+        if (board) board.setView({ canShoot: playable && can.ok && countdownLeft(t) <= 0, cooldown: left / ALKKAGI_LIVE_COOLDOWN_MS });
     }
 
     function renderDots(el, alive, cls) {
@@ -674,7 +710,7 @@ export function createAlkkagiLiveMode(deps) {
             return dialog('실시간 대전은 준비하고 있어요.<br>열리면 여기에서 규칙을 알려 드릴게요.', [{ label: '알겠어요', value: true, main: true }], '실시간 규칙');
         }
         return dialog(
-            '차례가 없어요. 두 사람이 동시에 쏴요.<br>한 번 쏘면 5초 동안 쉬어요. 카드 아래 막대와 알 둘레 고리가 다 차면 다시 쏠 수 있어요.<br>'
+            '차례가 없어요. 두 사람이 동시에 쏴요. 시작할 때 3초를 센 뒤에 쏠 수 있어요.<br>한 번 쏘면 5초 동안 쉬어요. 카드 아래 막대와 알 둘레 고리가 다 차면 다시 쏠 수 있어요.<br>'
             + '내 알을 꾹 잡고 반대쪽으로 당겼다가 놓으면 튕겨 나가요. 알이 움직이는 중에도 쏠 수 있어요.<br>'
             + '상대 알을 먼저 모두 떨어뜨리면 이겨요. 마지막 알이 함께 떨어지면 비겨요.<br>'
             + (ai ? `${esc(aiSubject())} 흰 알이에요. AI도 5초에 한 번 쏴요. AI와 한 판은 전적에 들어가지 않아요.` : '방장 화면 판이 기준이에요. 한 기기에서는 창 하나로만 둘 수 있어요.'),

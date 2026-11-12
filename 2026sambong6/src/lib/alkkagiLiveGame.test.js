@@ -262,3 +262,21 @@ describe('실시간 알까기 #100: 샷 범위·판 안내 문구', () => {
         assert.equal(L.ALKKAGI_LIVE_AIM_LOST_TEXT.pushed, '상대 알에 밀려서 다시 겨눠요');
     });
 });
+
+describe('실시간 판 시작 카운트다운', () => {
+    it('카운트다운: 방금 시작한 판은 3초를 세요', () => {
+        assert.equal(L.liveCountdownEndAt({ startedAt: 1000, seenAt: 1000 }), 4000);
+        // 0.4초 늦게 받으면 남은 2.6초만 세요(두 화면이 거의 같이 끝나요)
+        assert.equal(L.liveCountdownEndAt({ startedAt: 1000, seenAt: 1400 }), 4000);
+    });
+
+    it('카운트다운: 다른 기기 시계가 앞서 있어도 3초를 넘지 않아요', () => {
+        // 시작 시각이 이 기기 시계보다 1분 뒤로 찍혀 있어도 받은 때부터 3초만 세요
+        assert.equal(L.liveCountdownEndAt({ startedAt: 61000, seenAt: 1000 }), 4000);
+    });
+
+    it('카운트다운: 시작한 지 오래된 판(새로고침)은 바로 시작해요', () => {
+        assert.equal(L.liveCountdownEndAt({ startedAt: 1000, seenAt: 9000 }), 0);
+        assert.equal(L.liveCountdownEndAt({ startedAt: 0, seenAt: 9000 }), 0);
+    });
+});

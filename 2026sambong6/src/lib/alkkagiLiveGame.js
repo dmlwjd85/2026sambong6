@@ -30,6 +30,20 @@ export const ALKKAGI_LIVE_ENABLED = true;
 export const ALKKAGI_LIVE_FORFEIT_HOWS = Object.freeze(['resign', 'left']);
 /** 한 사람이 다시 쏘기까지 기다리는 시간 */
 export const ALKKAGI_LIVE_COOLDOWN_MS = 5000;
+
+/** 판 시작 전 카운트다운(ms). 이 시간 동안은 아무도 쏠 수 없어요(사람끼리·AI 대전 모두). */
+export const ALKKAGI_LIVE_COUNTDOWN_MS = 3000;
+
+/**
+ * 사람끼리 할 때 카운트다운이 끝나는 시각(이 기기 시계).
+ * 판 시작 시각(startedAt)은 다른 기기 시계로 찍혀서 몇 초~몇 분 어긋날 수 있어요.
+ * 그래서 이 기기가 판을 처음 받은 때(seenAt)부터 최대 3초만 세요. 시작한 지 오래된 판(새로고침)은 바로 시작해요.
+ */
+export function liveCountdownEndAt({ startedAt = 0, seenAt = 0, countdownMs = ALKKAGI_LIVE_COUNTDOWN_MS } = {}) {
+    const seen = Number(seenAt) || 0;
+    const left = Math.max(0, Math.min(countdownMs, (Number(startedAt) || 0) + countdownMs - seen));
+    return left > 0 ? seen + left : 0;
+}
 /** 호스트가 받는 쪽에서 허용하는 최소 간격(도착 시간 흔들림 여유). 규칙은 서버 시각으로 4.5초를 봐요. */
 export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 4000;
 export const ALKKAGI_LIVE_RULE_GAP_MS = 4500;

@@ -93,3 +93,33 @@
     .alk-live-view .alk-me { padding: 0 3px; font-size: 10px; }
     .alk-live-view .alk-card.on .alk-rib, .alk-live-view .alk-card.is-win .alk-rib { right: 6px; }
 }
+
+/* AI 대전 시작 카운트다운(3 → 2 → 1 → 시작!) */
+.alk-countdown {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(closest-side, rgba(60, 34, 14, 0.22), rgba(60, 34, 14, 0) 100%);
+    pointer-events: none;
+}
+.alk-countdown.hidden { display: none; }
+.alk-countdown-num {
+    font-family: 'JJAEM Title', 'JJAEM Body', sans-serif;
+    font-size: clamp(72px, 24vw, 128px);
+    line-height: 1;
+    color: #7a4a22;
+    text-shadow: 0 3px 0 #f3e4c4, 0 10px 24px rgba(70, 38, 12, 0.35);
+    animation: alk-countdown-pop 0.9s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+.alk-countdown-num.is-go { font-size: clamp(52px, 16vw, 88px); color: #b4462a; }
+@keyframes alk-countdown-pop {
+    0% { transform: scale(1.6); opacity: 0; }
+    25% { transform: scale(1); opacity: 1; }
+    80% { transform: scale(0.96); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.85; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .alk-countdown-num { animation: none; }
+}

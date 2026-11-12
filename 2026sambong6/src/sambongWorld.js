@@ -764,6 +764,16 @@ import {
     sanitizeClassToolShare,
 } from './lib/classToolShare.js';
 import {
+    GUEST_NAME_MASK,
+    buildGuestNameRegExp,
+    collectGuestMaskNames,
+    displayStudentNameFor,
+    installGuestNameShield,
+    isGuestViewer,
+    isStudentNameId,
+    maskNamesInText,
+} from './lib/guestNameMask.js';
+import {
     PASSWORD_CHANGE_BONG,
     planPasswordChange,
 } from './lib/studentPassword.js';
@@ -1325,7 +1335,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.50';
+        const APP_VERSION = 'v1.51';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -2890,6 +2900,52 @@ function redrawPlazaGrantsUi() {
             Object.assign(STUDENT_GENDERS, genders);
         }
 
+        /** 손님 모드('구경만 하기')인지 — 기존 playerState.isGuest를 그대로 봐요. */
+        function isGuestNameMaskOn() {
+            return isGuestViewer(window.playerState);
+        }
+
+        /** 학생 이름을 그리는 곳. 손님에게는 가린 글자(○○○), 로그인한 학생·교사에게는 원래 이름이에요. */
+        function displayStudentName(id, fallback) {
+            return displayStudentNameFor(id, { names: STUDENT_NAMES, isGuest: isGuestNameMaskOn(), fallback });
+        }
+
+        /** 글 속에서 찾아 가릴 학생 이름 목록(명단·이름표·학생 문서). 교사 이름은 빼요. */
+        function guestMaskNamesList() {
+            const meta = window.classMeta;
+            let staffNames = [];
+            try {
+                staffNames = getClassStaff().map((st) => st && st.name);
+                staffNames.push(getMasterDisplayName(), getCoMasterDisplayName());
+            } catch (_) { /* ignore */ }
+            return collectGuestMaskNames({
+                roster: (meta && Array.isArray(meta.roster)) ? meta.roster : [],
+                nameMap: STUDENT_NAMES,
+                students: Array.isArray(window.allStudentsData) ? window.allStudentsData : [],
+                staffNames,
+            });
+        }
+
+        /** 손님이면 글(상태메시지 등) 속 학생 실명을 가린 글자로 바꿔요. 아니면 그대로예요. */
+        function guestSafeText(text) {
+            if (!isGuestNameMaskOn()) return text;
+            return maskNamesInText(text, buildGuestNameRegExp(guestMaskNamesList()));
+        }
+
+        let _guestNameShield = null;
+        /** 손님 화면 지킴이를 켜요. 손님이 나가면 페이지를 새로 불러오므로 끄는 길은 따로 없어요. */
+        function startGuestNameShield() {
+            if (_guestNameShield || !isGuestNameMaskOn()) return;
+            try {
+                _guestNameShield = installGuestNameShield(document, {
+                    getNames: guestMaskNamesList,
+                    isActive: isGuestNameMaskOn,
+                });
+            } catch (e) {
+                console.warn('startGuestNameShield', e);
+            }
+        }
+
         function getActiveStudentIds() {
             const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
             const roster = window.classMeta && Array.isArray(window.classMeta.roster)
@@ -2903,7 +2959,9 @@ function redrawPlazaGrantsUi() {
             const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
             const roster = window.classMeta?.roster || fallback;
             const entry = roster.find((r) => String(r.id) === sid);
-            const name = entry ? entry.name : (STUDENT_NAMES[sid] || sid);
+            const name = (isGuestNameMaskOn() && isStudentNameId(sid))
+                ? GUEST_NAME_MASK
+                : (entry ? entry.name : (STUDENT_NAMES[sid] || sid));
             const suffix = entry && entry.label ? ` (${entry.label})` : '';
             return `${sid}. ${name}${suffix}`;
         }
@@ -22488,7 +22546,7 @@ ${subjectLine}
         }
 
         function buildPlazaStatusMessageHtml(data, extraClass = '') {
-            const msg = sanitizeStatusMessage(data && data.statusMessage);
+            const msg = guestSafeText(sanitizeStatusMessage(data && data.statusMessage));
             if (!msg) return '';
             const cls = extraClass ? `plaza-card-status ${extraClass}` : 'plaza-card-status';
             return `<div class="${cls}" title="${escapeHtmlAttr(msg)}">${escapeConvenienceHtml(msg)}</div>`;
@@ -23394,7 +23452,7 @@ ${subjectLine}
                 const rowBg = rowDone === total && total > 0 ? 'bg-emerald-950/35' : '';
                 bodyRows += `
                 <tr class="${rowBg}">
-                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] || ''}">${shortName}. ${STUDENT_NAMES[sid] || '-'}</td>
+                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] ? displayStudentName(sid) : ''}">${shortName}. ${STUDENT_NAMES[sid] ? displayStudentName(sid) : '-'}</td>
                     ${cells}
                     <td class="p-0.5 text-center border-b border-slate-800/80 text-[8px] sm:text-[9px] tabular-nums text-slate-400 font-bold whitespace-nowrap">${rowDone}/${total}</td>
                 </tr>`;
@@ -23451,7 +23509,7 @@ ${subjectLine}
                     <div class="glass-panel p-4 rounded-xl border-2 border-yellow-500 bg-gradient-to-b from-yellow-900/60 flex flex-col items-center w-28">
                         <div class="text-3xl mb-1 drop-shadow-lg avatar-legend">👑</div>
                         <div class="text-3xl mb-2 drop-shadow-md">${face}</div>
-                        <div class="font-display text-white text-sm">${STUDENT_NAMES[s.id] || s.name || s.id}</div>
+                        <div class="font-display text-white text-sm">${displayStudentName(s.id, s.name)}</div>
                         <div class="text-[9px] text-yellow-400 mt-1 font-bold">${caption}</div>
                     </div>`;
                 }).join('');
@@ -26686,6 +26744,8 @@ ${subjectLine}
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
+            // 손님 화면에는 학생 실명 대신 가린 글자를 그려요(첫 화면을 그리기 전에 켜요).
+            startGuestNameShield();
             
             document.getElementById('loginOverlay').style.opacity = '0'; 
             setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);

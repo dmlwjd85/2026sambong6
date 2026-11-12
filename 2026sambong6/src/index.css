@@ -6872,3 +6872,13 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             0%, 100% { opacity: 0.78; }
             50% { opacity: 1; }
         }
+
+/* 손님 모드: 학생 실명 대신 그린 가린 글자(○○○)를 흐릿하게 보여 줘요. DOM에는 실명이 없어요. */
+.guest-name-mask {
+    display: inline-block;
+    filter: blur(3px);
+    -webkit-user-select: none;
+    user-select: none;
+    letter-spacing: 0.05em;
+    pointer-events: none;
+}

@@ -461,9 +461,18 @@ import {
 import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll, runPraiseMidnightRollOnce } from './lib/preLoginGuard.js';
 import {
     clearPersistedLoginIdentity,
+    forgetSavedLoginPin,
+    isOtherStudentTakeover,
+    isOwnStudentDocId,
+    isStudentAutoLoginEnabled,
+    markAutoLoginHandoff,
+    normalizeStudentAutoLoginEnabled,
+    prepareStartupLogin,
     readPersistedLogin,
+    restoreSessionLoginIfCleared,
     shouldRestoreLoginWithoutServerPin,
     writePersistedLogin,
+    writeSessionLoginWithoutPin,
 } from './lib/loginSession.js';
 import {
     extractWeatherJson,
@@ -546,6 +555,7 @@ import {
     readClassCreateNotifySignature,
     readClassCreateUnlockFromClassData,
     readClassCreateUnlockSession,
+    readNewClassForm,
     readStoredClassCreateRequestId,
     sanitizeClassCreateRequest,
     writeClassCreateNotifySignature,
@@ -819,7 +829,7 @@ async function refreshStudentsCacheFromServer() {
     window.gmaData = gmaD;
 
     const myId = localStorage.getItem('sambong_student_id');
-    if (myId && window.playerState && !window.playerState.isGuest) {
+    if (myId && window.playerState && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
         const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
         if (myData) {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
@@ -1335,7 +1345,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.51';
+        const APP_VERSION = 'v1.52';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -2072,6 +2082,7 @@ function redrawPlazaGrantsUi() {
             const gmaField = document.getElementById('wsGmaEditStudentId')?.closest('label');
             if (gmaField) gmaField.classList.toggle('hidden', !getStaffMember('gm_a'));
             setVal('wsClassIdReadonly', meta.classId || (typeof appId !== 'undefined' ? appId : ''));
+            setCheck('wsStudentAutoLogin', isStudentAutoLoginEnabled(meta));
             setVal('wsRaidPassword', (window.globalSettings && window.globalSettings.raidPassword) || '');
             setVal('wsMasterDisplayName', meta.masterDisplayName || getMasterDisplayName());
             setVal('wsClassSchoolName', meta.schoolName || '');
@@ -2200,12 +2211,21 @@ function redrawPlazaGrantsUi() {
                         gmaEditStudentId,
                         inviteCode: window.classMeta?.inviteCode || generateInviteCode(),
                         isActive: true,
+                        studentAutoLoginEnabled: (document.getElementById('wsStudentAutoLogin')
+                            ? normalizeStudentAutoLoginEnabled(!!document.getElementById('wsStudentAutoLogin').checked)
+                            : isStudentAutoLoginEnabled(window.classMeta)),
                         roster: window.classMeta?.roster || buildDefaultRosterFromLegacy(),
                         staff,
                         updatedAt: serverTimestamp(),
                     };
                     await setDoc(doc(db, 'classes', appId), classPayload, { merge: true });
                     window.classMeta = { ...window.classMeta, ...classPayload };
+                    if (!isStudentAutoLoginEnabled(window.classMeta)) {
+                        // 지금 화면은 계속 쓰도록 학번은 두고, 다음에 저절로 들어오는 PIN만 지워요.
+                        forgetSavedPinKeepingSession();
+                    } else {
+                        restoreAutoLoginAfterReenable();
+                    }
                     syncNameGenderMaps();
                     populateLoginSelect();
                     updateClassDisplayLabels();
@@ -2815,6 +2835,7 @@ function redrawPlazaGrantsUi() {
                 gmaEditStudentId: '13',
                 isActive: true,
                 isDemoSeed: classId === SEED_CLASS_ID,
+                studentAutoLoginEnabled: true,
                 roster: buildDefaultRosterFromLegacy(),
                 staff: DEFAULT_CLASS_STAFF.map((s) => ({ ...s })),
             };
@@ -2839,6 +2860,7 @@ function redrawPlazaGrantsUi() {
                 gmaEditStudentId: '1',
                 isActive: true,
                 isDemoSeed: false,
+                studentAutoLoginEnabled: opts.studentAutoLoginEnabled !== false,
                 roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 24),
                 staff: [
                     { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
@@ -3233,7 +3255,81 @@ function redrawPlazaGrantsUi() {
             sel.innerHTML = html;
         }
 
+        /** 자동 로그인을 끈 반: 이 탭이 로그인한 학번(다른 탭이 지우면 다시 적어요). */
+        let _sessionLoginIdentity = null;
+        /** '이 반으로 이동' 직후 한 번만 PIN 없이 들어가요(prepareStartupLogin 이 정해요). */
+        let _autoLoginHandoffOnce = false;
+
+        function rememberSessionLoginIdentity(pin = '') {
+            const id = String(localStorage.getItem('sambong_student_id') || '').trim();
+            if (!id || !_sambongLoggedIn) return;
+            if (_sessionLoginIdentity && _sessionLoginIdentity.studentId === id) return;
+            _sessionLoginIdentity = { studentId: id, role: localStorage.getItem('sambong_login_role') || '', pin: String(pin || '') };
+        }
+
+        /** 끈 반: 저장된 PIN은 지우되, 이 탭 메모리에는 남겨 둬요(다시 켤 때 씀). */
+        function forgetSavedPinKeepingSession() {
+            const pinBefore = localStorage.getItem('sambong_student_pin') || '';
+            rememberSessionLoginIdentity(pinBefore);
+            forgetSavedLoginPin(localStorage);
+        }
+
+        /** 꺼진 반에서 로그인한 이 탭이 설정을 다시 켜면, 메모리의 PIN으로 자동 로그인 저장을 되살려요. */
+        function restoreAutoLoginAfterReenable() {
+            const me = _sessionLoginIdentity;
+            if (!me || !me.pin) return;
+            if (String(localStorage.getItem('sambong_student_id') || '') !== me.studentId) return;
+            writePersistedLogin(localStorage, { studentId: me.studentId, pin: me.pin, role: me.role, classId: appId });
+            _sessionLoginIdentity = null;
+        }
+
+        /**
+         * 학생 스냅샷을 이 탭 playerState 에 넣어도 되는지: 이 탭이 로그인한 학생 문서와
+         * 기기 학번이 다르면(다른 탭에서 다른 학생이 들어옴) 넣지 않아요. 로그인 전(문서 없음)은 예전처럼.
+         */
+        function studentSnapshotBelongsToThisTab(myId) {
+            if (!currentStudentDocRef) return true;
+            return isOwnStudentDocId(currentStudentDocRef.id, myId);
+        }
+
+        let _otherStudentTakeoverShown = false;
+        /** 낡은 탭 안내(한 번만). 끈 반은 확인 뒤 로그인 화면으로 돌아가요. */
+        function notifyOtherStudentTakeover() {
+            if (_otherStudentTakeoverShown) return;
+            _otherStudentTakeoverShown = true;
+            const off = !isStudentAutoLoginEnabled(window.classMeta);
+            const msg = off
+                ? '다른 탭에서 다른 사람이 들어와서 이 탭은 나갔어요.\n다시 쓰려면 로그인해 주세요.'
+                : '다른 탭에서 다른 사람이 들어왔어요.\n이 탭에서 한 일은 저장되지 않아요. 새로고침해 주세요.';
+            Promise.resolve(window.customAlert ? window.customAlert(msg) : null).finally(() => {
+                if (off) location.reload();
+            });
+        }
+
+        window.addEventListener('storage', (e) => {
+            if (e.storageArea && e.storageArea !== localStorage) return;
+            if (e.key !== null && e.key !== 'sambong_student_id') return;
+            if (!_sessionLoginIdentity || !_sambongLoggedIn) return;
+            if (isStudentAutoLoginEnabled(window.classMeta)) return;
+            // 끈 반: 다른 탭에서 다른 학생이 들어오면 이 탭은 나가요. 지워진 경우만 내 학번을 다시 적어요.
+            if (isOtherStudentTakeover(_sessionLoginIdentity.studentId, localStorage.getItem('sambong_student_id'))) {
+                notifyOtherStudentTakeover();
+                return;
+            }
+            restoreSessionLoginIfCleared(localStorage, _sessionLoginIdentity);
+        });
+
+        /** 로그인 화면: 자동 로그인을 끈 반이면 '매번 넣어요' 안내를 보여요. */
+        function syncAutoLoginOffNotes() {
+            const off = !isStudentAutoLoginEnabled(window.classMeta);
+            for (const id of ['loginAutoLoginOffNote', 'loginAutoLoginOffNoteTeacher']) {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('hidden', !off);
+            }
+        }
+
         function populateLoginSelect() {
+            syncAutoLoginOffNotes();
             const sel = document.getElementById('loginId');
             if (!sel) return;
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
@@ -3825,7 +3921,7 @@ function redrawPlazaGrantsUi() {
         };
 
         /** 공통: 새 학급 Firestore 워크스페이스 생성 */
-        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword, copyFromClassId }) {
+        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword, copyFromClassId, studentAutoLoginEnabled }) {
             if (!db) throw new Error('no_db');
             await assertGmSettingsAuth();
             const inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
@@ -3846,6 +3942,7 @@ function redrawPlazaGrantsUi() {
                 inviteCode,
                 schoolName,
                 masterDisplayName: teacherName,
+                studentAutoLoginEnabled: studentAutoLoginEnabled !== false,
             });
             await setDoc(doc(db, 'classes', newClassId), {
                 ...newMeta,
@@ -4248,6 +4345,8 @@ function redrawPlazaGrantsUi() {
             if (req.teacherPin) {
                 localStorage.setItem('sambong_student_id', 'gm');
                 localStorage.setItem('sambong_student_pin', req.teacherPin);
+                // 자동 로그인을 끈 반이어도, 방금 만든 반으로 옮길 때 한 번은 PIN 없이 들어가요.
+                markAutoLoginHandoff(sessionStorage, req.newClassId);
                 localStorage.setItem('sambong_show_onboarding', '1');
                 localStorage.setItem('sambong_onboarding_invite', req.inviteCode || '');
             }
@@ -4331,6 +4430,9 @@ function redrawPlazaGrantsUi() {
             const studentCount = Number(document.getElementById('createClassStudentCount')?.value) || 25;
             const teacherPin = String(document.getElementById('createClassTeacherPin')?.value || '').trim();
             const applyDefaultTemplate = !!(document.getElementById('createClassApplyTemplate')?.checked);
+            const studentAutoLoginEnabled = document.getElementById('createClassStudentAutoLogin')
+                ? !!document.getElementById('createClassStudentAutoLogin').checked
+                : true;
             if (!displayName) {
                 return window.customAlert('학급명은 필수입니다.');
             }
@@ -4344,7 +4446,8 @@ function redrawPlazaGrantsUi() {
                 `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
                 `시즌: ${seasonLabel} / ${seasonTheme}\n` +
                 `마스터: ${teacherName}\n` +
-                `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n\n` +
+                `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n` +
+                `학생 자동 로그인: ${studentAutoLoginEnabled ? '켜짐' : '꺼짐'}\n\n` +
                 `허락되면 반이 생성되고 초대 코드가 발급됩니다.`
             );
             if (!ok) return;
@@ -4364,6 +4467,7 @@ function redrawPlazaGrantsUi() {
                     seasonLabel,
                     seasonTheme,
                     applyDefaultTemplate,
+                    studentAutoLoginEnabled,
                     requesterHint: 'login',
                     sourceClassId: appId,
                 });
@@ -4416,6 +4520,12 @@ function redrawPlazaGrantsUi() {
                             <input id="classMetaHomeroom" type="number" min="1" max="20" value="${meta.homeroom || 1}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                         </div>
                     </label>
+                    <label class="text-[10px] text-slate-300 sm:col-span-2 flex items-start gap-2">
+                        <input id="classMetaStudentAutoLogin" type="checkbox" style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600" ${isStudentAutoLoginEnabled(meta) ? 'checked' : ''}>
+                        <span>학생 자동 로그인
+                            <span class="block text-[9px] text-slate-500 mt-0.5">공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣고, 새로고침해도 다시 물어요. 바꾼 값은 다음에 열 때부터 적용돼요.</span>
+                        </span>
+                    </label>
                 </div>
                 <p class="text-[9px] text-slate-500 mb-2">
                     초대 코드: <span class="text-emerald-300 font-bold tracking-widest">${meta.inviteCode || '(저장 후 생성)'}</span>
@@ -4444,7 +4554,13 @@ function redrawPlazaGrantsUi() {
                         <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
+                    <label class="flex items-start gap-2 text-[10px] text-slate-300 mb-2">
+                        <input id="newClassStudentAutoLogin" type="checkbox" checked style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600">
+                        <span>학생 자동 로그인
+                            <span class="block text-[9px] text-slate-500 mt-0.5">한 번 로그인하면 다음에도 바로 들어와요. 공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣어요.</span>
+                        </span>
+                    </label>
+                    <button type="button" onclick="window.createNewClass({ source: 'panel' })" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
                     <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
                     <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
@@ -4500,6 +4616,10 @@ function redrawPlazaGrantsUi() {
             const grade = Number(document.getElementById('classMetaGrade')?.value) || window.classMeta?.grade || 6;
             const homeroom = Number(document.getElementById('classMetaHomeroom')?.value) || window.classMeta?.homeroom || 1;
             const inviteCode = window.classMeta?.inviteCode || await generateUniqueInviteCode().catch(() => generateInviteCode());
+            const autoEl = document.getElementById('classMetaStudentAutoLogin');
+            const studentAutoLoginEnabled = autoEl
+                ? normalizeStudentAutoLoginEnabled(!!autoEl.checked)
+                : isStudentAutoLoginEnabled(window.classMeta);
             const payload = {
                 classId: appId,
                 displayName,
@@ -4509,6 +4629,7 @@ function redrawPlazaGrantsUi() {
                 inviteCode,
                 gmaEditStudentId: window.classMeta?.gmaEditStudentId || getGmaEditStudentId() || '1',
                 isActive: true,
+                studentAutoLoginEnabled,
                 roster,
                 staff: getClassStaff(),
                 updatedAt: serverTimestamp(),
@@ -4523,6 +4644,11 @@ function redrawPlazaGrantsUi() {
                 console.warn('registerInviteCode(save)', e);
             }
             window.classMeta = { ...window.classMeta, ...payload, roster, staff: payload.staff };
+            if (!isStudentAutoLoginEnabled(window.classMeta)) {
+                forgetSavedPinKeepingSession();
+            } else {
+                restoreAutoLoginAfterReenable();
+            }
             syncNameGenderMaps();
             populateLoginSelect();
             updateClassDisplayLabels();
@@ -4531,16 +4657,11 @@ function redrawPlazaGrantsUi() {
             await window.customAlert('✅ 학급 명단이 저장되었습니다.');
         };
 
-        window.createNewClass = async function() {
+        window.createNewClass = async function(opts = {}) {
             if (!window.playerState?.isGM || !db) return;
-            const displayName = document.getElementById('newClassDisplayName')?.value?.trim()
-                || document.getElementById('settingsNewClassDisplayName')?.value?.trim();
-            const schoolYear = Number(document.getElementById('newClassSchoolYear')?.value)
-                || Number(document.getElementById('settingsNewClassSchoolYear')?.value);
-            const grade = Number(document.getElementById('newClassGrade')?.value)
-                || Number(document.getElementById('settingsNewClassGrade')?.value);
-            const homeroom = Number(document.getElementById('newClassHomeroom')?.value)
-                || Number(document.getElementById('settingsNewClassHomeroom')?.value);
+            // 학급·명단 관리 패널과 설정 화면 폼이 함께 그려질 수 있어서, 누른 버튼의 폼 값을 읽어요.
+            const form = readNewClassForm((id) => document.getElementById(id), opts && opts.source);
+            const { displayName, schoolYear, grade, homeroom, studentAutoLoginEnabled } = form;
             if (!displayName || !schoolYear || !grade || !homeroom) {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
@@ -4551,8 +4672,8 @@ function redrawPlazaGrantsUi() {
             }
             const ok = await window.customConfirm(
                 immediate
-                    ? `새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`
-                    : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n허락되면 반이 만들어지고 초대 코드가 발급됩니다.`
+                    ? `새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n학생 자동 로그인: ${studentAutoLoginEnabled ? '켜짐' : '꺼짐'}\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`
+                    : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n학생 자동 로그인: ${studentAutoLoginEnabled ? '켜짐' : '꺼짐'}\n\n허락되면 반이 만들어지고 초대 코드가 발급됩니다.`
             );
             if (!ok) return;
             try {
@@ -4569,6 +4690,7 @@ function redrawPlazaGrantsUi() {
                         studentCount: 25,
                         teacherPin: '',
                         copySettingsFromCurrent: false,
+                        studentAutoLoginEnabled,
                     });
                     window.hideGlobalLoading();
                     await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
@@ -4586,6 +4708,7 @@ function redrawPlazaGrantsUi() {
                     requesterHint: 'settings',
                     sourceClassId: appId,
                     applyDefaultTemplate: false,
+                    studentAutoLoginEnabled,
                 });
                 if (!sent.ok) throw new Error('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
                 window.hideGlobalLoading();
@@ -21691,7 +21814,7 @@ ${subjectLine}
                             if (classtoolSub === 'boardgames' && _boardGameView === 'lobby') renderBoardGameLobby();
                             
                             const myId = localStorage.getItem('sambong_student_id');
-                            if (myId && !window.playerState.isGuest) {
+                            if (myId && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     noteRemoteQuestCompletions(myData);
@@ -22219,7 +22342,13 @@ ${subjectLine}
                     void refreshTeacherAuthBadge();
                     openLoggedInServices(user);
                 });
-                const savedLogin = readPersistedLogin(localStorage);
+                syncAutoLoginOffNotes();
+                const startup = prepareStartupLogin(localStorage, sessionStorage, {
+                    classId: appId,
+                    enabled: window.classMeta,
+                });
+                _autoLoginHandoffOnce = startup.handoff;
+                const savedLogin = startup.savedLogin;
                 if (savedLogin) {
                     await attemptLogin(savedLogin.studentId, savedLogin.pin, true);
                 }
@@ -26971,7 +27100,11 @@ ${subjectLine}
                 updateUI();
                 return;
             }
-            localStorage.setItem('sambong_student_pin', planned.pin);
+            if (isStudentAutoLoginEnabled(window.classMeta)) {
+                localStorage.setItem('sambong_student_pin', planned.pin);
+            } else if (_sessionLoginIdentity) {
+                _sessionLoginIdentity = { ..._sessionLoginIdentity, pin: String(planned.pin) };
+            }
             updateUI();
             await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
@@ -26980,6 +27113,12 @@ ${subjectLine}
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
+                return;
+            }
+            const handoffOnce = _autoLoginHandoffOnce;
+            _autoLoginHandoffOnce = false;
+            if (isAutoLogin && !handoffOnce && !isStudentAutoLoginEnabled(window.classMeta)) {
+                clearPersistedLoginIdentity(localStorage);
                 return;
             }
             const dropTeacher = shouldSignOutNonAnonymousForPinLogin({
@@ -27116,7 +27255,16 @@ ${subjectLine}
                 const storedRole = isAutoLogin
                     ? (readPersistedLogin(localStorage)?.role || '')
                     : (window._pendingLoginRole === 'teacher' && isAdmin ? 'teacher' : (isAdmin ? 'master' : 'student'));
-                writePersistedLogin(localStorage, { studentId, pin, role: storedRole, classId: appId });
+                if (isStudentAutoLoginEnabled(window.classMeta)) {
+                    writePersistedLogin(localStorage, { studentId, pin, role: storedRole, classId: appId });
+                    _sessionLoginIdentity = null;
+                } else {
+                    // 꺼진 반: 로그인 중에는 학번·역할을 남겨 앱이 '나'를 찾게 하고, PIN은 저장하지 않아요.
+                    // 다음에 앱을 열면 prepareStartupLogin 이 학번까지 지워서 다시 로그인 화면이 나와요.
+                    writeSessionLoginWithoutPin(localStorage, { studentId, role: storedRole, classId: appId });
+                    // PIN은 저장소에 쓰지 않고 이 탭 메모리에만 둬요(수업 중 다시 켜면 그때 저장해요).
+                    _sessionLoginIdentity = { studentId: String(studentId), role: storedRole, pin: String(pin || '') };
+                }
                 currentStudentDocRef = docRef;
                 /** 로그인 직후에도 checkTimeEvents·스냅샷과 동일한 일일 퀘스트 달력 동기화 */
                 if (!isAdmin) {
@@ -27153,6 +27301,11 @@ ${subjectLine}
 
         async function saveDataToCloud(options = {}) {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
+            // 같은 브라우저 다른 탭에서 다른 학생이 들어와 학번이 바뀌었으면, 이 탭은 저장하지 않아요(PIN 덮어쓰기 방지).
+            if (!isOwnStudentDocId(currentStudentDocRef.id, localStorage.getItem('sambong_student_id'))) {
+                notifyOtherStudentTakeover();
+                return false;
+            }
             const opts = {
                 allowXpDecrease: false,
                 allowBongDecrease: false,
@@ -32194,12 +32347,19 @@ ${subjectLine}
                     if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                     const saved = await writeStoredMasterPin(newPin, stuId);
                     if (localStorage.getItem('sambong_student_id') === String(stuId)) {
-                        writePersistedLogin(localStorage, {
-                            studentId: stuId,
-                            pin: newPin,
-                            role: 'master',
-                            classId: appId,
-                        });
+                        if (isStudentAutoLoginEnabled(window.classMeta)) {
+                            writePersistedLogin(localStorage, {
+                                studentId: stuId,
+                                pin: newPin,
+                                role: 'master',
+                                classId: appId,
+                            });
+                        } else {
+                            forgetSavedLoginPin(localStorage);
+                            if (_sessionLoginIdentity && _sessionLoginIdentity.studentId === String(stuId)) {
+                                _sessionLoginIdentity = { ..._sessionLoginIdentity, pin: String(newPin) };
+                            }
+                        }
                     }
                     if (!saved.ok) {
                         return window.customAlert('이 기기에는 바꿨지만, 서버의 개인 문서(users/본인)에는 저장하지 못했습니다.');

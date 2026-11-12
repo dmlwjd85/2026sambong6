@@ -6520,6 +6520,83 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
         }
         .ox-stage.hidden { display: none; }
+        /* OX 정답·오답 반응(oxQuizFeedback.js): 스테이지 위에 잠깐 떴다 사라져요. 아래 버튼은 그대로 눌려요. */
+        .ox-fx {
+            position: absolute;
+            inset: 0;
+            z-index: 6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            pointer-events: none;
+        }
+        .ox-fx.hidden { display: none; }
+        .ox-fx.is-ok { background: radial-gradient(circle, rgba(34, 197, 94, 0.32), rgba(34, 197, 94, 0) 62%); animation: ox-fx-fade 0.7s ease-out both; }
+        .ox-fx.is-no { background: radial-gradient(circle, rgba(239, 68, 68, 0.34), rgba(239, 68, 68, 0) 62%); animation: ox-fx-fade 0.7s ease-out both; }
+        .ox-fx-mark {
+            font-size: clamp(7rem, 34vw, 15rem);
+            font-weight: 900;
+            line-height: 0.9;
+            text-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+        }
+        .ox-fx.is-ok .ox-fx-mark {
+            color: transparent;
+            width: clamp(7rem, 34vw, 15rem);
+            height: clamp(7rem, 34vw, 15rem);
+            border: clamp(14px, 4.5vw, 30px) solid #4ade80;
+            border-radius: 50%;
+            box-shadow: 0 0 40px rgba(74, 222, 128, 0.6), inset 0 0 30px rgba(74, 222, 128, 0.35);
+            animation: ox-fx-pop 0.5s cubic-bezier(.2, .9, .3, 1.35) both;
+        }
+        .ox-fx.is-no .ox-fx-mark { color: #f87171; animation: ox-fx-slam 0.45s cubic-bezier(.3, 1.4, .5, 1) both; }
+        .ox-fx-label {
+            font-size: clamp(1.4rem, 6vw, 2.6rem);
+            font-weight: 900;
+            letter-spacing: 0.04em;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+        }
+        .ox-fx.is-ok .ox-fx-label { color: #bbf7d0; }
+        .ox-fx.is-no .ox-fx-label { color: #fecaca; }
+        .ox-fx-sparks { position: absolute; left: 50%; top: 46%; width: 0; height: 0; }
+        .ox-fx-sparks i {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            margin: -6px;
+            border-radius: 50%;
+            background: #fde047;
+            box-shadow: 0 0 10px #fde047;
+            animation: ox-fx-spark 0.65s ease-out both;
+        }
+        .ox-fx-sparks i:nth-child(1) { --dx: 0; --dy: -150px; }
+        .ox-fx-sparks i:nth-child(2) { --dx: 106px; --dy: -106px; background: #86efac; }
+        .ox-fx-sparks i:nth-child(3) { --dx: 150px; --dy: 0; }
+        .ox-fx-sparks i:nth-child(4) { --dx: 106px; --dy: 106px; background: #67e8f9; }
+        .ox-fx-sparks i:nth-child(5) { --dx: 0; --dy: 150px; }
+        .ox-fx-sparks i:nth-child(6) { --dx: -106px; --dy: 106px; background: #86efac; }
+        .ox-fx-sparks i:nth-child(7) { --dx: -150px; --dy: 0; }
+        .ox-fx-sparks i:nth-child(8) { --dx: -106px; --dy: -106px; background: #67e8f9; }
+        .ox-stage-body.ox-shake { animation: ox-shake 0.42s ease-in-out; }
+        .ox-stage-body.ox-glow { animation: ox-glow 0.6s ease-out; }
+        @keyframes ox-fx-fade { 0% { opacity: 0; } 12% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+        @keyframes ox-fx-pop { 0% { transform: scale(0.3); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+        @keyframes ox-fx-slam { 0% { transform: scale(2) rotate(-12deg); opacity: 0; } 70% { transform: scale(0.94) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+        @keyframes ox-fx-spark { 0% { transform: translate(0, 0) scale(0.4); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; } }
+        @keyframes ox-shake {
+            0%, 100% { transform: translateX(0); }
+            15% { transform: translateX(-14px); }
+            30% { transform: translateX(12px); }
+            45% { transform: translateX(-9px); }
+            60% { transform: translateX(6px); }
+            75% { transform: translateX(-3px); }
+        }
+        @keyframes ox-glow { 0% { box-shadow: inset 0 0 0 0 rgba(74, 222, 128, 0); } 30% { box-shadow: inset 0 0 60px 6px rgba(74, 222, 128, 0.45); } 100% { box-shadow: inset 0 0 0 0 rgba(74, 222, 128, 0); } }
+        @media (prefers-reduced-motion: reduce) {
+            .ox-fx-mark, .ox-fx-sparks i, .ox-stage-body.ox-shake, .ox-stage-body.ox-glow { animation: none !important; }
+            .ox-fx-sparks { display: none; }
+        }
         .ox-stage-bar {
             display: grid;
             grid-template-columns: 4.5rem 1fr auto;

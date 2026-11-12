@@ -55,7 +55,7 @@ function writeRuns(runs) {
     }
 }
 
-export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTabs }) {
+export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTabs, feedback = null }) {
     const st = {
         active: false,
         mode: 'home', // home | play | over
@@ -327,6 +327,7 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
     async function answer(picked) {
         if (st.mode !== 'play' || !st.item) return;
         const item = st.item;
+        if (feedback) feedback.play(picked && picked === item.answer ? 'ok' : picked ? 'no' : 'timeout');
         if (picked && picked === item.answer) {
             st.run.correct += 1;
             st.run.ids.push(String(item.id || ''));

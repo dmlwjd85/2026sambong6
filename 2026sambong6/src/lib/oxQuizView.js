@@ -16,6 +16,7 @@ import {
 } from './oxQuiz.js';
 import { createOxClassRound } from './oxQuizClassView.js';
 import { createOxChallenge } from './oxQuizChallengeView.js';
+import { createOxFeedback } from './oxQuizFeedback.js';
 
 function esc(value) {
     return String(value ?? '')
@@ -67,6 +68,9 @@ export function bindOxQuiz(stage, api) {
         )).join('')}</div>`;
     }
 
+    // 맞힘·틀림 반응(이펙트·소리·진동). 세 모드가 같이 써요.
+    const feedback = createOxFeedback(stage);
+
     // 함께 풀기(반 전체가 같은 문제). 연습 흐름은 그대로 두고, 함께 풀기일 때만 같은 무대를 빌려 씁니다.
     const classUi = api.watchLive ? createOxClassRound({
         body,
@@ -89,6 +93,7 @@ export function bindOxQuiz(stage, api) {
             stage.classList.add('is-play');
         },
         modeTabs,
+        feedback,
     }) : null;
 
     // 무제한 도전(틀릴 때까지, 반 랭킹, 하루 첫 판만 10문제마다 1봉)
@@ -100,6 +105,7 @@ export function bindOxQuiz(stage, api) {
             if (meta) meta.textContent = text;
         },
         modeTabs,
+        feedback,
     }) : null;
 
     function switchMode(mode) {
@@ -275,6 +281,7 @@ export function bindOxQuiz(stage, api) {
         state.mode = 'lock';
         stopTimer();
         const ok = picked && picked === item.answer;
+        feedback.play(ok ? 'ok' : picked ? 'no' : 'timeout');
         if (ok) state.correct += 1;
         else {
             state.livesLeft -= 1;

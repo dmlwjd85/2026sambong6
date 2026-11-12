@@ -59,7 +59,7 @@ function chips(name, list, selected) {
 /** 학생 화면 결과에 보여 줄 위 순위 수 */
 const OX_CLASS_TOP_N = 5;
 
-export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubjectsOn, onExit, setMeta, modeTabs }) {
+export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubjectsOn, onExit, setMeta, modeTabs, feedback = null }) {
     const st = {
         live: null,
         liveLoaded: false,
@@ -68,6 +68,7 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
         joined: false,
         conditions: normalizeClassConditions({}),
         seen: {},
+        fxKey: '', // 정답 공개 반응을 이미 보여 준 문제(roundId:index)
         unsubLive: null,
         unsubAnswers: null,
         answersRound: '',
@@ -427,6 +428,12 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
             if (counted && !(score.out && score.outAt < index)) {
                 if (pick && pick.p === item.answer) verdict = '<p class="oxc-verdict is-ok">맞았어요!</p>';
                 else verdict = `<p class="oxc-verdict is-no">${pick ? '아쉬워요, 틀렸어요.' : '시간 안에 못 골랐어요.'}</p>`;
+                // 문제를 직접 보고 있던 학생에게만, 공개될 때 한 번 반응해요(새로고침·늦게 들어와서 공개 화면부터 본 때는 조용히).
+                const key = seenKey(live);
+                if (feedback && st.fxKey !== key && st.seen[key]) {
+                    st.fxKey = key;
+                    feedback.play(pick && pick.p === item.answer ? 'ok' : pick ? 'no' : 'timeout');
+                }
             }
             body.innerHTML = `
                 ${questionTop(live, hearts(live, score))}

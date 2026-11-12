@@ -59,6 +59,7 @@ export function sanitizeClassCreateRequest(raw, nowMs = Date.now()) {
         seasonLabel: clipText(src.seasonLabel, 30) || '시즌 1',
         seasonTheme: clipText(src.seasonTheme, 60) || '우리 반 모험',
         applyDefaultTemplate: src.applyDefaultTemplate !== false,
+        studentAutoLoginEnabled: src.studentAutoLoginEnabled !== false,
         copyFromClassId: clipText(src.copyFromClassId, 80),
         requesterHint: clipText(src.requesterHint, 20),
         sourceClassId: clipText(src.sourceClassId, 80),
@@ -164,6 +165,7 @@ export function classCreateWorkspacePayload(request) {
         seasonLabel: r.seasonLabel,
         seasonTheme: r.seasonTheme,
         applyDefaultTemplate: r.applyDefaultTemplate,
+        studentAutoLoginEnabled: r.studentAutoLoginEnabled !== false,
         copySettingsFromCurrent: false,
         copyFromClassId: r.copyFromClassId,
     };
@@ -256,4 +258,56 @@ export function writeClassCreateNotifySignature(sig, storage) {
         if (next) store.setItem(CLASS_CREATE_NOTIFY_STORAGE_KEY, next);
         else store.removeItem(CLASS_CREATE_NOTIFY_STORAGE_KEY);
     } catch (_) { /* ignore */ }
+}
+
+/** 새 학급 추가 폼 두 곳(학급·명단 관리 패널, 설정 > 학급). 둘이 함께 그려질 수 있어요. */
+export const NEW_CLASS_FORM_IDS = Object.freeze({
+    panel: Object.freeze({
+        displayName: 'newClassDisplayName',
+        schoolYear: 'newClassSchoolYear',
+        grade: 'newClassGrade',
+        homeroom: 'newClassHomeroom',
+        studentAutoLogin: 'newClassStudentAutoLogin',
+    }),
+    settings: Object.freeze({
+        displayName: 'settingsNewClassDisplayName',
+        schoolYear: 'settingsNewClassSchoolYear',
+        grade: 'settingsNewClassGrade',
+        homeroom: 'settingsNewClassHomeroom',
+        studentAutoLogin: 'settingsNewClassStudentAutoLogin',
+    }),
+});
+
+/**
+ * 누른 버튼의 폼을 고릅니다. 버튼이 source 를 넘기면 그대로 쓰고,
+ * 없으면 학급 이름을 넣은 폼을 고릅니다(패널 먼저).
+ */
+export function resolveNewClassFormSource(getEl, source) {
+    if (source === 'panel' || source === 'settings') return source;
+    const filled = (id) => String((getEl && getEl(id)?.value) || '').trim().length > 0;
+    if (filled(NEW_CLASS_FORM_IDS.panel.displayName)) return 'panel';
+    if (filled(NEW_CLASS_FORM_IDS.settings.displayName)) return 'settings';
+    return 'panel';
+}
+
+/**
+ * 새 학급 폼 값을 읽습니다. 고른 폼 값을 먼저 쓰고, 비어 있는 칸만 다른 폼 값으로 채워요(예전 동작).
+ * '학생 자동 로그인'은 고른 폼의 체크박스만 읽습니다. 체크박스가 없으면 켜짐.
+ */
+export function readNewClassForm(getEl, source) {
+    const picked = resolveNewClassFormSource(getEl, source);
+    const other = picked === 'panel' ? 'settings' : 'panel';
+    const ids = NEW_CLASS_FORM_IDS[picked];
+    const alt = NEW_CLASS_FORM_IDS[other];
+    const text = (id) => String((getEl && getEl(id)?.value) || '').trim();
+    const num = (id) => Number(getEl && getEl(id)?.value) || 0;
+    const autoEl = getEl ? getEl(ids.studentAutoLogin) : null;
+    return {
+        source: picked,
+        displayName: text(ids.displayName) || text(alt.displayName),
+        schoolYear: num(ids.schoolYear) || num(alt.schoolYear),
+        grade: num(ids.grade) || num(alt.grade),
+        homeroom: num(ids.homeroom) || num(alt.homeroom),
+        studentAutoLoginEnabled: autoEl ? autoEl.checked !== false : true,
+    };
 }

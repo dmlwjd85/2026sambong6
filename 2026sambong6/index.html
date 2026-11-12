@@ -2525,6 +2525,12 @@
                                 <button type="button" class="boardgame-mini-btn" aria-label="AI 보통" onclick="void window.startAlkkagiAi('normal')">보통</button>
                                 <button type="button" class="boardgame-mini-btn" aria-label="AI 고수" onclick="void window.startAlkkagiAi('hard')">고수</button>
                             </div>
+                            <div id="boardgameAlkLiveAiRow" class="boardgame-ai-row boardgame-alk-ai hidden" role="group" aria-labelledby="boardgameAlkLiveAiLabel">
+                                <span id="boardgameAlkLiveAiLabel" class="boardgame-ai-label">실시간 AI</span>
+                                <button type="button" class="boardgame-mini-btn" aria-label="실시간 AI 쉬움" onclick="void window.startAlkkagiLiveAi('easy')">쉬움</button>
+                                <button type="button" class="boardgame-mini-btn" aria-label="실시간 AI 보통" onclick="void window.startAlkkagiLiveAi('normal')">보통</button>
+                                <button type="button" class="boardgame-mini-btn" aria-label="실시간 AI 고수" onclick="void window.startAlkkagiLiveAi('hard')">고수</button>
+                            </div>
                             <div class="boardgame-ai-row" role="group" aria-label="AI 난이도">
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.startBoardGameAi('gosu')">AI 고수</button>
                                 <button type="button" class="boardgame-primary-btn" onclick="void window.startBoardGameAi('choin')">AI 초인</button>

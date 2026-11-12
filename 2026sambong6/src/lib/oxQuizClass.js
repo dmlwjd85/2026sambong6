@@ -314,13 +314,20 @@ export function joinDoc(live, studentId, name, now = Date.now()) {
     };
 }
 
-/** 지금 이 학생이 답을 고를 수 있는지 */
-export function canPickNow(live, doc) {
+/**
+ * 지금 이 학생이 답을 고를 수 있는지.
+ * 공개된 문제는 판 문서의 고정 답(frozen[문제][학번])으로 세므로 학번이 꼭 필요해요.
+ * 답 문서에 id가 없으면 studentId로 채워요. 둘 다 없으면 고를 수 없다고 봐요.
+ */
+export function canPickNow(live, doc, studentId = '') {
     if (!live || live.status !== 'question' || !doc || doc.roundId !== live.roundId) return false;
+    const id = String((doc && doc.id) || studentId || '');
+    if (!id) return false;
+    const me = doc.id ? doc : { ...doc, id };
     const index = Number(live.index) || 0;
-    if (index < (Number(doc.joinIndex) || 0)) return false;
-    if (pickOf(doc, index)) return false;
-    return !isOutNow(live, doc);
+    if (index < (Number(me.joinIndex) || 0)) return false;
+    if (pickOf(me, index)) return false;
+    return !isOutNow(live, me);
 }
 
 export function classConditionSummary(live) {

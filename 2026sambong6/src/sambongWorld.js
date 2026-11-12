@@ -587,7 +587,16 @@ import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
 import { levelXpForDisplay } from './lib/levelDisplay.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
-import { OX_CHALLENGE_REASON, OX_CHALLENGE_SOURCE, planChallengeFinish, planChallengeStart } from './lib/oxQuizChallenge.js';
+import {
+    OX_CHALLENGE_BOARD_MAX,
+    OX_CHALLENGE_REASON,
+    OX_CHALLENGE_SOURCE,
+    OX_CHALLENGE_WATCH_LIMIT,
+    kstDateStr,
+    normalizeRankScope,
+    planChallengeFinish,
+    withOxRetry,
+} from './lib/oxQuizChallenge.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
@@ -10113,42 +10122,52 @@ ${subjectLine}
                     updatedAt: Date.now(),
                 }, { merge: true });
             },
-            // 무제한 도전: 반 랭킹 문서 하나(oxQuizBank/challengeBoard)에 학번별 최고 기록과 '오늘 봉 받는 판'을 둡니다.
-            // 봉은 그날 첫 판이 끝날 때 한 번만, 랭킹 문서와 학생 문서를 같은 트랜잭션으로 고쳐 줍니다
+            // 무제한 도전: 학생별 문서(oxQuizBank/challengeBoard/entries/{학번})에 최고 기록과 '오늘 봉 받은 판'을 둡니다.
+            // 반 전체가 한꺼번에 끝내도 서로 다른 문서라 부딪히지 않아요. 시작할 때는 아무것도 쓰지 않아요.
+            // 봉은 그날 처음 끝난 판에서 한 번만, 내 학생별 문서와 학생 문서를 같은 트랜잭션으로 고쳐 줍니다
             // (스킨 구매·환불과 같은 방식: 서버 봉을 읽고 bong·bongChangeLog를 함께 씀).
+            // 랭킹 공개 설정은 oxQuizBank/challengeBoard 문서 하나({ rankScope })에 둡니다.
             appKey: () => String(appId || ''),
-            loadChallengeBoard: async () => {
-                if (!db) return null;
-                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'));
-                return snap.exists() ? (snap.data() || null) : null;
+            watchChallengeBoard: ({ teacher = false } = {}, onRows, onError) => {
+                if (!db) return () => {};
+                const col = collection(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries');
+                // 0개 기록은 순위에 넣지 않아요. 학생은 위 몇 줄만, 선생님은 전체(최대 80줄)를 구독해요.
+                const q = query(col, where('best', '>', 0), orderBy('best', 'desc'), limit(teacher ? OX_CHALLENGE_BOARD_MAX : OX_CHALLENGE_WATCH_LIMIT));
+                return onSnapshot(q, (snap) => {
+                    onRows(snap.docs.map((d) => ({ ...(d.data() || {}), id: d.id })));
+                }, (e) => { if (onError) onError(e); });
             },
-            startChallenge: async (studentId, name, runId, today) => {
+            watchChallengeMine: (studentId, onEntry, onError) => {
+                if (!db || !studentId) return () => {};
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries', String(studentId)), (snap) => {
+                    onEntry(snap.exists() ? (snap.data() || null) : null);
+                }, (e) => { if (onError) onError(e); });
+            },
+            watchChallengeSettings: (onData) => {
+                if (!db) return () => {};
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'), (snap) => {
+                    onData(snap.exists() ? (snap.data() || null) : null);
+                }, (e) => console.warn('ox challenge settings', e));
+            },
+            setChallengeRankScope: async (rankScope) => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard');
-                let out = null;
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(ref);
-                    const board = snap.exists() ? (snap.data() || {}) : {};
-                    const plan = planChallengeStart(board, { studentId, name, runId, today, uid: auth && auth.currentUser ? auth.currentUser.uid : '' });
-                    if (plan.changed) tx.set(ref, { entries: { [String(studentId)]: plan.entry }, lastSid: String(studentId), updatedAt: Date.now() }, { merge: true });
-                    out = {
-                        rewardRun: plan.rewardRun,
-                        board: { ...board, entries: { ...(board.entries || {}), [String(studentId)]: plan.entry } },
-                    };
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'), {
+                    rankScope: normalizeRankScope(rankScope),
+                    updatedAt: Date.now(),
                 });
-                return out;
             },
-            finishChallenge: async (studentId, name, run) => {
+            finishChallenge: async (studentId, name, run, { recovered = false } = {}) => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
-                const boardRef = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard');
+                const entryRef = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries', String(studentId));
                 const studentRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + String(studentId));
-                let out = null;
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(boardRef);
-                    const board = snap.exists() ? (snap.data() || {}) : {};
-                    const plan = planChallengeFinish(board, { studentId, name, run, now: Date.now() });
+                // 같은 학생의 두 탭이 동시에 끝낼 때만 부딪혀요. 부딪히면 무작위 간격을 두고 다시 해요.
+                const out = await withOxRetry(() => runTransaction(db, async (tx) => {
+                    const snap = await tx.get(entryRef);
+                    const prev = snap.exists() ? (snap.data() || {}) : null;
+                    const now = Date.now();
+                    const plan = planChallengeFinish(prev, { studentId, name, run, today: kstDateStr(now), now, recovered });
                     let paid = null;
                     if (plan.paidNow && plan.bong > 0) {
                         const sSnap = await tx.get(studentRef);
@@ -10160,19 +10179,15 @@ ${subjectLine}
                         bongLogs.push(buildBongChangeLogEntry(OX_CHALLENGE_REASON, serverBong, nextBong, {
                             source: OX_CHALLENGE_SOURCE,
                             runId: String(run.runId),
-                            correct: Number(run.correct) || 0,
-                            date: String(run.date || ''),
+                            correct: Number(plan.entry.dayCorrect) || 0,
+                            date: String(plan.entry.dayDate || ''),
                         }));
                         tx.set(studentRef, { bong: nextBong, bongChangeLog: bongLogs }, { merge: true });
                         paid = { nextBong, bongLogs };
                     }
-                    if (plan.changed) tx.set(boardRef, { entries: { [String(studentId)]: plan.entry }, lastSid: String(studentId), updatedAt: Date.now() }, { merge: true });
-                    out = {
-                        plan,
-                        paid,
-                        board: { ...board, entries: { ...(board.entries || {}), [String(studentId)]: plan.entry } },
-                    };
-                });
+                    if (plan.changed) tx.set(entryRef, plan.entry);
+                    return { plan, paid, entry: plan.entry };
+                }), { deniedRetries: 1 });
                 // 지금 로그인한 학생에게 준 봉이면 화면 값도 바로 맞춥니다(다음 저장이 옛 값으로 덮지 않게).
                 if (out && out.paid && window.playerState && !window.playerState.isGuest
                     && String(localStorage.getItem('sambong_student_id') || '') === String(studentId)) {

@@ -6659,6 +6659,28 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .oxc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .oxc-name small { font-size: 0.75rem; color: #fda4af; margin-left: 4px; }
         .oxc-score { font-variant-numeric: tabular-nums; }
+        .oxc-gap { justify-content: center; text-align: center; color: #94a3b8; font-weight: 900; list-style: none; padding: 0; background: none; }
+        .oxc-results li.oxc-gap { display: block; background: none; padding: 0; }
+        .oxx-home { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+        /* 1280 이상(교실 화면·프로젝터): 함께 풀기·무제한 도전 글자만 키워요. 혼자 연습 화면은 그대로예요. */
+        @media (min-width: 1200px) {
+            .oxc-lead { font-size: 1.5rem; }
+            .oxx-note { font-size: 1.2rem; padding: 10px 14px; }
+            .oxc-muted { font-size: 1.05rem; }
+            .oxx-home .ox-label, .oxc-scroll .ox-label, .ox-label.oxc-center { font-size: 1.2rem; }
+            .oxc-results li { font-size: 1.3rem; padding: 12px 16px; grid-template-columns: 4.6rem minmax(0, 1fr) auto; }
+            .oxc-name small { font-size: 1rem; }
+            .oxc-names li { font-size: 1.2rem; padding: 8px 14px; }
+            .oxc-pill { font-size: 1.25rem; padding: 6px 16px; }
+            .oxc-tabs .ox-choice { font-size: 1.15rem; }
+            .oxc-chip { font-size: 1.1rem; min-height: 48px; }
+            .oxc-wait { font-size: 1.6rem; }
+            .oxc-wait b { font-size: 2.2rem; }
+            .oxc-verdict { font-size: 1.7rem; }
+            .oxc-answer { font-size: 1.8rem; }
+            .oxc-banner { font-size: 1.3rem; }
+            [data-oxc-timer], .oxx-timer { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; color: #fde68a; }
+        }
         @media (min-width: 1200px) {
             .ox-stage { padding: 28px 8vw; }
             .ox-mark { min-height: 36vh; }

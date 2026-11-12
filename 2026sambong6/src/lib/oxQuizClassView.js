@@ -29,6 +29,7 @@ import {
     teacherShouldAdvance,
     teacherShouldReveal,
 } from './oxQuizClass.js';
+import { friendlyOxError } from './oxQuizChallenge.js';
 
 function esc(value) {
     return String(value ?? '')
@@ -54,6 +55,9 @@ function chips(name, list, selected) {
         return `<button type="button" class="ox-choice oxc-chip${on}" data-oxc-cond="${name}" data-value="${esc(value)}">${esc(label)}</button>`;
     }).join('');
 }
+
+/** 학생 화면 결과에 보여 줄 위 순위 수 */
+const OX_CLASS_TOP_N = 5;
 
 export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubjectsOn, onExit, setMeta, modeTabs }) {
     const st = {
@@ -193,7 +197,7 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
             await api.updateLive(live.roundId, (latest) => build(latest, st.answers, Date.now()));
         } catch (e) {
             console.warn('ox live update', e);
-            if (!/stale/.test(errText(e))) await api.alert('함께 풀기를 바꾸지 못했어요. 잠시 뒤 다시 눌러 주세요.\n' + errText(e));
+            if (!/stale/.test(errText(e))) await api.alert(`함께 풀기를 바꾸지 못했어요. ${friendlyOxError(e)}`);
         } finally {
             st.busy = false;
         }
@@ -258,14 +262,28 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
             </div>`;
     }
 
+    /**
+     * 결과 순위. 선생님 화면은 전체, 학생 화면은 위 5명과 나만 보여 줘요(꼴찌·탈락은 반 전체에 보이지 않게).
+     * 학생 화면에서 '탈락' 표시는 내 줄에만 붙여요.
+     */
     function resultList(results, highlightId) {
         if (!results || !results.length) return '<p class="ox-empty">참여한 학생이 없어요.</p>';
-        return `<ol class="oxc-list oxc-results">${results.map((row) => `
+        const teacher = isTeacher();
+        let shown = results;
+        let me = null;
+        if (!teacher) {
+            shown = results.filter((row) => num(row.rank) >= 1 && num(row.rank) <= OX_CLASS_TOP_N).slice(0, OX_CLASS_TOP_N);
+            const mine = results.find((row) => row.id === highlightId);
+            if (mine && !shown.includes(mine)) me = mine;
+        }
+        const line = (row) => `
             <li class="${row.id === highlightId ? 'is-me' : ''}">
                 <span class="oxc-rank">${num(row.rank)}등</span>
-                <span class="oxc-name">${shownName(row.name)}${row.out ? ' <small>탈락</small>' : ''}</span>
+                <span class="oxc-name">${shownName(row.name)}${row.out && (teacher || row.id === highlightId) ? ' <small>탈락</small>' : ''}</span>
                 <span class="oxc-score">${num(row.correct)}개</span>
-            </li>`).join('')}</ol>`;
+            </li>`;
+        const foot = teacher ? '' : `<p class="oxc-muted">위 ${OX_CLASS_TOP_N}명과 내 순위만 보여요.</p>`;
+        return `<ol class="oxc-list oxc-results">${shown.map(line).join('')}${me ? `<li class="oxc-gap" aria-hidden="true">⋯</li>${line(me)}` : ''}</ol>${foot}`;
     }
 
     function questionTop(live, extra) {
@@ -353,7 +371,7 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
             return;
         }
         const id = myId();
-        const mine = st.mine ? { ...st.mine, id } : null;
+        const mine = mineWithId();
         const score = mine ? scoreClassEntry(live, mine) : { livesLeft: 0, correct: 0, out: false };
         const index = Number(live.index) || 0;
         const item = live.items[index];
@@ -463,7 +481,8 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
             watchAnswersIfTeacher();
             render();
         } catch (e) {
-            await api.alert('함께 풀기를 열지 못했어요.\n' + errText(e));
+            console.warn('ox live open', e);
+            await api.alert(`함께 풀기를 열지 못했어요. ${friendlyOxError(e)}`);
         }
     }
 
@@ -486,25 +505,32 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
         try {
             const existing = await api.readAnswer(id);
             if (existing && existing.roundId === live.roundId) {
-                st.mine = existing;
+                st.mine = { ...existing, id };
             } else {
                 const next = joinDoc(live, id, api.studentName());
                 await api.writeJoin(id, next);
-                st.mine = next;
+                st.mine = { ...next, id };
             }
             st.joined = true;
             rememberJoined(live.roundId);
             return true;
         } catch (e) {
-            await api.alert('함께 풀기에 들어가지 못했어요.\n' + errText(e));
+            console.warn('ox live join', e);
+            await api.alert(`함께 풀기에 들어가지 못했어요. ${friendlyOxError(e)}`);
             return false;
         }
+    }
+
+    /** 내 답 문서 + 학번. 점수·생명·고를 수 있는지는 모두 이 모양으로 계산해요. */
+    function mineWithId() {
+        return st.mine ? { ...st.mine, id: myId() } : null;
     }
 
     async function pick(value) {
         const live = st.live;
         const id = myId();
-        if (!st.mine || !canPickNow(live, st.mine)) return;
+        // 판 문서의 고정 답(frozen)은 학번으로 찾아요. 내 답 문서에도 학번(id)을 꼭 붙여서 물어봐요.
+        if (!st.mine || !id || !canPickNow(live, mineWithId(), id)) return;
         const left = classRemainingMs(live, Date.now(), st.seen[seenKey(live)]);
         if (left <= 0) {
             render();
@@ -524,7 +550,8 @@ export function createOxClassRound({ body, api, getBank, getSubjectsOn, setSubje
             render();
             // 이미 정답이 공개됐으면(규칙이 늦은 답을 막아요) 조용히 넘어가요.
             if (st.live && st.live.status === 'question' && String(st.live.index) === index) {
-                await api.alert('답을 보내지 못했어요. 다시 골라 주세요.\n' + errText(e));
+                console.warn('ox live pick', e);
+                await api.alert('답을 보내지 못했어요. 인터넷 연결을 확인하고 다시 골라 주세요.');
             }
         }
     }

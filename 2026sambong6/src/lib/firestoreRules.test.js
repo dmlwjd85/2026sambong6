@@ -1188,7 +1188,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(teacher, `${live}/other/x`), { a: 1 }));
     });
 
-    it('OX 무제한 도전: 랭킹 칸과 학생 봉(+기록)을 한 트랜잭션으로 쓰고, 하루 한 번·상한·찜한 기기만 지급 표시를 한다', async () => {
+    it('OX 무제한 도전: 학생별 문서와 학생 봉(+기록)을 한 트랜잭션으로 쓰고, 하루 한 번·상한·기록 낮추기 거부', async () => {
         const kst = (days = 0) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
         const T = kst(0);
         await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -1196,44 +1196,76 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         });
         const db = anon().firestore();
         const other = testEnv.authenticatedContext('anon-ox-other', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
-        const boardPath = 'artifacts/class1/public/data/oxQuizBank/challengeBoard';
-        const board = doc(db, boardPath);
+        const entries = 'artifacts/class1/public/data/oxQuizBank/challengeBoard/entries';
+        const mine = doc(db, `${entries}/7`);
         const student = doc(db, 'artifacts/class1/public/data/students/student_7');
-        const claim = { name: '일곱', best: 0, plays: 0, dayDate: T, dayRunId: 'r1', dayPaid: false, dayCorrect: 0, dayBong: 0, dayUid: 'anon-student' };
-        // 오늘이 아닌 날짜, 남의 uid, 처음부터 지급 표시로 찜하기는 거부
-        await assertFails(setDoc(board, { entries: { 7: { ...claim, dayDate: kst(-1) } }, lastSid: '7', updatedAt: 1 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { ...claim, dayUid: 'anon-ox-other' } }, lastSid: '7', updatedAt: 1 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { ...claim, dayPaid: true, dayBong: 1, dayCorrect: 10 } }, lastSid: '7', updatedAt: 1 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: claim }, lastSid: '8', updatedAt: 1 }, { merge: true }), 'lastSid와 바꾼 칸이 달라요');
-        await assertSucceeds(setDoc(board, { entries: { 7: claim }, lastSid: '7', updatedAt: 1 }, { merge: true }));
-        // 찜하지 않은 기기는 지급 표시를 못 해요.
-        await assertFails(setDoc(doc(other, boardPath), { entries: { 7: { dayPaid: true, dayCorrect: 23, dayBong: 2, best: 23 } }, lastSid: '7', updatedAt: 2 }, { merge: true }));
-        // 상한: 맞힌 수 ÷ 10보다 많은 봉, 하루 20봉 넘게는 거부
-        await assertFails(setDoc(board, { entries: { 7: { dayPaid: true, dayCorrect: 23, dayBong: 3, best: 23 } }, lastSid: '7', updatedAt: 2 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { dayPaid: true, dayCorrect: 900, dayBong: 90, best: 900 } }, lastSid: '7', updatedAt: 2 }, { merge: true }));
+        const first = { name: '일곱', best: 23, bestMs: 9000, bestAt: 5, plays: 1, lastRunId: 'r1', dayDate: T, dayRunId: 'r1', dayCorrect: 23, dayBong: 2, dayPaidAt: 5, updatedAt: 5 };
+        // 오늘이 아닌 날짜, 맞힌 수 ÷ 10보다 많은 봉, 21봉, 최고 기록보다 많은 맞힌 수, 모르는 필드, 판 수 건너뛰기는 거부
+        await assertFails(setDoc(mine, { ...first, dayDate: kst(-1) }));
+        await assertFails(setDoc(mine, { ...first, dayDate: kst(1) }));
+        await assertFails(setDoc(mine, { ...first, dayBong: 3 }));
+        await assertFails(setDoc(mine, { ...first, best: 900, dayCorrect: 900, dayBong: 21 }));
+        await assertFails(setDoc(mine, { ...first, best: 10 }));
+        await assertFails(setDoc(mine, { ...first, html: '<img>' }));
+        await assertFails(setDoc(mine, { ...first, plays: 2 }));
+        await assertFails(setDoc(mine, { ...first, dayRunId: 'r0' }), '봉 받은 판은 방금 끝난 판이어야 해요');
+        await assertFails(setDoc(doc(db, `${entries}/bad id`), first));
+        // 정상: 그날 처음 끝난 판 → 학생 문서 봉 + 기록과 함께
         await assertSucceeds(runTransaction(db, async (tx) => {
-            const b = await tx.get(board);
+            const e = await tx.get(mine);
             const s = await tx.get(student);
-            assert.equal(b.data().entries['7'].dayPaid, false);
+            assert.equal(e.exists(), false);
             const before = Number(s.data().bong) || 0;
             tx.set(student, { bong: before + 2, bongChangeLog: [{ reason: 'OX 무제한 도전', before, after: before + 2, delta: 2, source: 'oxChallenge' }] }, { merge: true });
-            tx.set(board, { entries: { 7: { best: 23, plays: 1, lastRunId: 'r1', dayPaid: true, dayCorrect: 23, dayBong: 2, dayPaidAt: 5 } }, lastSid: '7', updatedAt: 5 }, { merge: true });
+            tx.set(mine, first);
         }));
         assert.equal((await getDoc(student)).data().bong, 5);
-        // 같은 날 두 번째 지급·지급 칸 되돌리기·새 판으로 다시 찜하기는 거부, 기록 갱신만 돼요.
-        await assertFails(setDoc(board, { entries: { 7: { dayBong: 3, dayCorrect: 35 } }, lastSid: '7', updatedAt: 6 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { dayPaid: false, dayBong: 0 } }, lastSid: '7', updatedAt: 6 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { dayRunId: 'r2', dayPaid: false, dayBong: 0, dayCorrect: 0 } }, lastSid: '7', updatedAt: 6 }, { merge: true }));
-        await assertSucceeds(setDoc(board, { entries: { 7: { best: 30, plays: 2, lastRunId: 'r2' } }, lastSid: '7', updatedAt: 6 }, { merge: true }));
-        // 남의 칸을 같이 바꾸기, 칸 지우기, 모르는 필드는 거부
-        await assertFails(setDoc(board, { entries: { 7: { plays: 3 }, 8: { name: '여덟', best: 99 } }, lastSid: '7', updatedAt: 7 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { plays: 3, html: '<img>' } }, lastSid: '7', updatedAt: 7 }, { merge: true }));
-        await assertFails(setDoc(board, { entries: { 7: { best: 5000 } }, lastSid: '7', updatedAt: 7 }, { merge: true }));
-        // 다른 학번은 자기 칸으로 오늘 찜할 수 있어요.
-        await assertSucceeds(setDoc(doc(other, boardPath), { entries: { 8: { ...claim, name: '여덟', dayUid: 'anon-ox-other' } }, lastSid: '8', updatedAt: 8 }, { merge: true }));
+        // 같은 날 두 번째 지급, 오늘 칸 바꾸기·지우기, 최고 기록 낮추기, 같은 개수 더 느린 기록은 거부
+        const second = { ...first, plays: 2, lastRunId: 'r2', updatedAt: 6 };
+        await assertFails(setDoc(mine, { ...second, dayRunId: 'r2', dayCorrect: 30, dayBong: 3, best: 30 }));
+        await assertFails(setDoc(mine, { ...second, dayBong: 0 }));
+        await assertFails(setDoc(mine, { ...second, best: 5 }));
+        await assertFails(setDoc(mine, { ...second, bestMs: 99999 }));
+        await assertFails(deleteDoc(mine));
+        // 둘째 판은 기록만: 더 많이 맞히면 최고 기록이 올라가요.
+        await assertSucceeds(setDoc(mine, { ...second, best: 30, bestMs: 8000, bestAt: 6 }));
+        // 내일이 되면 다시 한 번 받을 수 있어요(규칙은 서버 시각으로 오늘만 허용해서, 어제 문서로 확인해요).
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), `${entries}/9`), { ...first, name: '아홉', dayDate: kst(-1) });
+        });
+        await assertSucceeds(setDoc(doc(other, `${entries}/9`), { ...first, name: '아홉', plays: 2, lastRunId: 'r9', dayRunId: 'r9', dayCorrect: 12, dayBong: 1, updatedAt: 7 }));
+        // 로그인 없이는 못 쓰고, 읽기는 누구나(랭킹)
         const guest = testEnv.unauthenticatedContext().firestore();
-        await assertSucceeds(getDoc(doc(guest, boardPath)));
-        await assertFails(setDoc(doc(guest, boardPath), { entries: {}, lastSid: '7' }, { merge: true }));
+        const { collection, getDocs, query, where, orderBy, limit } = await import('firebase/firestore');
+        await assertSucceeds(getDocs(query(collection(guest, entries), where('best', '>', 0), orderBy('best', 'desc'), limit(15))));
+        await assertFails(setDoc(doc(guest, `${entries}/8`), { ...first, name: '여덟' }));
+    });
+
+    it('OX 무제한 도전: 랭킹 공개 설정은 정해진 값만, 고정 답(frozen)은 지금 문제 칸을 공개할 때만 더한다', async () => {
+        const db = anon().firestore();
+        const settings = doc(db, 'artifacts/class1/public/data/oxQuizBank/challengeBoard');
+        await assertSucceeds(setDoc(settings, { rankScope: 'off', updatedAt: 1 }));
+        await assertSucceeds(setDoc(settings, { rankScope: 'top5', updatedAt: 2 }));
+        await assertFails(setDoc(settings, { rankScope: 'all', updatedAt: 3 }));
+        await assertFails(setDoc(settings, { rankScope: 'top5', entries: {} }));
+        await assertFails(deleteDoc(settings));
+        const teacher = testEnv.authenticatedContext('anon-ox-teacher', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const live = 'artifacts/class1/public/data/oxQuizBank/live';
+        const items = [{ id: 'L2', prompt: '맞나요', answer: 'O' }, { id: 'L3', prompt: '틀리나요', answer: 'X' }, { id: 'L4', prompt: '세 번째', answer: 'O' }];
+        // 새 판은 빈 frozen으로만 열어요.
+        await assertFails(setDoc(doc(teacher, live), { roundId: 'oxr_f', status: 'lobby', index: 0, items, timeSec: 10, updatedAt: Date.now(), frozen: { 0: { 3: { p: 'O', ms: 1 } } } }));
+        await assertSucceeds(setDoc(doc(teacher, live), { roundId: 'oxr_f', status: 'question', index: 0, items, timeSec: 10, qStartAt: 1, updatedAt: Date.now() }));
+        // 문제 중에는 frozen을 못 써요. 공개할 때 지금 문제 칸만 더해요.
+        await assertFails(updateDoc(doc(teacher, live), { frozen: { 0: { 3: { p: 'O', ms: 1 } } }, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { status: 'reveal', frozen: { 1: { 3: { p: 'O', ms: 1 } } }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'reveal', revealAt: 2, frozen: { 0: { 3: { p: 'O', ms: 1 } } }, updatedAt: Date.now() }));
+        // 공개된 지난 칸은 바꾸거나 지우지 못해요.
+        await assertFails(updateDoc(doc(teacher, live), { 'frozen.0.4': { p: 'O', ms: 1 }, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { frozen: {}, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'question', index: 1, qStartAt: 3, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { 'frozen.0.3': { p: 'X', ms: 1 }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'reveal', revealAt: 4, 'frozen.1': { 3: { p: 'X', ms: 2 } }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'off', updatedAt: Date.now() }));
     });
 
     it('추천·비추천 사유함: 항목 하나씩 만들기만, 형식·길이·uid 검사, 고치기·지우기·비로그인 거부', async () => {

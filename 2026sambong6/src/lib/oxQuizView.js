@@ -92,7 +92,7 @@ export function bindOxQuiz(stage, api) {
     }) : null;
 
     // 무제한 도전(틀릴 때까지, 반 랭킹, 하루 첫 판만 10문제마다 1봉)
-    const challengeUi = api.loadChallengeBoard ? createOxChallenge({
+    const challengeUi = api.finishChallenge ? createOxChallenge({
         body,
         api,
         getBank: () => state.bank,

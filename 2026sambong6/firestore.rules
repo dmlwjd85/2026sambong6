@@ -909,7 +909,7 @@ service cloud.firestore {
     }
 
     // OX 퀴즈 문제 은행. artifacts/{학급}/public/data/oxQuizBank/{문서}
-    // 함께 풀기 판(live, live/answers)과 무제한 도전 랭킹(challengeBoard)은 아래 전용 match만 써요.
+    // 함께 풀기 판(live, live/answers)과 무제한 도전(challengeBoard, challengeBoard/entries)은 아래 전용 match만 써요.
     match /artifacts/{appId}/public/data/oxQuizBank/{document=**} {
       allow read: if true;
       allow write: if signedIn() && !isOxGuardedDoc();
@@ -938,16 +938,34 @@ service cloud.firestore {
         && (d.get('tally', null) == null || (d.tally is map && d.tally.keys().hasOnly(['O', 'X', 'none'])));
     }
 
+    // 고정 답(frozen)은 같은 판에서 '지금 문제' 칸 하나를 문제 → 정답 공개로 바뀔 때만 더할 수 있어요.
+    // 이미 고정된 지난 칸은 바꾸거나 지우지 못해요. 새 판은 빈 frozen으로만 열어요.
+    function oxLiveFrozenOk(d) {
+      let nf = d.get('frozen', {});
+      let of = resource.data.get('frozen', {});
+      let k = string(resource.data.index);
+      let fd = nf.diff(of);
+      return fd.removedKeys().size() == 0
+        && fd.changedKeys().size() == 0
+        && fd.addedKeys().hasOnly([k])
+        && (fd.addedKeys().size() == 0
+          || (resource.data.status == 'question' && d.status == 'reveal' && d.index == resource.data.index
+            && nf[k] is map && nf[k].size() <= 60));
+    }
+
     function oxLiveWriteOk() {
       let d = request.resource.data;
       return oxLiveShapeOk(d) && (
-        resource == null
-        || (d.roundId != resource.data.roundId
-          && (resource.data.get('status', 'off') in ['done', 'off']
-            || request.time.toMillis() > resource.data.get('updatedAt', 0) + 1800000))
-        || (d.roundId == resource.data.roundId
+        ((resource == null
+          || (d.roundId != resource.data.roundId
+            && (resource.data.get('status', 'off') in ['done', 'off']
+              || request.time.toMillis() > resource.data.get('updatedAt', 0) + 1800000)))
+          && d.get('frozen', {}).size() == 0)
+        || (resource != null
+          && d.roundId == resource.data.roundId
           && d.items == resource.data.items
-          && (d.status == 'off' || (d.index >= resource.data.index && d.index <= resource.data.index + 1)))
+          && (d.status == 'off' || (d.index >= resource.data.index && d.index <= resource.data.index + 1))
+          && oxLiveFrozenOk(d))
       );
     }
 
@@ -991,50 +1009,50 @@ service cloud.firestore {
         && (joining ? oxAnswerJoinOk(d, L) : oxAnswerPickOk(d, L));
     }
 
-    // 무제한 도전 랭킹 한 문서. 한 번에 학번 하나(lastSid)의 칸만 바꿔요.
-    // 봉 받는 판: 서버 기준 오늘(KST) 날짜로만 찜하고, 찜한 기기만 하루 한 번 지급 표시를 해요.
-    // 지급 표시는 되돌리지 못하고, 봉은 맞힌 수 ÷ 10 이하·하루 20봉 이하예요.
-    function oxBoardEntryOk(n, o) {
-      return n.keys().hasOnly(['name', 'best', 'bestMs', 'bestAt', 'plays', 'lastRunId', 'dayDate', 'dayRunId',
-          'dayPaid', 'dayCorrect', 'dayBong', 'dayPaidAt', 'dayUid'])
-        && n.get('name', '') is string && n.get('name', '').size() <= 24
-        && n.get('best', 0) is int && n.get('best', 0) >= 0 && n.get('best', 0) <= 2000
-        && n.get('plays', 0) is int
-        && n.get('dayCorrect', 0) is int && n.get('dayCorrect', 0) >= 0
-        && n.get('dayBong', 0) is int && n.get('dayBong', 0) >= 0 && n.get('dayBong', 0) <= 20
-        && n.get('dayBong', 0) * 10 <= n.get('dayCorrect', 0)
-        && (
-          (n.get('dayDate', '') != o.get('dayDate', '')
-            && n.get('dayDate', '') is string
-            && n.get('dayDate', '').matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-            && peerFeedbackIsTodayKst(n.get('dayDate', ''))
-            && n.get('dayPaid', false) == false
-            && n.get('dayBong', 0) == 0
-            && n.get('dayUid', '') == request.auth.uid)
-          || (n.get('dayDate', '') == o.get('dayDate', '')
-            && n.get('dayRunId', '') == o.get('dayRunId', '')
-            && n.get('dayUid', '') == o.get('dayUid', '')
-            && (o.get('dayPaid', false) == true
-              ? (n.get('dayPaid', false) == true
-                && n.get('dayBong', 0) == o.get('dayBong', 0)
-                && n.get('dayCorrect', 0) == o.get('dayCorrect', 0))
-              : (n.get('dayPaid', false) == false
-                ? n.get('dayBong', 0) == 0
-                : o.get('dayUid', '') == request.auth.uid)))
-        );
+    // 무제한 도전 학생별 문서 challengeBoard/entries/{학번}. 반 전체가 동시에 써도 서로 부딪히지 않아요.
+    // - 최고 기록은 올라가기만 해요(같은 개수면 더 빠른 기록으로만). 판 수는 한 번에 1씩만 늘어요.
+    // - 오늘 봉 받은 판(dayDate·dayRunId·dayCorrect·dayBong)은 서버 기준 오늘(KST) 날짜로 하루 한 번만 적고, 그날은 바꾸지 못해요.
+    // - 봉은 맞힌 수 ÷ 10 이하, 하루 20봉 이하이고, 맞힌 수는 최고 기록보다 클 수 없어요.
+    // 익명 로그인에는 학번이 없어 '정말 그 학생인지'는 규칙으로 가르지 못해요(PR 본문 '남은 한계').
+    function oxEntryDayOk(n, o) {
+      return (n.get('dayDate', '') == o.get('dayDate', '')
+          && n.get('dayRunId', '') == o.get('dayRunId', '')
+          && n.get('dayCorrect', 0) == o.get('dayCorrect', 0)
+          && n.get('dayBong', 0) == o.get('dayBong', 0)
+          && n.get('dayPaidAt', 0) == o.get('dayPaidAt', 0))
+        || (n.get('dayDate', '') != o.get('dayDate', '')
+          && n.dayDate is string
+          && n.dayDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && peerFeedbackIsTodayKst(n.dayDate)
+          && n.dayRunId is string && n.dayRunId == n.get('lastRunId', '')
+          && n.dayCorrect is int && n.dayCorrect >= 0 && n.dayCorrect <= n.best
+          && n.dayBong is int && n.dayBong >= 0 && n.dayBong <= 20
+          && n.dayBong * 10 <= n.dayCorrect);
     }
 
-    function oxBoardWriteOk() {
+    function oxEntryWriteOk(sid) {
+      let n = request.resource.data;
+      let o = resource == null ? {} : resource.data;
+      return sid.matches('^[A-Za-z0-9_-]{1,24}$')
+        && n.keys().hasOnly(['name', 'best', 'bestMs', 'bestAt', 'plays', 'lastRunId', 'dayDate', 'dayRunId',
+          'dayCorrect', 'dayBong', 'dayPaidAt', 'updatedAt'])
+        && n.get('name', '') is string && n.get('name', '').size() <= 24
+        && n.best is int && n.best >= 0 && n.best <= 2000
+        && n.get('bestMs', 0) is int && n.get('bestMs', 0) >= 0
+        && n.plays is int && n.plays >= o.get('plays', 0) && n.plays <= o.get('plays', 0) + 1
+        && n.get('lastRunId', '') is string && n.get('lastRunId', '').size() <= 40
+        && n.get('dayRunId', '') is string && n.get('dayRunId', '').size() <= 40
+        && (n.best > o.get('best', -1)
+          || (n.best == o.get('best', -1) && n.get('bestMs', 0) <= o.get('bestMs', 0)))
+        && oxEntryDayOk(n, o);
+    }
+
+    // 학생 화면 랭킹 공개 설정 하나(oxQuizBank/challengeBoard). 마스터도 익명 로그인이라 '선생님만'은 가르지 못해요.
+    function oxBoardSettingsOk() {
       let d = request.resource.data;
-      let sid = d.get('lastSid', '');
-      let oldEntries = resource == null ? {} : resource.data.get('entries', {});
-      return d.keys().hasOnly(['entries', 'lastSid', 'updatedAt'])
-        && sid is string && sid.matches('^[A-Za-z0-9_-]{1,24}$')
-        && d.entries is map
-        && d.entries.size() <= 200
-        && d.entries.diff(oldEntries).affectedKeys().hasOnly([sid])
-        && d.entries.diff(oldEntries).removedKeys().size() == 0
-        && oxBoardEntryOk(d.entries[sid], oldEntries.get(sid, {}));
+      return d.keys().hasOnly(['rankScope', 'updatedAt'])
+        && d.rankScope in ['top5', 'off']
+        && d.get('updatedAt', 0) is number;
     }
 
     match /artifacts/{appId}/public/data/oxQuizBank/live {
@@ -1051,7 +1069,13 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/data/oxQuizBank/challengeBoard {
       allow read: if true;
-      allow create, update: if signedIn() && oxBoardWriteOk();
+      allow create, update: if signedIn() && oxBoardSettingsOk();
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/oxQuizBank/challengeBoard/entries/{sid} {
+      allow read: if true;
+      allow create, update: if signedIn() && oxEntryWriteOk(sid);
       allow delete: if false;
     }
 

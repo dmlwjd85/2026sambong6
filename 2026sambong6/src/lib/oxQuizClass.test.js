@@ -153,7 +153,8 @@ describe('OX 함께 풀기 채점', () => {
         live = apply(live, nextPatch(live, [], 2)); // 1번 문제(index 1)
         const late = joinDoc(live, '3', '데모학생3', 5);
         assert.equal(late.joinIndex, 1);
-        assert.equal(canPickNow(live, late), true);
+        assert.equal(canPickNow(live, late, '3'), true);
+        assert.equal(canPickNow(live, late), false, '학번을 모르면 고를 수 없다고 봐요');
         const inReveal = joinDoc({ ...live, status: 'reveal' }, '4', '넷', 5);
         assert.equal(inReveal.joinIndex, 2, '정답 공개 중에 들어오면 다음 문제부터예요');
         const picked = { ...late, id: '3', picks: { 1: { p: 'X', ms: 900 } } };
@@ -302,3 +303,59 @@ describe('OX 함께 풀기 검수 보완', () => {
     });
 });
 
+describe('OX 함께 풀기 r3: 생명 판에서도 끝까지 고를 수 있어요 (M1 회귀)', () => {
+    const BIG = Array.from({ length: 10 }, (_, i) => ({ id: `B${i}`, subject: '과학', prompt: `문제 ${i}`, answer: i % 2 ? 'X' : 'O', explain: '' }));
+    const round = (lives) => {
+        const { live, error } = buildClassRound({
+            questions: BIG, subjects: ['과학'], conditions: { count: 10, timeSec: 10, order: 'sheet', lives }, now: 1000, roundId: 'oxr_m1',
+        });
+        assert.equal(error, '');
+        return live;
+    };
+
+    for (const lives of [0, 1, 2, 3, 5]) {
+        it(`생명 ${lives}: 모두 맞히는 학생은 10문제 내내 고를 수 있고, 판이 끝까지 가요`, () => {
+            let live = round(lives);
+            assert.equal(live.lives, lives === 5 ? 0 : lives, '고를 수 없는 생명 수(5)는 끝까지로 바꿔요');
+            live = apply(live, startPatch(live, 0));
+            // 화면이 들고 있는 내 답 문서에는 id가 없어요(답 문서 자체에는 학번 칸이 없음).
+            let mine = joinDoc(live, '7', '일곱', 0);
+            let friend = { ...joinDoc(live, '8', '여덟', 0), id: '8' };
+            for (let i = 0; i < 10; i += 1) {
+                assert.equal(live.status, 'question', `${i + 1}번 문제가 열려야 해요`);
+                assert.equal(canPickNow(live, mine, '7'), true, `${i + 1}번에서 고를 수 있어야 해요`);
+                assert.equal(canPickNow(live, { ...mine, id: '7' }), true);
+                const ans = BIG[i].answer;
+                mine = { ...mine, picks: { ...mine.picks, [i]: { p: ans, ms: 500 } } };
+                friend = { ...friend, picks: { ...friend.picks, [i]: { p: ans, ms: 600 } } };
+                assert.equal(canPickNow(live, mine, '7'), false, '한 문제에 한 번만 골라요');
+                const docs = [{ ...mine, id: '7' }, friend];
+                live = apply(live, revealPatch(live, docs, 10 + i));
+                assert.equal(scoreClassEntry(live, { ...mine, id: '7' }).out, false);
+                live = apply(live, nextPatch(live, docs, 20 + i));
+            }
+            assert.equal(live.status, 'done');
+            assert.equal(live.revealed, 10);
+            assert.deepEqual(live.results.map((r) => [r.id, r.correct, r.out]), [['7', 10, false], ['8', 10, false]]);
+        });
+    }
+
+    it('생명 2: 두 번 틀리면 그때 탈락하고, 그 전까지는 고를 수 있어요', () => {
+        let live = round(2);
+        live = apply(live, startPatch(live, 0));
+        let mine = joinDoc(live, '7', '일곱', 0);
+        const wrongAt = new Set([1, 3]);
+        for (let i = 0; i < 4; i += 1) {
+            assert.equal(canPickNow(live, mine, '7'), true, `${i + 1}번`);
+            const ans = BIG[i].answer;
+            const p = wrongAt.has(i) ? (ans === 'O' ? 'X' : 'O') : ans;
+            mine = { ...mine, picks: { ...mine.picks, [i]: { p, ms: 100 } } };
+            const other = { id: '8', roundId: 'oxr_m1', joinIndex: 0, picks: Object.fromEntries(Array.from({ length: i + 1 }, (_, k) => [k, { p: BIG[k].answer, ms: 1 }])) };
+            live = apply(live, revealPatch(live, [{ ...mine, id: '7' }, other], 10 + i));
+            live = apply(live, nextPatch(live, [{ ...mine, id: '7' }, other], 20 + i));
+        }
+        assert.equal(live.status, 'question');
+        assert.equal(canPickNow(live, mine, '7'), false, '생명 2개를 다 쓰면 못 골라요');
+        assert.equal(scoreClassEntry(live, { ...mine, id: '7' }).out, true);
+    });
+});

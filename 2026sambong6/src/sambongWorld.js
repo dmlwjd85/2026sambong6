@@ -32,9 +32,20 @@ import {
     ADMIN_EXPORT_SHEET_OPTIONS,
     downloadAdminStudentWorkbook,
     downloadAoaWorkbook,
+    downloadAoaSheetsWorkbook,
     downloadAdminStudentJson as exportStudentJsonFile,
     downloadAdminStudentCsv as exportStudentCsvFile,
 } from './lib/adminDataExport.js';
+import {
+    QUIZ_RESULTS_COLLECTION,
+    QUIZ_RESULTS_READ_LIMIT,
+    aggregateQuizResults,
+    buildLearningAnalyticsSheets,
+    learningAnalyticsHeadline,
+    summarizeQuizRaidSession,
+} from './lib/learningAnalytics.js';
+import { planRosterImport } from './lib/rosterImport.js';
+import { downloadRosterTemplate as downloadRosterTemplateFile, parseRosterWorkbook } from './lib/rosterWorkbook.js';
 import {
     QUIZ_RAID_DEFAULT_COUNT,
     QUIZ_RAID_MAX_COUNT,
@@ -4493,21 +4504,21 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
                 <tr class="border-b border-slate-700/80">
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${escapeHtmlAttr(r.id || '')}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${escapeHtmlAttr(r.name || '')}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
                     <td class="p-1">
                         <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
                             <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
                             <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
                         </select>
                     </td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${escapeHtmlAttr(r.label || '')}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
                     <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
                 </tr>`).join('');
             panel.innerHTML = `
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
                     <label class="text-[10px] text-slate-300">학급 표시 이름
-                        <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                        <input id="classMetaDisplayName" type="text" value="${escapeHtmlAttr(meta.displayName || '')}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                         <span class="block mt-1 text-[9px] text-amber-200/80">이 학급 마스터가 바꿀 수 있습니다. 명단 저장을 누르세요.</span>
                     </label>
                     <label class="text-[10px] text-slate-300">학급 ID (데이터 경로)
@@ -4543,6 +4554,15 @@ function redrawPlazaGrantsUi() {
                         <tbody id="classRosterEditorBody">${rosterRows}</tbody>
                     </table>
                 </div>
+                <div class="mb-3 p-2 rounded-xl border border-lime-500/50 bg-lime-950/30">
+                    <p class="text-[10px] font-black text-lime-200 mb-1"><i class="fa-solid fa-file-excel mr-1"></i>명단을 엑셀로 한 번에 넣기</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="window.downloadRosterTemplate()" class="bg-slate-800 hover:bg-slate-700 text-lime-100 text-[10px] font-bold py-2 px-3 rounded border border-lime-500/70">명단 서식 받기</button>
+                        <button type="button" onclick="window.pickRosterFile()" class="bg-lime-700 hover:bg-lime-600 text-white text-[10px] font-bold py-2 px-3 rounded border border-lime-400">엑셀·CSV로 명단 올리기</button>
+                        <input type="file" id="rosterFileInput" accept=".xlsx,.xls,.csv" class="sr-only" tabindex="-1" aria-hidden="true" onchange="window.onRosterFilePicked(event)">
+                    </div>
+                    <p class="text-[9px] text-lime-100/70 mt-1">번호·이름·성별·별칭을 적어 올리면 아래 표가 채워집니다. 확인 후 「명단 저장」을 눌러야 반영됩니다. 빠진 번호는 지우지 않고 비활성으로 남깁니다.</p>
+                </div>
                 <div class="flex flex-wrap gap-2 mb-3">
                     <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-2 px-3 rounded border border-slate-600">+ 학생 추가</button>
                     <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-4 rounded">명단 저장</button>
@@ -4572,6 +4592,59 @@ function redrawPlazaGrantsUi() {
             window.paintClassCreateInbox();
             window.paintClassCreateUnlockAdmin();
             void window.refreshManagedClassDirectory();
+        };
+
+        window.downloadRosterTemplate = function() {
+            if (!window.playerState?.isGM) return;
+            try {
+                const { fileName } = downloadRosterTemplateFile();
+                window.customAlert(`명단 서식을 내려받았습니다.\n파일: ${fileName}\n「명단」 시트에 학생을 적어 올려 주세요.\n학생 개인정보가 담기니 공유 폴더에 두지 마세요.`);
+            } catch (e) {
+                console.error('downloadRosterTemplate', e);
+                window.customAlert('서식 다운로드에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.pickRosterFile = function() {
+            if (!window.playerState?.isGM) return;
+            const input = document.getElementById('rosterFileInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        };
+
+        window.onRosterFilePicked = async function(ev) {
+            const file = ev && ev.target && ev.target.files && ev.target.files[0];
+            if (!file || !window.playerState?.isGM) return;
+            try {
+                const isCsv = /\.csv$/i.test(file.name);
+                const data = isCsv ? await file.text() : new Uint8Array(await file.arrayBuffer());
+                const parsed = parseRosterWorkbook(data);
+                if (!parsed.roster.length) {
+                    return window.customAlert('명단을 읽지 못했습니다.\n' + (parsed.errors.slice(0, 6).join('\n') || '서식을 확인해 주세요.'));
+                }
+                const plan = planRosterImport(readRosterFromEditor(), parsed.roster);
+                const lines = [
+                    `학생 ${parsed.roster.length}명을 읽었습니다.`,
+                    plan.added.length ? `· 새로 추가: ${plan.added.length}명` : '',
+                    plan.renamed.length ? `· 이름 바뀜: ${plan.renamed.length}명` : '',
+                    plan.deactivated.length ? `· 새 명단에 없어 비활성: ${plan.deactivated.map((id) => id + '번').join(', ')}` : '',
+                    parsed.errors.length ? `\n건너뛴 행:\n${parsed.errors.slice(0, 5).join('\n')}` : '',
+                    parsed.warnings.length ? `\n참고:\n${parsed.warnings.slice(0, 5).join('\n')}` : '',
+                    '\n표에 채울까요? (「명단 저장」을 눌러야 저장됩니다)',
+                ].filter(Boolean).join('\n');
+                const ok = await window.customConfirm(lines);
+                if (!ok) return;
+                const meta = window.classMeta || buildDefaultClassMeta(appId);
+                window.classMeta = { ...meta, roster: plan.roster };
+                window.renderClassAdminPanel();
+                if (window.showToast) window.showToast('명단을 표에 채웠습니다. 확인 후 「명단 저장」을 눌러 주세요.');
+            } catch (e) {
+                console.error('onRosterFilePicked', e);
+                window.customAlert('명단 파일을 읽지 못했습니다.\n' + (e && e.message ? e.message : String(e)));
+            } finally {
+                if (ev && ev.target) ev.target.value = '';
+            }
         };
 
         window.addClassRosterRow = function() {
@@ -34248,6 +34321,52 @@ ${subjectLine}
             await window.customAlert('문제 은행을 비웠습니다.');
         };
 
+        /**
+         * 퀴즈 레이드 마지막 문항을 정리하기 직전, 문항별 정답 기록을 학습 분석용으로 남깁니다.
+         * turnSubmissions는 곧 비워지므로 여기서 저장합니다. 같은 회차는 같은 문서로 덮입니다.
+         * 저장에 실패해도 레이드 진행·보상은 막지 않습니다.
+         */
+        async function archiveQuizRaidResult(st, lastTurnSkips) {
+            try {
+                const result = summarizeQuizRaidSession(st, { lastTurnSkips });
+                if (!result || !db) return;
+                await setDoc(doc(db, 'artifacts', appId, QUIZ_RESULTS_COLLECTION, result.id), result);
+            } catch (e) {
+                console.warn('archiveQuizRaidResult', e);
+            }
+        }
+
+        /** 선생님: 쌓인 퀴즈 레이드 결과로 학습 분석 엑셀을 받습니다. */
+        window.downloadLearningAnalytics = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 학습 분석을 볼 수 있습니다.');
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            try {
+                if (typeof window.showGlobalLoading === 'function') window.showGlobalLoading('학습 분석을 모으는 중…');
+                const snap = await getDocs(query(
+                    collection(db, 'artifacts', appId, QUIZ_RESULTS_COLLECTION),
+                    fsOrderBy('startedAt', 'desc'),
+                    fsLimit(QUIZ_RESULTS_READ_LIMIT),
+                ));
+                const sessions = snap.docs.map((d) => d.data()).filter(Boolean);
+                const agg = aggregateQuizResults(sessions);
+                if (typeof window.hideGlobalLoading === 'function') window.hideGlobalLoading();
+                if (!agg.sessionCount) return window.customAlert(learningAnalyticsHeadline(agg));
+                const sheets = buildLearningAnalyticsSheets(agg, {
+                    getName: (sid) => STUDENT_NAMES[sid] || '',
+                });
+                const stamp = getLocalDateStr().replace(/-/g, '');
+                const fileName = `삼봉월드_학습분석_${stamp}.xlsx`;
+                downloadAoaSheetsWorkbook(sheets, fileName);
+                await window.customAlert(`📊 학습 분석\n\n${learningAnalyticsHeadline(agg)}\n\n파일: ${fileName}`);
+            } catch (e) {
+                console.error('downloadLearningAnalytics', e);
+                if (typeof window.hideGlobalLoading === 'function') window.hideGlobalLoading();
+                await window.customAlert('학습 분석을 만들지 못했습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         async function tryAdvanceRaidTurn(opts = {}) {
             if(window._raidResolving) return;
             const st = window.currentRaidState;
@@ -34282,6 +34401,7 @@ ${subjectLine}
                 if(isLast) newLogs.push('✅ 퀴즈 레이드 완료!');
 
                 if(isLast) {
+                    await archiveQuizRaidResult(st, unanswered);
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                         status: 'waiting',
                         currentTurn: 0,

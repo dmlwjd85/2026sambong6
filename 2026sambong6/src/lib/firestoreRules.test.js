@@ -1109,6 +1109,32 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }));
     });
 
+    it('학습 분석 결과: 형식이 맞는 퀴즈 레이드 결과만 저장하고, 지우기·비로그인은 거부', async () => {
+        const { summarizeQuizRaidSession } = await import('./learningAnalytics.js');
+        const st = {
+            startTime: 1700000000000,
+            participants: [{ id: '1', name: '가' }],
+            questions: [{ q: '수도?', type: 'short', a: '서울', bankId: 'qb_1', unit: '사회' }],
+            turnSubmissions: { 0: { 1: '서울' } },
+        };
+        const good = summarizeQuizRaidSession(st, { nowMs: 1700000100000 });
+        const path = `artifacts/class1/quizResults/${good.id}`;
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, path), good));
+        await assertSucceeds(setDoc(doc(db, path), good));
+        await assertSucceeds(getDoc(doc(db, path)));
+        await assertFails(deleteDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, 'artifacts/class1/quizResults/raid_1700000000001'), good));
+        await assertFails(setDoc(doc(db, 'artifacts/class1/quizResults/아무ID'), { ...good, id: '아무ID' }));
+        await assertFails(setDoc(doc(db, path), { ...good, extra: 1 }));
+        await assertFails(setDoc(doc(db, path), { ...good, questions: [] , questionCount: 0 }));
+        await assertFails(setDoc(doc(db, path), { ...good, questionCount: 5 }));
+        await assertFails(setDoc(doc(db, path), { ...good, questions: Array(21).fill(good.questions[0]), questionCount: 21 }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(getDoc(doc(guest, path)));
+        await assertFails(setDoc(doc(guest, path), good));
+    });
+
     it('추천·비추천 사유함: 항목 하나씩 만들기만, 형식·길이·uid 검사, 고치기·지우기·비로그인 거부', async () => {
         const { collection, getDocs, serverTimestamp, query, limit } = await import('firebase/firestore');
         const kst = (days = 0) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);

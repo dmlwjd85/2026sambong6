@@ -149,7 +149,8 @@ describe('체스 AI', () => {
 
     it('초인 엔진은 합법 수를 두고 한 수 메이트를 고른다', () => {
         const mid = chessGameFromUci(['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'g8f6', 'd2d3', 'd7d6']);
-        const mv = pickChessAiMove(mid, { color: CHESS_WHITE, level: 'choin', timeMs: 220 });
+        // CI 서버는 느려서 220ms 로는 깊이 3에 못 닿을 때가 있어 여유를 둡니다.
+        const mv = pickChessAiMove(mid, { color: CHESS_WHITE, level: 'choin', timeMs: 1500 });
         const placed = applyChessMove(mid, { ...mv, color: CHESS_WHITE, now: 1 });
         assert.equal(placed.ok, true, placed.error);
         assert.ok(choinSearchStats.depth >= 3, `깊이 ${choinSearchStats.depth}`);

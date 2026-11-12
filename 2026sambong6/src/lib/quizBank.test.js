@@ -229,3 +229,24 @@ describe('퀴즈 레이드 출제·채점', () => {
         assert.equal(slots[9].originalIndex, 9);
     });
 });
+
+describe('문제 은행 단원', () => {
+    it('「단원」 열을 읽어 문항과 레이드 출제 문항에 남긴다', () => {
+        const parsed = parseQuizBankAoa([
+            ['문제', '정답', '단원'],
+            ['수도는?', '서울', ' 사회 1단원 '],
+            ['물?', 'H2O', ''],
+        ]);
+        assert.equal(parsed.questions.length, 2);
+        assert.equal(parsed.questions[0].unit, '사회 1단원');
+        assert.equal('unit' in parsed.questions[1], false);
+        const session = toRaidSessionQuestion(parsed.questions[0]);
+        assert.equal(session.unit, '사회 1단원');
+        assert.equal('unit' in toRaidSessionQuestion(parsed.questions[1]), false);
+    });
+
+    it('서식 예시 행도 단원과 함께 파싱된다', () => {
+        const parsed = parseQuizBankAoa(quizBankTemplateExampleRows());
+        assert.ok(parsed.questions.every((q) => q.unit));
+    });
+});

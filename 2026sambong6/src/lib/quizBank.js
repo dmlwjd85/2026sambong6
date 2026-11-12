@@ -29,7 +29,11 @@ export const QUIZ_BANK_HEADERS = [
     '출처',
     '보상XP',
     '보상봉',
+    '단원',
 ];
+
+/** 단원 이름 최대 글자 수 */
+export const QUIZ_UNIT_MAX_LEN = 40;
 
 const HEADER_ALIASES = {
     문제: 'q',
@@ -67,6 +71,10 @@ const HEADER_ALIASES = {
     보상봉: 'rewardBong',
     봉: 'rewardBong',
     bong: 'rewardBong',
+    단원: 'unit',
+    단원명: 'unit',
+    주제: 'unit',
+    unit: 'unit',
 };
 
 const SOURCE_ALIASES = {
@@ -192,6 +200,8 @@ export function sanitizeQuizItem(raw) {
     };
     if (rewardXp != null) item.rewardXp = rewardXp;
     if (rewardBong != null) item.rewardBong = rewardBong;
+    const unit = cellText(raw.unit).slice(0, QUIZ_UNIT_MAX_LEN);
+    if (unit) item.unit = unit;
     return item;
 }
 
@@ -381,6 +391,7 @@ export function toRaidSessionQuestion(item, rng = Math.random) {
             a,
             source: q.source,
             bankId: q.id,
+            ...(q.unit ? { unit: q.unit } : {}),
         };
     }
     return {
@@ -390,6 +401,7 @@ export function toRaidSessionQuestion(item, rng = Math.random) {
         a: q.a,
         source: q.source,
         bankId: q.id,
+        ...(q.unit ? { unit: q.unit } : {}),
     };
 }
 
@@ -571,6 +583,7 @@ export function parseQuizBankAoa(aoa) {
             source: get('source') || 'excel',
             rewardXp: get('rewardXp'),
             rewardBong: get('rewardBong'),
+            unit: get('unit'),
             addedAt: Date.now() + r,
         });
         if (!item) {
@@ -611,9 +624,9 @@ export function parseQuizBankWorkbook(data, meta = {}) {
 export function quizBankTemplateExampleRows() {
     return [
         QUIZ_BANK_HEADERS,
-        ['대한민국의 수도는?', '서울', '', '', '', '', '', '골든벨', 10, 1],
-        ['3 + 5 는?', '8', '6', '7', '8', '9', 3, '엑셀', 10, 1],
-        ['물의 화학식은?', 'H2O', '', '', '', '', '', '스피드퀴즈', 50, 3],
+        ['대한민국의 수도는?', '서울', '', '', '', '', '', '골든벨', 10, 1, '사회 1단원'],
+        ['3 + 5 는?', '8', '6', '7', '8', '9', 3, '엑셀', 10, 1, '수학 1단원'],
+        ['물의 화학식은?', 'H2O', '', '', '', '', '', '스피드퀴즈', 50, 3, '과학 2단원'],
     ];
 }
 
@@ -629,6 +642,7 @@ export function quizBankGuideRows() {
         ['6. 저장한 파일을 도전 탭 → 퀴즈 레이드에서 한 번에 올리면 문제 은행에 쌓입니다.'],
         ['7. 골든벨 화면에서 같은 파일을 올리면 위 10칸이 채워지고, 나머지 문항도 은행에 저장됩니다.'],
         ['8. 퀴즈 레이드를 시작하면 골든벨·스피드퀴즈·엑셀로 모인 문제가 무작위로 출제됩니다.'],
+        ['9. 단원은 선택입니다. 「사회 3단원」처럼 적어 두면, 퀴즈 레이드가 끝난 뒤 학습 분석 엑셀에서 단원별 정답률을 볼 수 있습니다.'],
     ];
 }
 
@@ -649,6 +663,7 @@ export function buildQuizBankTemplateWorkbook() {
         { wch: 12 },
         { wch: 10 },
         { wch: 10 },
+        { wch: 16 },
     ];
     XLSX.utils.book_append_sheet(wb, dataSheet, '문제은행');
     const guide = XLSX.utils.aoa_to_sheet(quizBankGuideRows());

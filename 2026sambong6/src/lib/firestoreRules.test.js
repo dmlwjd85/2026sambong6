@@ -1109,6 +1109,165 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }));
     });
 
+    it('OX 함께 풀기: 정상 흐름(판 열기·들어오기·지금 문제 답·공개·다음·끝·새 판)은 되고, 로그인 없으면 못 쓴다', async () => {
+        const { collection, getDocs, query, where } = await import('firebase/firestore');
+        const teacher = testEnv.authenticatedContext('anon-ox-teacher', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const student = testEnv.authenticatedContext('anon-ox-student', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const live = 'artifacts/class1/public/data/oxQuizBank/live';
+        const items = [{ id: 'L2', prompt: '맞나요', answer: 'O' }, { id: 'L3', prompt: '틀리나요', answer: 'X' }];
+        await assertSucceeds(setDoc(doc(teacher, live), {
+            roundId: 'oxr_1', status: 'lobby', index: 0, items, total: 2, subjects: ['과학'], timeSec: 10, lives: 0,
+            order: 'sheet', advance: 'auto', qStartAt: 0, revealAt: 0, tally: null, results: null, openedAt: 1, updatedAt: Date.now(),
+        }));
+        const join = { roundId: 'oxr_1', name: '데모', joinIndex: 0, picks: {}, joinedAt: 1, updatedAt: 1, uid: 'anon-ox-student' };
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), join));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'question', qStartAt: 1, updatedAt: Date.now() }));
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), { roundId: 'oxr_1', picks: { 0: { p: 'O', ms: 900 } }, updatedAt: 2 }, { merge: true }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'reveal', revealAt: 2, tally: { O: 1, X: 0, none: 0 }, frozen: { 0: { 3: { p: 'O', ms: 900 } } }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'question', index: 1, qStartAt: 3, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'done', results: [{ id: '3', name: '데모', rank: 1, correct: 1 }], revealed: 1, finishedAt: 4, updatedAt: Date.now() }));
+        // 끝난 판 다음에는 새 판을 열 수 있어요.
+        await assertSucceeds(setDoc(doc(teacher, live), { roundId: 'oxr_2', status: 'lobby', index: 0, items, timeSec: 10, updatedAt: Date.now() }));
+        // 다른 판 답 문서는 새 판에 빈 답으로 다시 들어와요.
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), { ...join, roundId: 'oxr_2' }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertSucceeds(getDoc(doc(guest, live)));
+        await assertSucceeds(getDocs(query(collection(teacher, `${live}/answers`), where('roundId', '==', 'oxr_2'))));
+        await assertFails(setDoc(doc(guest, live), { status: 'off' }, { merge: true }));
+        await assertFails(setDoc(doc(guest, `${live}/answers/3`), { ...join, roundId: 'oxr_2' }));
+        // 닫기(off)는 언제든 돼요.
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'off', updatedAt: Date.now() }));
+    });
+
+    it('OX 함께 풀기: 공개 뒤 답·남의 답·이미 고른 칸 바꾸기·큰 문서·판 건너뛰기·진행 중 판 덮기는 거부한다', async () => {
+        const teacher = testEnv.authenticatedContext('anon-ox-teacher', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const student = testEnv.authenticatedContext('anon-ox-student', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const other = testEnv.authenticatedContext('anon-ox-other', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const live = 'artifacts/class1/public/data/oxQuizBank/live';
+        const items = [{ id: 'L2', prompt: '맞나요', answer: 'O' }, { id: 'L3', prompt: '틀리나요', answer: 'X' }, { id: 'L4', prompt: '세 번째', answer: 'O' }];
+        const base = { roundId: 'oxr_a', status: 'question', index: 0, items, timeSec: 10, qStartAt: 1, updatedAt: Date.now() };
+        await assertSucceeds(setDoc(doc(teacher, live), base));
+        const join = { roundId: 'oxr_a', name: '데모', joinIndex: 0, picks: {}, joinedAt: 1, updatedAt: 1, uid: 'anon-ox-student' };
+        // 다른 기기 uid로 쓰기, 들어오면서 답을 미리 채우기, 정해진 칸 밖 필드는 거부
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { ...join, uid: 'someone-else' }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { ...join, picks: { 0: { p: 'O', ms: 1 } } }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { ...join, note: 'x' }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { ...join, joinIndex: 2 }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { ...join, roundId: 'oxr_old' }));
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), join));
+        // 남의 답 덮어쓰기·남의 칸에 답 쓰기 거부
+        await assertFails(setDoc(doc(other, `${live}/answers/3`), { ...join, uid: 'anon-ox-other' }));
+        await assertFails(setDoc(doc(other, `${live}/answers/3`), { picks: { 0: { p: 'X', ms: 5 } }, updatedAt: 2 }, { merge: true }));
+        // 지금 문제가 아닌 칸, 이상한 답, 이름 바꾸기는 거부
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { picks: { 1: { p: 'O', ms: 5 } }, updatedAt: 2 }, { merge: true }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { picks: { 0: { p: 'Z', ms: 5 } }, updatedAt: 2 }, { merge: true }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { picks: { 0: { p: 'O', ms: 5, extra: '<img>' } }, updatedAt: 2 }, { merge: true }));
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { name: '바꿈', updatedAt: 2 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), { picks: { 0: { p: 'O', ms: 5 } }, updatedAt: 2 }, { merge: true }));
+        // 이미 고른 칸 바꾸기 거부
+        await assertFails(setDoc(doc(student, `${live}/answers/3`), { picks: { 0: { p: 'X', ms: 1 } }, updatedAt: 3 }, { merge: true }));
+        // 정답 공개 뒤 답 쓰기 거부
+        await assertSucceeds(setDoc(doc(other, `${live}/answers/4`), { ...join, uid: 'anon-ox-other', name: '넷' }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'reveal', revealAt: 2, updatedAt: Date.now() }));
+        await assertFails(setDoc(doc(other, `${live}/answers/4`), { picks: { 0: { p: 'O', ms: 1 } }, updatedAt: 3 }, { merge: true }));
+        // 판 문서: 문제 건너뛰기·문제 바꾸기·큰 문서·모르는 필드·진행 중 판 덮기 거부
+        await assertFails(updateDoc(doc(teacher, live), { status: 'question', index: 2, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { items: [{ id: 'X', prompt: '바꿈', answer: 'O' }], updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { results: Array.from({ length: 61 }, (_, i) => ({ id: String(i) })), updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { html: '<script>', updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { timeSec: 999, updatedAt: Date.now() }));
+        await assertFails(setDoc(doc(other, live), { ...base, roundId: 'oxr_hijack' }));
+        await assertFails(setDoc(doc(teacher, live), { ...base, roundId: 'oxr_big', items: Array.from({ length: 21 }, () => items[0]) }));
+        // 30분 넘게 멈춘 판은 새 판으로 바꿀 수 있어요(선생님이 브라우저를 닫은 경우).
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), live), { ...base, updatedAt: Date.now() - 31 * 60 * 1000 });
+        });
+        await assertSucceeds(setDoc(doc(teacher, live), { ...base, roundId: 'oxr_new', status: 'lobby', updatedAt: Date.now() }));
+        // 다른 경로는 기존 문제 은행 규칙 그대로예요.
+        await assertSucceeds(setDoc(doc(teacher, 'artifacts/class1/public/data/oxQuizBank/bank'), { questions: [] }));
+        await assertFails(setDoc(doc(teacher, `${live}/other/x`), { a: 1 }));
+    });
+
+    it('OX 무제한 도전: 학생별 문서와 학생 봉(+기록)을 한 트랜잭션으로 쓰고, 하루 한 번·상한·기록 낮추기 거부', async () => {
+        const kst = (days = 0) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
+        const T = kst(0);
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), 'artifacts/class1/public/data/students/student_7'), { pin: '7777', xp: 10, bong: 3, bongChangeLog: [] });
+        });
+        const db = anon().firestore();
+        const other = testEnv.authenticatedContext('anon-ox-other', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const entries = 'artifacts/class1/public/data/oxQuizBank/challengeBoard/entries';
+        const mine = doc(db, `${entries}/7`);
+        const student = doc(db, 'artifacts/class1/public/data/students/student_7');
+        const first = { name: '일곱', best: 23, bestMs: 9000, bestAt: 5, plays: 1, lastRunId: 'r1', dayDate: T, dayRunId: 'r1', dayCorrect: 23, dayBong: 2, dayPaidAt: 5, updatedAt: 5 };
+        // 오늘이 아닌 날짜, 맞힌 수 ÷ 10보다 많은 봉, 21봉, 최고 기록보다 많은 맞힌 수, 모르는 필드, 판 수 건너뛰기는 거부
+        await assertFails(setDoc(mine, { ...first, dayDate: kst(-1) }));
+        await assertFails(setDoc(mine, { ...first, dayDate: kst(1) }));
+        await assertFails(setDoc(mine, { ...first, dayBong: 3 }));
+        await assertFails(setDoc(mine, { ...first, best: 900, dayCorrect: 900, dayBong: 21 }));
+        await assertFails(setDoc(mine, { ...first, best: 10 }));
+        await assertFails(setDoc(mine, { ...first, html: '<img>' }));
+        await assertFails(setDoc(mine, { ...first, plays: 2 }));
+        await assertFails(setDoc(mine, { ...first, dayRunId: 'r0' }), '봉 받은 판은 방금 끝난 판이어야 해요');
+        await assertFails(setDoc(doc(db, `${entries}/bad id`), first));
+        // 정상: 그날 처음 끝난 판 → 학생 문서 봉 + 기록과 함께
+        await assertSucceeds(runTransaction(db, async (tx) => {
+            const e = await tx.get(mine);
+            const s = await tx.get(student);
+            assert.equal(e.exists(), false);
+            const before = Number(s.data().bong) || 0;
+            tx.set(student, { bong: before + 2, bongChangeLog: [{ reason: 'OX 무제한 도전', before, after: before + 2, delta: 2, source: 'oxChallenge' }] }, { merge: true });
+            tx.set(mine, first);
+        }));
+        assert.equal((await getDoc(student)).data().bong, 5);
+        // 같은 날 두 번째 지급, 오늘 칸 바꾸기·지우기, 최고 기록 낮추기, 같은 개수 더 느린 기록은 거부
+        const second = { ...first, plays: 2, lastRunId: 'r2', updatedAt: 6 };
+        await assertFails(setDoc(mine, { ...second, dayRunId: 'r2', dayCorrect: 30, dayBong: 3, best: 30 }));
+        await assertFails(setDoc(mine, { ...second, dayBong: 0 }));
+        await assertFails(setDoc(mine, { ...second, best: 5 }));
+        await assertFails(setDoc(mine, { ...second, bestMs: 99999 }));
+        await assertFails(deleteDoc(mine));
+        // 둘째 판은 기록만: 더 많이 맞히면 최고 기록이 올라가요.
+        await assertSucceeds(setDoc(mine, { ...second, best: 30, bestMs: 8000, bestAt: 6 }));
+        // 내일이 되면 다시 한 번 받을 수 있어요(규칙은 서버 시각으로 오늘만 허용해서, 어제 문서로 확인해요).
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await setDoc(doc(ctx.firestore(), `${entries}/9`), { ...first, name: '아홉', dayDate: kst(-1) });
+        });
+        await assertSucceeds(setDoc(doc(other, `${entries}/9`), { ...first, name: '아홉', plays: 2, lastRunId: 'r9', dayRunId: 'r9', dayCorrect: 12, dayBong: 1, updatedAt: 7 }));
+        // 로그인 없이는 못 쓰고, 읽기는 누구나(랭킹)
+        const guest = testEnv.unauthenticatedContext().firestore();
+        const { collection, getDocs, query, where, orderBy, limit } = await import('firebase/firestore');
+        await assertSucceeds(getDocs(query(collection(guest, entries), where('best', '>', 0), orderBy('best', 'desc'), limit(15))));
+        await assertFails(setDoc(doc(guest, `${entries}/8`), { ...first, name: '여덟' }));
+    });
+
+    it('OX 무제한 도전: 랭킹 공개 설정은 정해진 값만, 고정 답(frozen)은 지금 문제 칸을 공개할 때만 더한다', async () => {
+        const db = anon().firestore();
+        const settings = doc(db, 'artifacts/class1/public/data/oxQuizBank/challengeBoard');
+        await assertSucceeds(setDoc(settings, { rankScope: 'off', updatedAt: 1 }));
+        await assertSucceeds(setDoc(settings, { rankScope: 'top5', updatedAt: 2 }));
+        await assertFails(setDoc(settings, { rankScope: 'all', updatedAt: 3 }));
+        await assertFails(setDoc(settings, { rankScope: 'top5', entries: {} }));
+        await assertFails(deleteDoc(settings));
+        const teacher = testEnv.authenticatedContext('anon-ox-teacher', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const live = 'artifacts/class1/public/data/oxQuizBank/live';
+        const items = [{ id: 'L2', prompt: '맞나요', answer: 'O' }, { id: 'L3', prompt: '틀리나요', answer: 'X' }, { id: 'L4', prompt: '세 번째', answer: 'O' }];
+        // 새 판은 빈 frozen으로만 열어요.
+        await assertFails(setDoc(doc(teacher, live), { roundId: 'oxr_f', status: 'lobby', index: 0, items, timeSec: 10, updatedAt: Date.now(), frozen: { 0: { 3: { p: 'O', ms: 1 } } } }));
+        await assertSucceeds(setDoc(doc(teacher, live), { roundId: 'oxr_f', status: 'question', index: 0, items, timeSec: 10, qStartAt: 1, updatedAt: Date.now() }));
+        // 문제 중에는 frozen을 못 써요. 공개할 때 지금 문제 칸만 더해요.
+        await assertFails(updateDoc(doc(teacher, live), { frozen: { 0: { 3: { p: 'O', ms: 1 } } }, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { status: 'reveal', frozen: { 1: { 3: { p: 'O', ms: 1 } } }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'reveal', revealAt: 2, frozen: { 0: { 3: { p: 'O', ms: 1 } } }, updatedAt: Date.now() }));
+        // 공개된 지난 칸은 바꾸거나 지우지 못해요.
+        await assertFails(updateDoc(doc(teacher, live), { 'frozen.0.4': { p: 'O', ms: 1 }, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { frozen: {}, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'question', index: 1, qStartAt: 3, updatedAt: Date.now() }));
+        await assertFails(updateDoc(doc(teacher, live), { 'frozen.0.3': { p: 'X', ms: 1 }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'reveal', revealAt: 4, 'frozen.1': { 3: { p: 'X', ms: 2 } }, updatedAt: Date.now() }));
+        await assertSucceeds(updateDoc(doc(teacher, live), { status: 'off', updatedAt: Date.now() }));
+    });
+
     it('학습 분석 결과: 형식이 맞는 퀴즈 레이드 결과만 저장하고, 지우기·비로그인은 거부', async () => {
         const { summarizeQuizRaidSession } = await import('./learningAnalytics.js');
         const st = {

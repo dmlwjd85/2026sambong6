@@ -6616,6 +6616,71 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             object-fit: contain;
             pointer-events: none;
         }
+        /* OX 함께 풀기: 같은 무대를 쓰고, 긴 목록과 조건만 안에서 스크롤합니다. */
+        .oxc-tabs .ox-choice { flex: 1; }
+        .oxc-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-bottom: 4px; }
+        .oxc-chip { min-height: 42px; padding: 0 12px; font-size: 0.95rem; }
+        .oxc-lead { font-size: 1rem; font-weight: 900; line-height: 1.4; color: #fef9c3; }
+        .oxc-center { text-align: center; }
+        .oxc-muted { color: #94a3b8; }
+        .oxc-banner {
+            width: 100%;
+            min-height: 52px;
+            border-radius: 14px;
+            border: 2px solid #fde68a;
+            background: #b45309;
+            color: #fffbeb;
+            font-size: 1.05rem;
+            font-weight: 900;
+            padding: 6px 12px;
+        }
+        .oxc-banner-note { font-size: 0.8rem; font-weight: 800; color: #fde68a; }
+        .oxc-pill { font-size: 0.85rem; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: #0c4a6e; color: #e0f2fe; white-space: nowrap; }
+        .oxc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 8px; margin-top: auto; }
+        .oxc-actions .ox-go { margin-top: 0; }
+        .oxc-foot { margin-top: auto; }
+        .oxx-note { font-size: 0.9rem; font-weight: 800; line-height: 1.4; color: #fde68a; background: rgba(180, 83, 9, 0.25); border: 1px solid rgba(253, 230, 138, 0.5); border-radius: 12px; padding: 8px 10px; white-space: pre-line; }
+        .oxc-tabs .ox-choice { padding: 0 6px; font-size: 0.95rem; }
+        .oxc-foot .ox-go { margin-top: 0; }
+        .oxc-actions .ox-choice { min-height: 64px; }
+        .oxc-wait { min-height: 28vh; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.15rem; font-weight: 900; line-height: 1.4; color: #e0f2fe; }
+        .oxc-wait b { color: #fde68a; font-size: 1.6rem; margin-right: 2px; }
+        .oxc-answer { text-align: center; font-size: 1.4rem; font-weight: 900; color: #e0f2fe; }
+        .oxc-answer b { display: inline-block; min-width: 2.4em; margin-left: 6px; padding: 2px 10px; border-radius: 12px; background: #fde68a; color: #0f172a; font-size: 2rem; }
+        .oxc-verdict { text-align: center; font-size: 1.2rem; font-weight: 900; }
+        .oxc-verdict.is-ok { color: #6ee7b7; }
+        .oxc-verdict.is-no { color: #fda4af; }
+        .oxc-list { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+        .oxc-names { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
+        .oxc-names li { padding: 6px 10px; border-radius: 10px; background: #0c4a6e; font-weight: 800; font-size: 0.95rem; }
+        .oxc-results li { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: #0c4a6e; font-weight: 900; }
+        .oxc-results li.is-me { background: #b45309; border: 2px solid #fde68a; }
+        .oxc-rank { color: #fde68a; }
+        .oxc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .oxc-name small { font-size: 0.75rem; color: #fda4af; margin-left: 4px; }
+        .oxc-score { font-variant-numeric: tabular-nums; }
+        .oxc-gap { justify-content: center; text-align: center; color: #94a3b8; font-weight: 900; list-style: none; padding: 0; background: none; }
+        .oxc-results li.oxc-gap { display: block; background: none; padding: 0; }
+        .oxx-home { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+        /* 1280 이상(교실 화면·프로젝터): 함께 풀기·무제한 도전 글자만 키워요. 혼자 연습 화면은 그대로예요. */
+        @media (min-width: 1200px) {
+            .oxc-lead { font-size: 1.5rem; }
+            .oxx-note { font-size: 1.2rem; padding: 10px 14px; }
+            .oxc-muted { font-size: 1.05rem; }
+            .oxx-home .ox-label, .oxc-scroll .ox-label, .ox-label.oxc-center { font-size: 1.2rem; }
+            .oxc-results li { font-size: 1.3rem; padding: 12px 16px; grid-template-columns: 4.6rem minmax(0, 1fr) auto; }
+            .oxc-name small { font-size: 1rem; }
+            .oxc-names li { font-size: 1.2rem; padding: 8px 14px; }
+            .oxc-pill { font-size: 1.25rem; padding: 6px 16px; }
+            .oxc-tabs .ox-choice { font-size: 1.15rem; }
+            .oxc-chip { font-size: 1.1rem; min-height: 48px; }
+            .oxc-wait { font-size: 1.6rem; }
+            .oxc-wait b { font-size: 2.2rem; }
+            .oxc-verdict { font-size: 1.7rem; }
+            .oxc-answer { font-size: 1.8rem; }
+            .oxc-banner { font-size: 1.3rem; }
+            [data-oxc-timer], .oxx-timer { font-size: 2.2rem; font-weight: 900; font-variant-numeric: tabular-nums; color: #fde68a; }
+        }
         @media (min-width: 1200px) {
             .ox-stage { padding: 28px 8vw; }
             .ox-mark { min-height: 36vh; }

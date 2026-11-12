@@ -610,6 +610,16 @@ import { applyBongTone, bongToneClass } from './lib/bongTone.js';
 import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
 import { levelXpForDisplay } from './lib/levelDisplay.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
+import {
+    OX_CHALLENGE_BOARD_MAX,
+    OX_CHALLENGE_REASON,
+    OX_CHALLENGE_SOURCE,
+    OX_CHALLENGE_WATCH_LIMIT,
+    kstDateStr,
+    normalizeRankScope,
+    planChallengeFinish,
+    withOxRetry,
+} from './lib/oxQuizChallenge.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
@@ -1358,7 +1368,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.53';
+        const APP_VERSION = 'v1.54';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10310,6 +10320,148 @@ ${subjectLine}
                     records[studentId] = record;
                     tx.set(ref, { records, updatedAt: Date.now() }, { merge: true });
                 });
+            },
+            // 함께 풀기: 판 문서 하나(oxQuizBank/live)를 구독하고, 학생 답은 live/answers/{학번}에 씁니다.
+            // 무대가 열려 있을 때만 구독합니다. 보상·최고 기록은 건드리지 않습니다.
+            watchLive: (onData, onError) => {
+                if (!db) return () => {};
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live'), (snap) => {
+                    onData(snap.exists() ? (snap.data() || null) : null);
+                }, (e) => { if (onError) onError(e); });
+            },
+            watchAnswers: (roundId, onData) => {
+                if (!db || !roundId) return () => {};
+                const q = query(
+                    collection(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers'),
+                    where('roundId', '==', roundId),
+                );
+                return onSnapshot(q, (snap) => {
+                    onData(snap.docs.map((d) => ({ ...(d.data() || {}), id: d.id })));
+                }, (e) => console.warn('ox answers', e));
+            },
+            createLive: async (live) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live'), live);
+            },
+            updateLive: async (roundId, build) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live');
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const latest = snap.exists() ? (snap.data() || {}) : null;
+                    if (!latest || latest.roundId !== roundId) throw new Error('stale');
+                    const patch = build(latest);
+                    if (!patch) return;
+                    tx.set(ref, patch, { merge: true });
+                });
+            },
+            readAnswer: async (studentId) => {
+                if (!db || !studentId) return null;
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)));
+                return snap.exists() ? (snap.data() || null) : null;
+            },
+            writeJoin: async (studentId, data) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                // 규칙은 답 문서를 처음 쓴 기기(uid)에 묶어요. 같은 판에서는 그 기기만 답을 더할 수 있어요.
+                const uid = auth && auth.currentUser ? auth.currentUser.uid : '';
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)), { ...data, uid });
+            },
+            writePick: async (studentId, roundId, index, entry) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)), {
+                    roundId,
+                    picks: { [String(index)]: entry },
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            // 무제한 도전: 학생별 문서(oxQuizBank/challengeBoard/entries/{학번})에 최고 기록과 '오늘 봉 받은 판'을 둡니다.
+            // 반 전체가 한꺼번에 끝내도 서로 다른 문서라 부딪히지 않아요. 시작할 때는 아무것도 쓰지 않아요.
+            // 봉은 그날 처음 끝난 판에서 한 번만, 내 학생별 문서와 학생 문서를 같은 트랜잭션으로 고쳐 줍니다
+            // (스킨 구매·환불과 같은 방식: 서버 봉을 읽고 bong·bongChangeLog를 함께 씀).
+            // 랭킹 공개 설정은 oxQuizBank/challengeBoard 문서 하나({ rankScope })에 둡니다.
+            appKey: () => String(appId || ''),
+            watchChallengeBoard: ({ teacher = false } = {}, onRows, onError) => {
+                if (!db) return () => {};
+                const col = collection(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries');
+                // 0개 기록은 순위에 넣지 않아요. 학생은 위 몇 줄만, 선생님은 전체(최대 80줄)를 구독해요.
+                const q = query(col, where('best', '>', 0), orderBy('best', 'desc'), limit(teacher ? OX_CHALLENGE_BOARD_MAX : OX_CHALLENGE_WATCH_LIMIT));
+                return onSnapshot(q, (snap) => {
+                    onRows(snap.docs.map((d) => ({ ...(d.data() || {}), id: d.id })));
+                }, (e) => { if (onError) onError(e); });
+            },
+            watchChallengeMine: (studentId, onEntry, onError) => {
+                if (!db || !studentId) return () => {};
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries', String(studentId)), (snap) => {
+                    onEntry(snap.exists() ? (snap.data() || null) : null);
+                }, (e) => { if (onError) onError(e); });
+            },
+            watchChallengeSettings: (onData) => {
+                if (!db) return () => {};
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'), (snap) => {
+                    onData(snap.exists() ? (snap.data() || null) : null);
+                }, (e) => console.warn('ox challenge settings', e));
+            },
+            setChallengeRankScope: async (rankScope) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'), {
+                    rankScope: normalizeRankScope(rankScope),
+                    updatedAt: Date.now(),
+                });
+            },
+            finishChallenge: async (studentId, name, run, { recovered = false } = {}) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const entryRef = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries', String(studentId));
+                const studentRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + String(studentId));
+                // 같은 학생의 두 탭이 동시에 끝낼 때만 부딪혀요. 부딪히면 무작위 간격을 두고 다시 해요.
+                const out = await withOxRetry(() => runTransaction(db, async (tx) => {
+                    const snap = await tx.get(entryRef);
+                    const prev = snap.exists() ? (snap.data() || {}) : null;
+                    const now = Date.now();
+                    const plan = planChallengeFinish(prev, { studentId, name, run, today: kstDateStr(now), now, recovered });
+                    let paid = null;
+                    if (plan.paidNow && plan.bong > 0) {
+                        const sSnap = await tx.get(studentRef);
+                        if (!sSnap.exists()) throw new Error('학생 문서를 찾지 못했어요.');
+                        const data = sSnap.data() || {};
+                        const serverBong = normalizeBongValue(Number(data.bong) || 0);
+                        const nextBong = normalizeBongValue(serverBong + plan.bong);
+                        const bongLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                        bongLogs.push(buildBongChangeLogEntry(OX_CHALLENGE_REASON, serverBong, nextBong, {
+                            source: OX_CHALLENGE_SOURCE,
+                            runId: String(run.runId),
+                            correct: Number(plan.entry.dayCorrect) || 0,
+                            date: String(plan.entry.dayDate || ''),
+                        }));
+                        tx.set(studentRef, { bong: nextBong, bongChangeLog: bongLogs }, { merge: true });
+                        paid = { nextBong, bongLogs };
+                    }
+                    if (plan.changed) tx.set(entryRef, plan.entry);
+                    return { plan, paid, entry: plan.entry };
+                }), { deniedRetries: 1 });
+                // 지금 로그인한 학생에게 준 봉이면 화면 값도 바로 맞춥니다(다음 저장이 옛 값으로 덮지 않게).
+                if (out && out.paid && window.playerState && !window.playerState.isGuest
+                    && String(localStorage.getItem('sambong_student_id') || '') === String(studentId)) {
+                    window.playerState.bong = out.paid.nextBong;
+                    window.playerState.bongChangeLog = out.paid.bongLogs;
+                    if (typeof updateUI === 'function') updateUI();
+                }
+                return out;
+            },
+            // 명단에 있는 학번의 이름. 답 문서·랭킹의 이름 칸은 믿지 않고 이 이름으로 보여 줘요.
+            rosterName: (id) => {
+                const key = String(id || '');
+                if (!key || key === 'guest' || key === 'gm' || key === 'gm_a') return '';
+                return String((STUDENT_NAMES && STUDENT_NAMES[key]) || '');
+            },
+            studentName: () => {
+                const id = localStorage.getItem('sambong_student_id') || '';
+                return String((STUDENT_NAMES && STUDENT_NAMES[String(id)]) || id);
             },
             isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
             studentId: () => localStorage.getItem('sambong_student_id') || '',

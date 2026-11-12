@@ -915,9 +915,174 @@ service cloud.firestore {
     }
 
     // OX 퀴즈 문제 은행. artifacts/{학급}/public/data/oxQuizBank/{문서}
+    // 함께 풀기 판(live, live/answers)과 무제한 도전(challengeBoard, challengeBoard/entries)은 아래 전용 match만 써요.
     match /artifacts/{appId}/public/data/oxQuizBank/{document=**} {
       allow read: if true;
-      allow write: if signedIn();
+      allow write: if signedIn() && !isOxGuardedDoc();
+    }
+
+    function isOxGuardedDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/oxQuizBank/(live|challengeBoard)(/.*)?$');
+    }
+
+    // 함께 풀기 판 문서. 마스터도 익명 로그인이라 '선생님만'은 규칙으로 가르지 못해요.
+    // 대신 모양·크기를 묶고, 진행 중인 판은 문제 목록을 바꾸지 못하며 문제 번호는 한 칸씩만 나가요.
+    // 새 판(roundId가 바뀜)은 앞 판이 끝났거나(done·off) 30분 넘게 멈췄을 때만 열려요. 닫기(off)는 언제든 돼요.
+    function oxLiveShapeOk(d) {
+      return d.keys().hasOnly(['roundId', 'status', 'index', 'items', 'total', 'subjects', 'timeSec', 'lives', 'order', 'advance',
+          'qStartAt', 'revealAt', 'tally', 'results', 'openedAt', 'updatedAt', 'revealed', 'finishedAt', 'frozen'])
+        && d.roundId is string && d.roundId.size() >= 1 && d.roundId.size() <= 40
+        && d.status in ['lobby', 'question', 'reveal', 'done', 'off']
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 20
+        && d.index is int && d.index >= 0 && d.index < d.items.size()
+        && d.get('timeSec', 15) in [10, 15, 20, 30]
+        && d.get('lives', 0) in [0, 1, 2, 3]
+        && d.get('updatedAt', 0) is number
+        && d.get('subjects', []) is list && d.get('subjects', []).size() <= 20
+        && (d.get('results', null) == null || (d.results is list && d.results.size() <= 60))
+        && (d.get('frozen', null) == null || (d.frozen is map && d.frozen.size() <= 20))
+        && (d.get('tally', null) == null || (d.tally is map && d.tally.keys().hasOnly(['O', 'X', 'none'])));
+    }
+
+    // 고정 답(frozen)은 같은 판에서 '지금 문제' 칸 하나를 문제 → 정답 공개로 바뀔 때만 더할 수 있어요.
+    // 이미 고정된 지난 칸은 바꾸거나 지우지 못해요. 새 판은 빈 frozen으로만 열어요.
+    function oxLiveFrozenOk(d) {
+      let nf = d.get('frozen', {});
+      let of = resource.data.get('frozen', {});
+      let k = string(resource.data.index);
+      let fd = nf.diff(of);
+      return fd.removedKeys().size() == 0
+        && fd.changedKeys().size() == 0
+        && fd.addedKeys().hasOnly([k])
+        && (fd.addedKeys().size() == 0
+          || (resource.data.status == 'question' && d.status == 'reveal' && d.index == resource.data.index
+            && nf[k] is map && nf[k].size() <= 60));
+    }
+
+    function oxLiveWriteOk() {
+      let d = request.resource.data;
+      return oxLiveShapeOk(d) && (
+        ((resource == null
+          || (d.roundId != resource.data.roundId
+            && (resource.data.get('status', 'off') in ['done', 'off']
+              || request.time.toMillis() > resource.data.get('updatedAt', 0) + 1800000)))
+          && d.get('frozen', {}).size() == 0)
+        || (resource != null
+          && d.roundId == resource.data.roundId
+          && d.items == resource.data.items
+          && (d.status == 'off' || (d.index >= resource.data.index && d.index <= resource.data.index + 1))
+          && oxLiveFrozenOk(d))
+      );
+    }
+
+    function oxLive(appId) {
+      return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/oxQuizBank/live).data;
+    }
+
+    // 학생 답 문서 live/answers/{학번}. 처음 쓴 기기(uid)에 묶여요.
+    // 들어올 때는 빈 답으로만, 그 뒤에는 '지금 문제' 칸 하나만 더할 수 있어요(정답 공개 뒤·이미 고른 칸은 못 써요).
+    function oxAnswerJoinOk(d, L) {
+      return d.picks.size() == 0
+        && d.name is string && d.name.size() >= 1 && d.name.size() <= 24
+        && d.joinIndex is int && d.joinIndex >= 0
+        && d.joinIndex <= (L.status == 'reveal' ? L.index + 1 : (L.status == 'question' ? L.index : 0));
+    }
+
+    function oxAnswerPickOk(d, L) {
+      let k = string(L.index);
+      let pd = d.picks.diff(resource.data.picks);
+      return resource.data.get('uid', '') == request.auth.uid
+        && d.diff(resource.data).affectedKeys().hasOnly(['picks', 'updatedAt'])
+        && L.status == 'question'
+        && pd.addedKeys() == [k].toSet()
+        && pd.changedKeys().size() == 0
+        && pd.removedKeys().size() == 0
+        && d.picks[k].keys().hasOnly(['p', 'ms'])
+        && d.picks[k].p in ['O', 'X']
+        && d.picks[k].ms is int && d.picks[k].ms >= 0 && d.picks[k].ms <= 600000;
+    }
+
+    function oxAnswerWriteOk(appId, sid) {
+      let d = request.resource.data;
+      let L = oxLive(appId);
+      let joining = resource == null || resource.data.get('roundId', '') != L.roundId;
+      return sid.matches('^[A-Za-z0-9_-]{1,24}$')
+        && L.status in ['lobby', 'question', 'reveal']
+        && d.keys().hasOnly(['roundId', 'name', 'joinIndex', 'picks', 'joinedAt', 'updatedAt', 'uid'])
+        && d.roundId == L.roundId
+        && d.uid == request.auth.uid
+        && d.picks is map
+        && (joining ? oxAnswerJoinOk(d, L) : oxAnswerPickOk(d, L));
+    }
+
+    // 무제한 도전 학생별 문서 challengeBoard/entries/{학번}. 반 전체가 동시에 써도 서로 부딪히지 않아요.
+    // - 최고 기록은 올라가기만 해요(같은 개수면 더 빠른 기록으로만). 판 수는 한 번에 1씩만 늘어요.
+    // - 오늘 봉 받은 판(dayDate·dayRunId·dayCorrect·dayBong)은 서버 기준 오늘(KST) 날짜로 하루 한 번만 적고, 그날은 바꾸지 못해요.
+    // - 봉은 맞힌 수 ÷ 10 이하, 하루 20봉 이하이고, 맞힌 수는 최고 기록보다 클 수 없어요.
+    // 익명 로그인에는 학번이 없어 '정말 그 학생인지'는 규칙으로 가르지 못해요(PR 본문 '남은 한계').
+    function oxEntryDayOk(n, o) {
+      return (n.get('dayDate', '') == o.get('dayDate', '')
+          && n.get('dayRunId', '') == o.get('dayRunId', '')
+          && n.get('dayCorrect', 0) == o.get('dayCorrect', 0)
+          && n.get('dayBong', 0) == o.get('dayBong', 0)
+          && n.get('dayPaidAt', 0) == o.get('dayPaidAt', 0))
+        || (n.get('dayDate', '') != o.get('dayDate', '')
+          && n.dayDate is string
+          && n.dayDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && peerFeedbackIsTodayKst(n.dayDate)
+          && n.dayRunId is string && n.dayRunId == n.get('lastRunId', '')
+          && n.dayCorrect is int && n.dayCorrect >= 0 && n.dayCorrect <= n.best
+          && n.dayBong is int && n.dayBong >= 0 && n.dayBong <= 20
+          && n.dayBong * 10 <= n.dayCorrect);
+    }
+
+    function oxEntryWriteOk(sid) {
+      let n = request.resource.data;
+      let o = resource == null ? {} : resource.data;
+      return sid.matches('^[A-Za-z0-9_-]{1,24}$')
+        && n.keys().hasOnly(['name', 'best', 'bestMs', 'bestAt', 'plays', 'lastRunId', 'dayDate', 'dayRunId',
+          'dayCorrect', 'dayBong', 'dayPaidAt', 'updatedAt'])
+        && n.get('name', '') is string && n.get('name', '').size() <= 24
+        && n.best is int && n.best >= 0 && n.best <= 2000
+        && n.get('bestMs', 0) is int && n.get('bestMs', 0) >= 0
+        && n.plays is int && n.plays >= o.get('plays', 0) && n.plays <= o.get('plays', 0) + 1
+        && n.get('lastRunId', '') is string && n.get('lastRunId', '').size() <= 40
+        && n.get('dayRunId', '') is string && n.get('dayRunId', '').size() <= 40
+        && (n.best > o.get('best', -1)
+          || (n.best == o.get('best', -1) && n.get('bestMs', 0) <= o.get('bestMs', 0)))
+        && oxEntryDayOk(n, o);
+    }
+
+    // 학생 화면 랭킹 공개 설정 하나(oxQuizBank/challengeBoard). 마스터도 익명 로그인이라 '선생님만'은 가르지 못해요.
+    function oxBoardSettingsOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['rankScope', 'updatedAt'])
+        && d.rankScope in ['top5', 'off']
+        && d.get('updatedAt', 0) is number;
+    }
+
+    match /artifacts/{appId}/public/data/oxQuizBank/live {
+      allow read: if true;
+      allow create, update: if signedIn() && oxLiveWriteOk();
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/oxQuizBank/live/answers/{sid} {
+      allow read: if true;
+      allow create, update: if signedIn() && oxAnswerWriteOk(appId, sid);
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/oxQuizBank/challengeBoard {
+      allow read: if true;
+      allow create, update: if signedIn() && oxBoardSettingsOk();
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/oxQuizBank/challengeBoard/entries/{sid} {
+      allow read: if true;
+      allow create, update: if signedIn() && oxEntryWriteOk(sid);
+      allow delete: if false;
     }
 
     // 받은 추천·비추천 사유함(사유 + 보낸 사람 실명). 공개 와일드카드(public/**) 밖에 둡니다.

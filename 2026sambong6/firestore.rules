@@ -951,6 +951,29 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 학습 분석: 퀴즈 레이드가 끝날 때 문항별 정답 기록 한 장. public 와일드카드 밖에 두어 형식을 검사합니다.
+    // 문서 ID는 raid_{시작시각}이라 같은 회차를 여러 기기가 저장해도 한 장으로 덮입니다. 지우기는 막습니다.
+    function quizResultOk(resultId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'kind', 'startedAt', 'endedAt', 'date', 'questionCount', 'participants', 'questions', 'students'])
+        && resultId.matches('^raid_[0-9]{10,16}$')
+        && d.id == resultId
+        && d.kind == 'quizRaid'
+        && d.startedAt is int && 'raid_' + string(d.startedAt) == resultId
+        && d.endedAt is int
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.questions is list && d.questions.size() >= 1 && d.questions.size() <= 20
+        && d.questionCount == d.questions.size()
+        && d.participants is list && d.participants.size() <= 40
+        && d.students is map;
+    }
+
+    match /artifacts/{appId}/quizResults/{resultId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && quizResultOk(resultId);
+      allow delete: if false;
+    }
+
     match /artifacts/{appId}/peerFeedback/{toId}/items/{itemId} {
       allow get: if signedIn();
       // 문서 ID(날짜_종류_보낸학번)를 미리 알 수 없어 사유함 화면은 목록 조회가 꼭 필요합니다. 한 번에 최대 50개만 허용합니다.

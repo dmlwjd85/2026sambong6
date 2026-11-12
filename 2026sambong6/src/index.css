@@ -6616,6 +6616,47 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             object-fit: contain;
             pointer-events: none;
         }
+        /* OX 함께 풀기: 같은 무대를 쓰고, 긴 목록과 조건만 안에서 스크롤합니다. */
+        .oxc-tabs .ox-choice { flex: 1; }
+        .oxc-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-bottom: 4px; }
+        .oxc-chip { min-height: 42px; padding: 0 12px; font-size: 0.95rem; }
+        .oxc-lead { font-size: 1rem; font-weight: 900; line-height: 1.4; color: #fef9c3; }
+        .oxc-center { text-align: center; }
+        .oxc-muted { color: #94a3b8; }
+        .oxc-banner {
+            width: 100%;
+            min-height: 52px;
+            border-radius: 14px;
+            border: 2px solid #fde68a;
+            background: #b45309;
+            color: #fffbeb;
+            font-size: 1.05rem;
+            font-weight: 900;
+            padding: 6px 12px;
+        }
+        .oxc-banner-note { font-size: 0.8rem; font-weight: 800; color: #fde68a; }
+        .oxc-pill { font-size: 0.85rem; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: #0c4a6e; color: #e0f2fe; white-space: nowrap; }
+        .oxc-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 8px; margin-top: auto; }
+        .oxc-actions .ox-go { margin-top: 0; }
+        .oxc-foot { margin-top: auto; }
+        .oxc-foot .ox-go { margin-top: 0; }
+        .oxc-actions .ox-choice { min-height: 64px; }
+        .oxc-wait { min-height: 28vh; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.15rem; font-weight: 900; line-height: 1.4; color: #e0f2fe; }
+        .oxc-wait b { color: #fde68a; font-size: 1.6rem; margin-right: 2px; }
+        .oxc-answer { text-align: center; font-size: 1.4rem; font-weight: 900; color: #e0f2fe; }
+        .oxc-answer b { display: inline-block; min-width: 2.4em; margin-left: 6px; padding: 2px 10px; border-radius: 12px; background: #fde68a; color: #0f172a; font-size: 2rem; }
+        .oxc-verdict { text-align: center; font-size: 1.2rem; font-weight: 900; }
+        .oxc-verdict.is-ok { color: #6ee7b7; }
+        .oxc-verdict.is-no { color: #fda4af; }
+        .oxc-list { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+        .oxc-names { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
+        .oxc-names li { padding: 6px 10px; border-radius: 10px; background: #0c4a6e; font-weight: 800; font-size: 0.95rem; }
+        .oxc-results li { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: #0c4a6e; font-weight: 900; }
+        .oxc-results li.is-me { background: #b45309; border: 2px solid #fde68a; }
+        .oxc-rank { color: #fde68a; }
+        .oxc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .oxc-name small { font-size: 0.75rem; color: #fda4af; margin-left: 4px; }
+        .oxc-score { font-variant-numeric: tabular-nums; }
         @media (min-width: 1200px) {
             .ox-stage { padding: 28px 8vw; }
             .ox-mark { min-height: 36vh; }

@@ -10055,6 +10055,65 @@ ${subjectLine}
                     tx.set(ref, { records, updatedAt: Date.now() }, { merge: true });
                 });
             },
+            // 함께 풀기: 판 문서 하나(oxQuizBank/live)를 구독하고, 학생 답은 live/answers/{학번}에 씁니다.
+            // 무대가 열려 있을 때만 구독합니다. 보상·최고 기록은 건드리지 않습니다.
+            watchLive: (onData, onError) => {
+                if (!db) return () => {};
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live'), (snap) => {
+                    onData(snap.exists() ? (snap.data() || null) : null);
+                }, (e) => { if (onError) onError(e); });
+            },
+            watchAnswers: (roundId, onData) => {
+                if (!db || !roundId) return () => {};
+                const q = query(
+                    collection(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers'),
+                    where('roundId', '==', roundId),
+                );
+                return onSnapshot(q, (snap) => {
+                    onData(snap.docs.map((d) => ({ ...(d.data() || {}), id: d.id })));
+                }, (e) => console.warn('ox answers', e));
+            },
+            createLive: async (live) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live'), live);
+            },
+            updateLive: async (roundId, build) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live');
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const latest = snap.exists() ? (snap.data() || {}) : null;
+                    if (!latest || latest.roundId !== roundId) throw new Error('stale');
+                    const patch = build(latest);
+                    if (!patch) return;
+                    tx.set(ref, patch, { merge: true });
+                });
+            },
+            readAnswer: async (studentId) => {
+                if (!db || !studentId) return null;
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)));
+                return snap.exists() ? (snap.data() || null) : null;
+            },
+            writeJoin: async (studentId, data) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)), data);
+            },
+            writePick: async (studentId, roundId, index, entry) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'live', 'answers', String(studentId)), {
+                    roundId,
+                    picks: { [String(index)]: entry },
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            studentName: () => {
+                const id = localStorage.getItem('sambong_student_id') || '';
+                return String((STUDENT_NAMES && STUDENT_NAMES[String(id)]) || id);
+            },
             isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
             studentId: () => localStorage.getItem('sambong_student_id') || '',
             isGuest: () => !!(window.playerState && window.playerState.isGuest),

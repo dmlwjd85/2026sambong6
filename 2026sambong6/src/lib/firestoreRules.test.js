@@ -1109,6 +1109,24 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }));
     });
 
+    it('OX 함께 풀기: 로그인한 기기는 판 문서와 자기 답을 쓰고 모두 읽으며, 로그인 없으면 쓰지 못한다(기존 oxQuizBank 규칙 그대로)', async () => {
+        const { collection, getDocs, query, where } = await import('firebase/firestore');
+        const teacher = anon().firestore();
+        const student = testEnv.authenticatedContext('anon-ox-student', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const live = 'artifacts/class1/public/data/oxQuizBank/live';
+        await assertSucceeds(setDoc(doc(teacher, live), {
+            roundId: 'oxr_1', status: 'lobby', index: 0, items: [{ id: 'L2', prompt: '맞나요', answer: 'O' }], timeSec: 10,
+        }));
+        await assertSucceeds(setDoc(doc(teacher, live), { status: 'question', qStartAt: 1 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), { roundId: 'oxr_1', name: '데모', joinIndex: 0, picks: {} }));
+        await assertSucceeds(setDoc(doc(student, `${live}/answers/3`), { roundId: 'oxr_1', picks: { 0: { p: 'O', ms: 900 } } }, { merge: true }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertSucceeds(getDoc(doc(guest, live)));
+        await assertSucceeds(getDocs(query(collection(teacher, `${live}/answers`), where('roundId', '==', 'oxr_1'))));
+        await assertFails(setDoc(doc(guest, live), { status: 'off' }, { merge: true }));
+        await assertFails(setDoc(doc(guest, `${live}/answers/3`), { roundId: 'oxr_1', picks: {} }));
+    });
+
     it('추천·비추천 사유함: 항목 하나씩 만들기만, 형식·길이·uid 검사, 고치기·지우기·비로그인 거부', async () => {
         const { collection, getDocs, serverTimestamp, query, limit } = await import('firebase/firestore');
         const kst = (days = 0) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);

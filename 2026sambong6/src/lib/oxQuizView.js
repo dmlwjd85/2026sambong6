@@ -14,6 +14,7 @@ import {
     parseOxQuizFile,
     pickOxRound,
 } from './oxQuiz.js';
+import { createOxClassRound } from './oxQuizClassView.js';
 
 function esc(value) {
     return String(value ?? '')
@@ -56,6 +57,28 @@ export function bindOxQuiz(stage, api) {
         timer: 0,
     };
 
+    // 함께 풀기(반 전체가 같은 문제). 연습 흐름은 그대로 두고, 함께 풀기일 때만 같은 무대를 빌려 씁니다.
+    const classUi = api.watchLive ? createOxClassRound({
+        body,
+        api,
+        getBank: () => state.bank,
+        getSubjectsOn: () => state.subjectsOn,
+        setSubjectsOn: (list) => { state.subjectsOn = list; },
+        onExit: (message, refreshOnly) => {
+            if (refreshOnly) {
+                if (state.mode === 'setup' && !stage.classList.contains('hidden')) render();
+                return;
+            }
+            state.mode = 'setup';
+            render();
+            if (message) void api.alert(message);
+        },
+        setMeta: (text) => {
+            if (meta) meta.textContent = text;
+            stage.classList.add('is-play');
+        },
+    }) : null;
+
     function myRecord() {
         const id = api.studentId();
         const records = state.bank.records || {};
@@ -74,6 +97,10 @@ export function bindOxQuiz(stage, api) {
             meta.textContent = record
                 ? `최고 ${record.correct}문제 · ${Math.round((record.elapsedMs || 0) / 1000)}초`
                 : '최고 기록 없음';
+        }
+        if (classUi && classUi.isActive()) {
+            classUi.render();
+            return;
         }
         stage.classList.toggle('is-play', state.mode === 'play');
         if (state.mode === 'play') renderPlay();
@@ -116,6 +143,7 @@ export function bindOxQuiz(stage, api) {
                </div>`
             : '';
         body.innerHTML = `
+            ${classUi ? classUi.practiceHeader() : ''}
             <p class="ox-label">과목</p>
             <div class="ox-row">${subjectHtml}</div>
             <p class="ox-label">제한 시간</p>
@@ -305,6 +333,7 @@ export function bindOxQuiz(stage, api) {
     }
 
     body.addEventListener('click', (event) => {
+        if (classUi && classUi.handleClick(event)) return;
         const subjectBtn = event.target.closest('[data-ox-subject]');
         if (subjectBtn) {
             const subject = subjectBtn.getAttribute('data-ox-subject');
@@ -363,6 +392,7 @@ export function bindOxQuiz(stage, api) {
 
     stage.querySelector('[data-ox-close]')?.addEventListener('click', () => {
         stopTimer();
+        if (classUi) classUi.close();
         stage.classList.remove('is-play');
         stage.classList.add('hidden');
     });
@@ -387,9 +417,11 @@ export function bindOxQuiz(stage, api) {
             if (!state.subjectsOn.length) state.subjectsOn = listOxSubjects(state.bank.questions);
             state.mode = 'setup';
             render();
+            if (classUi) classUi.open();
         },
         close() {
             stopTimer();
+            if (classUi) classUi.close();
             stage.classList.remove('is-play');
             stage.classList.add('hidden');
         },

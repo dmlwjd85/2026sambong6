@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOARD_ROOM_IDLE_TTL_MS, createBoardRoom } from './boardGameRooms.js';
-import { boardRoomSweepKey, createIdleRoomSweeper, pickIdleRoomsToSweep } from './boardRoomSweep.js';
+import { boardRoomSweepKey, createIdleRoomSweeper, createRoomDeleteOnce, pickIdleRoomsToSweep } from './boardRoomSweep.js';
 
 const T0 = 1_800_000_000_000;
 function room(hostId, { at = T0, gameType = 'gomoku' } = {}) {
@@ -115,5 +115,30 @@ describe('정리기 옵션: 고르는 기준·키·한꺼번에 지우기', () =
         await sweeper.sweep(T0 + 2000);
         assert.deepEqual(started, ['bg_1', 'bg_3']);
         assert.equal(sweeper.handledCount(), 2);
+    });
+});
+
+describe('#100 권장③ 같은 방 지우기 한 번만', () => {
+    it('같은 방 id는 지우는 중(ttl 안)에는 한 번만 시작하고, 풀면 다시 할 수 있어요', () => {
+        const once = createRoomDeleteOnce({ ttlMs: 1000 });
+        assert.equal(once.tryStart('alkl_1', 0), true);
+        assert.equal(once.tryStart('alkl_1', 10), false, '두 번째는 막아요');
+        assert.equal(once.tryStart('alkl_2', 10), true, '다른 방은 따로');
+        assert.equal(once.tryStart('alkl_1', 1001), true, 'ttl이 지나면 다시 돼요');
+        once.release('alkl_2');
+        assert.equal(once.tryStart('alkl_2', 20), true);
+        assert.equal(once.tryStart('', 0), false);
+    });
+    it('정리기와 다른 길이 같은 방을 동시에 지우려 해도 지우기 요청은 한 번이에요', async () => {
+        const once = createRoomDeleteOnce();
+        const sent = [];
+        const del = async (id) => { if (!once.tryStart(id)) return false; try { await new Promise((r) => setTimeout(r, 5)); sent.push(id); return true; } finally { once.release(id); } };
+        // 키가 다른 같은 방 두 줄(활동 시각만 다름)
+        const rooms = [{ id: 'alkl_9', k: 'a' }, { id: 'alkl_9', k: 'b' }];
+        const sw = createIdleRoomSweeper({ getRooms: () => rooms, pickRooms: (rs) => rs, keyOf: (r) => `${r.id}|${r.k}`, parallel: true, removeRoom: (r) => del(r.id) });
+        await Promise.all([sw.sweep(0), del('alkl_9')]);
+        assert.deepEqual(sent, ['alkl_9']);
+        // 끝난 뒤(같은 id로 새 방을 만들어 다시 닫는 경우)는 다시 지울 수 있어요
+        assert.equal(await del('alkl_9'), true);
     });
 });

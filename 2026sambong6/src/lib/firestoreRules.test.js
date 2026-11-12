@@ -1217,7 +1217,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await testEnv.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), `${LIVE_ROOM}/live/${id}`), data); });
     }
 
-    it('실시간 알까기 live/자리: 형식·내 색 알·번호 하나씩·서버 시각 4.5초 간격, 접속 표시만 쓰기는 허용', async () => {
+    it('실시간 알까기 live/자리: 형식·내 색 알·번호 하나씩·첫 샷 뒤 서버 시각 4.5초 간격, 접속 표시만 쓰기는 허용', async () => {
         const { serverTimestamp, Timestamp } = await import('firebase/firestore');
         await seedLiveRoom();
         const base = `${LIVE_ROOM}/live`;
@@ -1231,9 +1231,10 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(db, `${base}/other`), fresh('black')));
         await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { extra: 1 })));
         await assertFails(setDoc(doc(db, `${base}/white`), fresh('white', { seenAt: Timestamp.fromMillis(1000) })));
-        // 방금 만든 자리에서 바로 쏘면(4.5초 안) 거부
+        // 첫 샷은 자리를 만든 직후라도 허용, 그다음 샷을 바로(4.5초 안) 쏘면 거부
         const next = (n, shot, extra = {}) => ({ seat: 'black', sid: '3', gid: 1000, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp(), ...extra });
-        await assertFails(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'))));
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), next(1, shotOf('b1'))));
+        await assertFails(setDoc(doc(db, `${base}/black`), next(2, shotOf('b2'))));
         // 마지막 샷이 10초 전이면 허용
         await seedLiveDoc('black', { seat: 'black', sid: '3', gid: 1000, n: 0, shot: null, shotAt: Timestamp.fromMillis(Date.now() - 10000), seenAt: Timestamp.fromMillis(Date.now() - 10000) });
         // 상대 색 알·형식이 틀린 샷·번호 건너뛰기·sid 바꾸기 거부
@@ -1473,6 +1474,82 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await seedLiveRoom({ hostUid: null, memberUids: null, game: { mode: 'live', gid: 3000 } });
         await assertFails(setDoc(doc(anon().firestore(), `${LIVE_ROOM}/live/black`), seat('black', { gid: 3000 })));
         await assertFails(setDoc(doc(friend, `${LIVE_ROOM}/live/white`), seat('white', { gid: 3000 })));
+    });
+
+    it('[#100 QA seatswap] 샷 번호는 +1만, 힘·방향은 앱이 낼 수 있는 범위만(힘 500~10000, 방향 ±31416)', async () => {
+        const { serverTimestamp, Timestamp } = await import('firebase/firestore');
+        const friend = testEnv.authenticatedContext('friend-uid', { provider_id: 'anonymous', firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const outsider = testEnv.authenticatedContext('outsider-uid', { provider_id: 'anonymous', firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        await seedLiveRoom();
+        const base = `${LIVE_ROOM}/live`;
+        const long = () => Timestamp.fromMillis(Date.now() - 10000);
+        // 흑 자리(방장 학번 3)는 이미 샷 3번을 쏜 상태, 마지막 샷은 10초 전
+        const seedBlack = (n = 3) => seedLiveDoc('black', { seat: 'black', sid: '3', gid: 1000, n, shot: { v: 1, id: 'b1', a: 0, p: 5000 }, shotAt: long(), seenAt: long() });
+        const shot = (n, extra = {}) => ({ seat: 'black', sid: '3', gid: 1000, n, shot: { v: 1, id: 'b1', a: 0, p: 5000, ...extra }, shotAt: serverTimestamp(), seenAt: serverTimestamp() });
+        await seedBlack();
+        // QA seatswap 재현: 백 학생(참가자 friend-uid)이 live/black에 힘 10000을 넘는 샷·번호 건너뛰기를 쓰면 거부
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(4, { p: 10001 })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(4, { p: 99999 })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(5)));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(1000)));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(1000000)));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(3, { id: 'b2' })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(2)));
+        // 앱이 내지 않는 약한 힘(0.05 미만)·방향 범위 밖도 거부
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(4, { p: 499 })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(4, { p: 1 })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(4, { a: 31417 })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(4, { a: -31417 })));
+        // 비참가자는 범위 안 샷도 거부
+        await assertFails(setDoc(doc(outsider, `${base}/black`), shot(4)));
+        // 앱이 낼 수 있는 가장 센 샷(힘 10000)·가장 약한 샷(500)·방향 끝값은 허용(정상 흐름을 막지 않아요)
+        await assertSucceeds(setDoc(doc(anon().firestore(), `${base}/black`), shot(4, { p: 10000, a: 31416 })));
+        await seedBlack(4);
+        await assertSucceeds(setDoc(doc(anon().firestore(), `${base}/black`), shot(5, { p: 500, a: -31416 })));
+        // 자리는 uid에 묶지 않아요(선생님 결정: 같이 하기). 참가자라면 +1 한 칸·범위 안 샷만 들어가고, 쿨다운 4.5초는 그대로예요
+        await seedBlack(5);
+        await assertSucceeds(setDoc(doc(friend, `${base}/black`), shot(6, { p: 10000 })));
+        await assertFails(setDoc(doc(friend, `${base}/black`), shot(7, { p: 10000 })));
+    });
+
+    it('[#100] 같이 하기: 한 기기·한 계정(uid)이 흑·백 두 자리를 모두 쓰고 쏠 수 있어요', async () => {
+        const { serverTimestamp } = await import('firebase/firestore');
+        // 두 자리 모두 같은 uid(anon-student)인 방
+        await seedLiveRoom({
+            members: [{ id: '3', uid: 'anon-student', seat: 'black' }, { id: '5', uid: 'anon-student', seat: 'white' }],
+            memberUids: ['anon-student'],
+        });
+        const db = anon().firestore();
+        const base = `${LIVE_ROOM}/live`;
+        const seat = (s, n = 0, shot = null) => ({ seat: s, sid: s === 'black' ? '3' : '5', gid: 1000, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp() });
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), seat('black')));
+        await assertSucceeds(setDoc(doc(db, `${base}/white`), seat('white')));
+        await assertSucceeds(setDoc(doc(db, `${base}/state`), await liveState()));
+        // 두 자리 첫 샷 모두 허용(각 자리 쿨다운은 따로)
+        await assertSucceeds(setDoc(doc(db, `${base}/black`), seat('black', 1, { v: 1, id: 'b2', a: 15708, p: 7000 })));
+        await assertSucceeds(setDoc(doc(db, `${base}/white`), seat('white', 1, { v: 1, id: 'w3', a: -15708, p: 10000 })));
+        await assertSucceeds(setDoc(doc(db, `${base}/state`), await liveState({ seq: 2 })));
+        // 자리 색과 다른 알은 여전히 거부
+        await assertFails(setDoc(doc(db, `${base}/white`), seat('white', 2, { v: 1, id: 'b1', a: 0, p: 5000 })));
+    });
+
+    it('[#100] 남은 live 정리: 방이 없으면 live 목록을 읽고 하나씩 지워요, 방이 있으면 못 지워요', async () => {
+        const { collection, getDocs } = await import('firebase/firestore');
+        const db = anon().firestore();
+        const outsider = testEnv.authenticatedContext('outsider-uid', { provider_id: 'anonymous', firebase: { sign_in_provider: 'anonymous' } }).firestore();
+        const base = `${LIVE_ROOM}/live`;
+        // 예전 화면이 방만 지우고 남긴 live 3개(방 문서 없음)
+        for (const id of ['state', 'black', 'white']) await seedLiveDoc(id, { gid: 1000, seat: id, n: 0 });
+        const snap = await assertSucceeds(getDocs(collection(db, base)));
+        assert.equal(snap.size, 3);
+        // 방 문서가 없으니 로그인한 학생(참가자가 아니어도)이 하나씩 지울 수 있어요
+        for (const d of snap.docs) await assertSucceeds(deleteDoc(doc(outsider, d.ref.path)));
+        assert.equal((await getDocs(collection(db, base))).size, 0);
+        // 방이 다시 있으면(같은 id로 새 방) 남은 live도 못 지워요(판 되감기 막기)
+        await seedLiveRoom();
+        await seedLiveDoc('black', { gid: 1000, seat: 'black', n: 0 });
+        await assertFails(deleteDoc(doc(outsider, `${base}/black`)));
+        await assertFails(deleteDoc(doc(db, `${base}/black`)));
     });
 });
 

@@ -20,10 +20,12 @@ import { parseAlkkagiShot } from './alkkagiPhysics.js';
 
 export const ALKKAGI_LIVE_TYPE = 'alkkagiLive';
 /**
- * 실시간 입구 스위치. 1단계(#99)에서는 꺼 둬요(판에서 아직 쏠 수 없어요).
- * 꺼져 있으면 '실시간 방 만들기' 버튼·로비의 실시간 방·'둘이 동시에 쏘고' 안내가 보이지 않아요. 2단계(#100)에서 켜요.
+ * 실시간 입구 스위치. #99에서는 꺼 두었고, #100(2단계, 발사)에서 켜요.
+ * 꺼져 있으면 '실시간 방 만들기' 버튼·로비의 실시간 방·'둘이 동시에 쏘고' 안내가 보이지 않아요.
+ * 급하게 끌 때는 이 한 줄을 false로 바꾸고(테스트 alkkagiLiveGame.test.js의 스위치 확인 한 줄도 함께) 앱만 다시 배포하면 돼요. 규칙은 그대로 둬도 돼요.
+ * (화면 문구·새로고침 복귀 함수는 enabled/liveEnabled 인자로 켬·끔 둘 다 단위 테스트해요.)
  */
-export const ALKKAGI_LIVE_ENABLED = false;
+export const ALKKAGI_LIVE_ENABLED = true;
 /** 기권 방식: 기권 버튼(resign)인지 판에서 나가서(left)인지. 결과 문구만 달라요. */
 export const ALKKAGI_LIVE_FORFEIT_HOWS = Object.freeze(['resign', 'left']);
 /** 한 사람이 다시 쏘기까지 기다리는 시간 */
@@ -33,6 +35,14 @@ export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 4000;
 export const ALKKAGI_LIVE_RULE_GAP_MS = 4500;
 export const ALKKAGI_LIVE_END_REASONS = Object.freeze(['out', 'forfeit', 'draw', 'disconnect']);
 export const ALKKAGI_LIVE_SEATS = Object.freeze([ALKKAGI_BLACK, ALKKAGI_WHITE]);
+/**
+ * 샷 의도 숫자 범위(규칙 firestore.rules alkLiveShotOk와 같아요). 앱이 실제로 낼 수 있는 값만이에요.
+ * - 힘 p: 당긴 정도 0.05(판 MIN_POWER)~1(ALKKAGI_MAX_POWER) × 10000
+ * - 방향 a: (-π, π] 라디안 × 10000
+ */
+export const ALKKAGI_LIVE_SHOT_MIN_P = 500;
+export const ALKKAGI_LIVE_SHOT_MAX_P = 10000;
+export const ALKKAGI_LIVE_SHOT_MAX_A = 31416;
 
 function int(raw, min = 0, max = Number.MAX_SAFE_INTEGER) {
     const n = Math.floor(Number(raw) || 0);
@@ -238,8 +248,73 @@ export function checkLiveShotShape(shot, seat) {
     if (typeof shot.id !== 'string' || !new RegExp(`^${s === ALKKAGI_BLACK ? 'b' : 'w'}[1-5]$`).test(shot.id)) return { ok: false, error: 'not_your_stone' };
     const parsed = parseAlkkagiShot(shot);
     if (!parsed.ok) return { ok: false, error: 'bad_shot' };
+    // 규칙과 같은 범위: 앱이 내지 않는 아주 약한 힘(0.05 미만)은 받지 않아요.
+    if (shot.p < ALKKAGI_LIVE_SHOT_MIN_P || shot.p > ALKKAGI_LIVE_SHOT_MAX_P || Math.abs(shot.a) > ALKKAGI_LIVE_SHOT_MAX_A) return { ok: false, error: 'bad_shot' };
     return { ok: true, error: '' };
 }
+
+/**
+ * 판 위 안내 두 줄(상단 알약 line, 아래 안내 tip)을 지금 화면 상태에 맞게 골라요.
+ * 두 줄이 서로 다른 말을 하지 않게(예: '판을 준비하고 있어요'인데 '둘이 동시에 쏘고…') 한곳에서 정해요.
+ * tip은 글자만 돌려줘요(HTML 아님). who는 어느 화면 판이 기준인지 알려 주는 짧은 말이에요.
+ * viewOnly: 같은 기기 다른 창이 이 판을 맡아서 이 창은 보기만 할 때(#100 M1).
+ * @param {{ enabled?: boolean, over?: boolean, seat?: string, connected?: boolean, ready?: boolean, isHost?: boolean, viewOnly?: boolean, recordText?: string }} o
+ */
+export function alkkagiLiveGuide({ enabled = ALKKAGI_LIVE_ENABLED, over = false, seat = '', connected = false, ready = false, isHost = false, viewOnly = false, recordText = '' } = {}) {
+    if (over) return { line: '판이 끝났어요', tip: `내 알까기 전적 ${recordText}`.trim(), who: '', phase: 'over' };
+    if (!enabled) return { line: '실시간 대전은 준비하고 있어요', tip: '지금은 쏠 수 없어요. 열리면 여기에서 바로 할 수 있어요.', who: '', phase: 'off' };
+    if (!alkkagiLiveSeat(seat)) return { line: '구경하고 있어요', tip: '두 사람이 차례 없이 동시에 쏘는 판이에요.', who: '', phase: 'watch' };
+    if (!connected || !ready) return { line: '판에 연결하는 중이에요', tip: '연결되면 바로 쏠 수 있어요. 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.', who: '', phase: 'connecting' };
+    if (viewOnly) {
+        return {
+            line: '다른 창에서 두고 있어요',
+            tip: '이 창은 보기만 해요. 여기서 두려면 이 창을 새로고침해요.',
+            who: '',
+            phase: 'other_tab',
+        };
+    }
+    return {
+        line: '지금 쏠 수 있어요',
+        tip: '알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 5초 쉬어요.',
+        who: isHost ? '내가 방장이라 내 화면 판이 기준이에요.' : '방장 화면 판이 기준이에요.',
+        phase: 'play',
+    };
+}
+
+/**
+ * 판을 끝내기 전에 다시 읽은 live/state가 내가 저장한 판 끝과 같은지(#100 M1).
+ * 같은 판(gid)·같은 epoch·같은 seq이고, 판 끝(over) 승패가 같아야 해요. 하나라도 다르면 끝내지 않아요.
+ * @param {object|null} stateDoc 다시 읽은 live/state(없으면 null)
+ * @param {{ gid:number, seq:number, epoch:number, winner:string, endReason:string, hostSeat?:string }} mine
+ */
+export function liveFinishMatches(stateDoc, { gid, seq, epoch, winner = '', endReason = '', hostSeat = '' } = {}) {
+    if (!stateDoc || typeof stateDoc !== 'object') return false;
+    const st = sanitizeLiveState(stateDoc);
+    if (!st.over) return false;
+    if (st.gid !== int(gid) || st.seq !== int(seq) || st.epoch !== int(epoch)) return false;
+    if (hostSeat && st.hostSeat !== hostSeat) return false;
+    return st.over.endReason === String(endReason || '') && st.over.winner === (alkkagiLiveSeat(winner) || '');
+}
+
+/**
+ * 당기던 중에 상대 샷 때문에 내 알이 밀리거나 떨어져서 샷이 안 나갔는지(#100 권장①).
+ * 조용히 취소되면 학생이 '왜 안 나가지?' 하므로 짧게 알려 줘요.
+ * - 'gone': 잡고 있던 알이 판 밖으로 떨어졌어요.
+ * - 'pushed': 제대로 당겼었는데(maxPull ≥ 최소 힘) 알이 밀려나 당김이 풀렸어요.
+ * - '': 학생이 스스로 취소했거나(화면 밖에서 놓음·살짝만 당김) 정상 발사예요.
+ */
+export function alkkagiAimLostReason({ alive = true, startX = 0, startY = 0, x = 0, y = 0, maxPull = 0, pull = 0, outside = false, minPower = 0.05, moveDist = ALKKAGI_CONFIG.radius * 0.6 } = {}) {
+    if (outside) return '';
+    if (!alive) return Number(maxPull) >= minPower ? 'gone' : '';
+    if (Number(maxPull) < minPower || Number(pull) >= minPower) return '';
+    const moved = Math.hypot(Number(x) - Number(startX), Number(y) - Number(startY));
+    return moved > moveDist ? 'pushed' : '';
+}
+
+export const ALKKAGI_LIVE_AIM_LOST_TEXT = Object.freeze({
+    pushed: '상대 알에 밀려서 다시 겨눠요',
+    gone: '잡은 알이 떨어졌어요. 다른 알로 겨눠요',
+});
 
 export function sanitizeLiveSeatDoc(raw, seat) {
     const s = alkkagiLiveSeat(seat || (raw && raw.seat));
@@ -309,13 +384,15 @@ export function sanitizeLiveState(raw) {
     };
 }
 
-/** Firestore에 넣을 스냅샷(중첩 배열 없음). 반올림해서 문서 크기를 줄여요. */
+/**
+ * Firestore에 넣을 스냅샷(중첩 배열 없음).
+ * 좌표·속도는 물리 모듈이 이미 소수 6자리로 맞춘 값을 그대로 넣어요. 더 줄이면 게스트가 이어서 돌린 판이 호스트와 어긋나요.
+ */
 export function liveStateToDoc(state) {
     const s = sanitizeLiveState(state);
-    const r3 = (v) => Math.round(v * 1000) / 1000;
     return {
         ...s,
-        stones: s.stones.map((t) => ({ id: t.id, color: t.color, x: r3(t.x), y: r3(t.y), vx: r3(t.vx), vy: r3(t.vy), alive: t.alive })),
+        stones: s.stones.map((t) => ({ id: t.id, color: t.color, x: t.x, y: t.y, vx: t.vx, vy: t.vy, alive: t.alive })),
     };
 }
 
@@ -399,6 +476,7 @@ export const ALKKAGI_LIVE_ERROR_LABEL = Object.freeze({
     already_over: '이미 끝난 판이에요.',
     not_alive: '이미 떨어진 알이에요.',
     bad_color: '이 판의 사람만 할 수 있어요.',
+    other_tab: '다른 창에서 두고 있어요.',
 });
 
 export function alkkagiLiveErrorText(code) {

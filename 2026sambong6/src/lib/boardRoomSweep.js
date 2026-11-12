@@ -80,3 +80,29 @@ export function createIdleRoomSweeper({
     }
     return { sweep, handledCount: () => handled.size, isRunning: () => running };
 }
+
+/**
+ * #100 권장③: 같은 방 지우기가 이 화면에서 두 번 나가지 않게 방 id로 막아요.
+ * 정리 키(활동 시각 포함)가 바뀌어도, 다른 길(방 닫기·나가기 정리)과 정리기가 겹쳐도 지우는 중에는 한 번만 보내요.
+ * 지우기가 끝나면 release로 풀어요(같은 id로 새 방을 만들어 다시 닫을 수 있게). ttlMs는 풀지 못했을 때의 안전장치예요.
+ */
+export function createRoomDeleteOnce({ ttlMs = 60000 } = {}) {
+    const until = new Map();
+    const sweepOld = (t) => { for (const [id, u] of until) if (u <= t) until.delete(id); };
+    return {
+        /** 지우기를 시작해도 되면 true(그리고 기억해요). 이미 시작했으면 false. */
+        tryStart(id, now = Date.now()) {
+            const key = String(id || '');
+            if (!key) return false;
+            const t = Number(now) || 0;
+            if (until.size > 200) sweepOld(t);
+            const u = until.get(key);
+            if (u && u > t) return false;
+            until.set(key, t + ttlMs);
+            return true;
+        },
+        /** 지우기를 못 했으면(시작 전 취소) 다시 할 수 있게 풀어요. */
+        release(id) { until.delete(String(id || '')); },
+        size: () => until.size,
+    };
+}

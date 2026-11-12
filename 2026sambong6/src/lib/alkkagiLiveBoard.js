@@ -11,6 +11,7 @@ import { ALKKAGI_CONFIG } from './alkkagiGame.js';
 import { bakeAlkkagiBoardLayer, bakeAlkkagiFace, bakeAlkkagiShadow, bakeAlkkagiStone, alkkagiStoneVariant } from './alkkagiBoard.js';
 import { alkkagiHitLevel, createAlkkagiSound } from './alkkagiSound.js';
 import { alkkagiFinalShot, alkkagiIsTrembling } from './alkkagiAim.js';
+import { alkkagiAimLostReason } from './alkkagiLiveGame.js';
 import { alkkagiPointInside, alkkagiGestureCancel, alkkagiGestureDown, alkkagiGestureMove, alkkagiGestureUp, createAlkkagiGestureState } from './alkkagiGesture.js';
 
 const W = ALKKAGI_CONFIG.width;
@@ -22,7 +23,7 @@ const SNAP_DIST = 70; // 이보다 크게 어긋나면 미끄러뜨리지 않고
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ frame?: (nowMs:number)=>{stones:any[], hits?:any[], outs?:any[]}, onShot?: Function, boundsEl?: Element }} opts
+ * @param {{ frame?: (nowMs:number)=>{stones:any[], hits?:any[], outs?:any[]}, onShot?: Function, onAimLost?: (reason:string)=>void, boundsEl?: Element }} opts
  */
 export function createAlkkagiLiveBoard(canvas, opts = {}) {
     const ctx = canvas.getContext('2d');
@@ -418,7 +419,7 @@ export function createAlkkagiLiveBoard(canvas, opts = {}) {
         if (r.action !== 'start') return;
         e.preventDefault();
         try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* 무시 */ }
-        drag = { id: best.id, pointerId: e.pointerId, pull: 0, angle: 0, viewAngle: 0, t0: performance.now(), full: false, outside: false, dist: 0 };
+        drag = { id: best.id, pointerId: e.pointerId, pull: 0, angle: 0, viewAngle: 0, t0: performance.now(), full: false, outside: false, dist: 0, sx: best.x, sy: best.y, maxPull: 0, gone: false };
         canvas.classList.add('is-dragging');
         vibrate(5, 0);
         kick();
@@ -426,7 +427,7 @@ export function createAlkkagiLiveBoard(canvas, opts = {}) {
 
     function updateDrag(e) {
         const s = currentStone(drag.id);
-        if (!s) { drag.pull = 0; return; }
+        if (!s) { drag.pull = 0; drag.gone = true; return; }
         const [px, py] = localPoint(e);
         const [u, v] = toBoard(px, py);
         const dx = s.x - u;
@@ -437,6 +438,7 @@ export function createAlkkagiLiveBoard(canvas, opts = {}) {
         drag.pull = drag.outside || drag.dist < CANCEL_DIST ? 0 : Math.min(1, drag.dist / PULL_MAX);
         drag.angle = Math.atan2(dy, dx);
         drag.viewAngle = view.flip ? drag.angle + Math.PI : drag.angle;
+        if (drag.pull > drag.maxPull) drag.maxPull = drag.pull;
         if (alkkagiIsTrembling(drag.pull) && !drag.full) { drag.full = true; vibrate(8, 0); }
         else if (drag.pull < 0.9) drag.full = false;
     }
@@ -458,8 +460,12 @@ export function createAlkkagiLiveBoard(canvas, opts = {}) {
         e.preventDefault();
         const d = drag;
         cancelDrag();
+        const cur = currentStone(d.id);
+        // #100 권장①: 상대 샷에 밀리거나 떨어져서 조용히 취소되면 짧게 알려 줘요.
+        const lost = alkkagiAimLostReason({ alive: !!cur && !d.gone, startX: d.sx, startY: d.sy, x: cur ? cur.x : d.sx, y: cur ? cur.y : d.sy, maxPull: d.maxPull, pull: d.pull, outside: d.outside, minPower: MIN_POWER });
+        if (lost && typeof opts.onAimLost === 'function') { opts.onAimLost(lost); return; }
         if (r.action !== 'fire' || d.pull < MIN_POWER || !view.canShoot) return;
-        if (!currentStone(d.id)) return;
+        if (!cur) return;
         const shot = alkkagiFinalShot({ id: d.id, angle: d.angle, power: d.pull });
         if (!shot) return;
         if (typeof opts.onShot === 'function') opts.onShot(shot, { power: d.pull });

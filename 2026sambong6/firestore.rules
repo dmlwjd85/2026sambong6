@@ -151,6 +151,9 @@ service cloud.firestore {
     }
 
     // 샷 의도: {v:1, id:'b1'~'b5' 또는 'w1'~'w5'(내 자리 색), a: 각도 정수, p: 힘 정수}
+    // #100: 앱이 실제로 낼 수 있는 값만 받아요(alkkagiPhysics·alkkagiLiveBoard 기준).
+    // - 방향 a: 각도(라디안)×10000, (-π, π] → -31416 ~ 31416
+    // - 힘 p: 당긴 정도(0.05~1)×10000 → 500 ~ 10000 (MIN_POWER 0.05 아래는 앱이 쏘지 않아요, 최대 힘 1)
     function alkLiveShotOk(seat, shot) {
       return shot is map
         && shot.keys().hasOnly(['v', 'id', 'a', 'p'])
@@ -159,7 +162,7 @@ service cloud.firestore {
         && shot.id is string
         && shot.id.matches(seat == 'black' ? '^b[1-5]$' : '^w[1-5]$')
         && shot.a is int && shot.a >= -31416 && shot.a <= 31416
-        && shot.p is int && shot.p >= 1 && shot.p <= 10000;
+        && shot.p is int && shot.p >= 500 && shot.p <= 10000;
     }
 
     function alkLiveSeatShapeOk(seat) {
@@ -182,13 +185,14 @@ service cloud.firestore {
     }
 
     // 같은 판: 접속 표시만(번호·샷 그대로) 또는 번호를 하나 올려 새 샷(서버 시각으로 4.5초 지나야 함).
+    // 첫 샷(번호 0→1)은 자리를 만든 직후라도 바로 쏠 수 있어요. 그다음부터는 서버 시각 4.5초 간격.
     function alkLiveSeatNext() {
       let d = request.resource.data;
       let o = resource.data;
       return d.gid == o.gid && d.sid == o.sid && (
         (d.n == o.n && d.shot == o.shot && d.shotAt == o.shotAt)
         || (d.n == o.n + 1 && d.shot != null && d.shotAt == request.time
-            && request.time > o.shotAt + duration.value(4500, 'ms'))
+            && (o.n == 0 || request.time > o.shotAt + duration.value(4500, 'ms')))
       );
     }
 
@@ -806,7 +810,9 @@ service cloud.firestore {
     // 각자 live/{자리} 에 샷 의도와 접속 표시를 씁니다. 같은 자리 샷은 서버 시각으로 4.5초 간격이 있어야 합니다.
     // 쓰기는 같은 학급 아래 실제로 있는 실시간 방이 두는 중일 때만, gid는 그 방의 지금 판(game.gid)과 같아야 합니다.
     // 지우기는 방 문서가 없을 때(방을 지운 뒤나 같은 묶음에서 함께)와 선생님만 됩니다. 그래서 지웠다 다시 만드는 되감기가 막힙니다.
-    // 쓰는 기기는 그 방의 방장·참가자 uid여야 합니다(alkLiveParty). 다만 익명 Auth라 '그 자리(흑·백) 학생'인지까지는 확인하지 못합니다(서버 로그인 확인은 후속).
+    // 쓰는 기기는 그 방의 방장·참가자 uid여야 합니다(alkLiveParty).
+    // #100: 자리(흑·백)를 uid에 묶지는 않아요. 선생님 결정으로 '같이 하기'(한 기기·한 계정이 두 자리)를 막지 않기 위해서예요.
+    //   대신 샷 번호 n은 한 칸씩(+1)만, 힘·방향은 앱이 낼 수 있는 범위만, 같은 자리 샷은 서버 시각 4.5초 간격이라 상대 자리에 써도 크게 망가뜨리지 못해요.
     match /artifacts/{appId}/public/data/boardGameRooms/{roomId}/live/{docId} {
       allow read: if true;
       allow create: if signedIn()
@@ -1114,6 +1120,29 @@ service cloud.firestore {
 
     match /artifacts/{appId}/peerFeedback/{toId} {
       allow read, write: if false;
+    }
+
+    // 학습 분석: 퀴즈 레이드가 끝날 때 문항별 정답 기록 한 장. public 와일드카드 밖에 두어 형식을 검사합니다.
+    // 문서 ID는 raid_{시작시각}이라 같은 회차를 여러 기기가 저장해도 한 장으로 덮입니다. 지우기는 막습니다.
+    function quizResultOk(resultId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'kind', 'startedAt', 'endedAt', 'date', 'questionCount', 'participants', 'questions', 'students'])
+        && resultId.matches('^raid_[0-9]{10,16}$')
+        && d.id == resultId
+        && d.kind == 'quizRaid'
+        && d.startedAt is int && 'raid_' + string(d.startedAt) == resultId
+        && d.endedAt is int
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.questions is list && d.questions.size() >= 1 && d.questions.size() <= 20
+        && d.questionCount == d.questions.size()
+        && d.participants is list && d.participants.size() <= 40
+        && d.students is map;
+    }
+
+    match /artifacts/{appId}/quizResults/{resultId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && quizResultOk(resultId);
+      allow delete: if false;
     }
 
     match /artifacts/{appId}/peerFeedback/{toId}/items/{itemId} {

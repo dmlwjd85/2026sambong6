@@ -3,6 +3,11 @@
  * SheetJS(xlsx)로 워크북을 만들고 브라우저에서 다운로드합니다.
  */
 import * as XLSX from 'xlsx';
+import {
+    buildEconomyFlowRows,
+    buildEconomyGoalRows,
+    buildEconomyReportRows,
+} from './economyReport.js';
 
 /** 시트 선택 옵션 (UI 체크박스와 동일 id) */
 export const ADMIN_EXPORT_SHEET_OPTIONS = [
@@ -19,6 +24,7 @@ export const ADMIN_EXPORT_SHEET_OPTIONS = [
     { id: 'questStatus', label: '오늘 일일 퀘스트 완료 현황', defaultOn: false },
     { id: 'dragonBalls', label: '드래곤볼 보관함', defaultOn: false },
     { id: 'lottoBets', label: '로또·승부예측', defaultOn: false },
+    { id: 'economyReport', label: '경제활동 리포트 (저축·소비·투자 비중 + 학습 목표)', defaultOn: true },
 ];
 
 function pad2(n) {
@@ -51,6 +57,14 @@ function aoaToSheet(rows) {
 
 function appendSheet(wb, name, rows) {
     XLSX.utils.book_append_sheet(wb, aoaToSheet(rows), safeSheetName(name));
+}
+
+/** 여러 시트를 한 엑셀 파일로 받습니다. sheets: [{ name, rows }] */
+export function downloadAoaSheetsWorkbook(sheets, fileName) {
+    const wb = XLSX.utils.book_new();
+    (sheets || []).forEach((sh) => appendSheet(wb, sh.name, sh.rows || []));
+    if (!wb.SheetNames.length) appendSheet(wb, 'Sheet', []);
+    XLSX.writeFile(wb, fileName);
 }
 
 /** 이미 만든 행을 엑셀 파일로 받습니다. */
@@ -347,6 +361,19 @@ function buildPurchaseRows(ctx) {
     return rows;
 }
 
+function economyArgs(ctx) {
+    return {
+        students: listStudents(ctx),
+        studentIds: listStudents(ctx).map((s) => String(s.id)),
+        getName: (sid) => studentName(ctx, sid),
+        todayYmd: toLocalYmd(new Date()),
+    };
+}
+
+function buildEconomyStudentRows(ctx) {
+    return buildEconomyReportRows(economyArgs(ctx));
+}
+
 function buildBankRows(ctx) {
     const rows = [['학번', '이름', '지갑(B)', '일반예금(B)', '적금건수', '적금원금합(B)', '대출원금(B)', '대출이자(B)', '대출약정일', '신용불량종료일', '마이너스시작일', '주기보너스최근일', '적금상세']];
     listStudents(ctx).forEach((stu) => {
@@ -485,6 +512,12 @@ export function downloadAdminStudentWorkbook({ selectedIds, ctx, fileName }) {
     add('questStatus', '오늘퀘스트현황', buildQuestStatusRows(ctx));
     add('dragonBalls', '드래곤볼', buildDragonBallRows(ctx));
     add('lottoBets', '로또_승부예측', buildLottoBetRows(ctx));
+    if (selected.has('economyReport')) {
+        appendSheet(wb, '경제리포트_학생별', buildEconomyStudentRows(ctx));
+        appendSheet(wb, '경제리포트_학급흐름', buildEconomyFlowRows(economyArgs(ctx)));
+        appendSheet(wb, '경제리포트_학습목표', buildEconomyGoalRows());
+        sheetCount += 3;
+    }
 
     if (!sheetCount) throw new Error('내보낼 시트가 없습니다.');
 
@@ -526,6 +559,7 @@ export function downloadAdminStudentJson({ selectedIds, ctx, fileName }) {
     pack('questStatus', buildQuestStatusRows);
     pack('dragonBalls', buildDragonBallRows);
     pack('lottoBets', buildLottoBetRows);
+    pack('economyReport', buildEconomyStudentRows);
 
     if (selected.has('xpDaily')) {
         const xpAgg = buildDailyAggregateRows(ctx, 'xpChangeLog', 'XP');
@@ -578,7 +612,8 @@ export function downloadAdminStudentCsv({ selectedIds, ctx, fileName }) {
     if (selected.has('jobs')) pushBlock('직업', buildJobsRows(ctx));
     if (selected.has('purchases')) pushBlock('구매기록', buildPurchaseRows(ctx));
     if (selected.has('questStatus')) pushBlock('오늘퀘스트현황', buildQuestStatusRows(ctx));
-    if (!chunks.length) throw new Error('CSV로 내보낼 기본 항목이 없습니다. 요약·퀘스트·직업·구매·오늘현황 중 선택하세요.');
+    if (selected.has('economyReport')) pushBlock('경제활동리포트', buildEconomyStudentRows(ctx));
+    if (!chunks.length) throw new Error('CSV로 내보낼 기본 항목이 없습니다. 요약·퀘스트·직업·구매·오늘현황·경제리포트 중 선택하세요.');
 
     const stamp = toLocalYmd(new Date()).replace(/-/g, '');
     const outName = fileName || `삼봉월드_학생데이터_${stamp}.csv`;

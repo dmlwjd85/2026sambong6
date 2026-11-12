@@ -44,3 +44,17 @@ export function parseAlkkagiResume(raw, now = Date.now()) {
     }
     return null;
 }
+
+/**
+ * 새로고침 뒤 저장해 둔 온라인 방(kind:'room')으로 바로 돌아가도 되는지 봐요.
+ * - 턴제 알까기 방(alkkagi)과, 실시간 입구가 켜져 있을 때의 실시간 방(alkkagiLive)만
+ * - 두는 중(playing)인 판만. 끝난(finished)·닫힌 방으로는 끌려가지 않아요(#88 F1과 같은 뜻)
+ * - 내가 그 방 자리에 있고(isMember), 스스로 나온 방(left)이 아닐 때만
+ */
+export function canResumeAlkkagiRoom(room, { isMember = false, left = false, liveEnabled = false } = {}) {
+    if (!room || typeof room !== 'object') return false;
+    const type = room.gameType;
+    if (type !== 'alkkagi' && !(liveEnabled && type === 'alkkagiLive')) return false;
+    if (room.status !== 'playing') return false;
+    return !!isMember && !left;
+}

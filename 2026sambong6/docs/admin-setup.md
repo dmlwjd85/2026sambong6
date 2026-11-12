@@ -91,3 +91,17 @@ firebase deploy --only firestore:rules --project sambong-world-2026
 | 콘솔로 당장 값을 고쳐야 함 | `isAdmin()`은 그대로 두고 Firestore 콘솔에서 `settings/global`을 직접 수정합니다. 콘솔은 규칙을 우회합니다. |
 
 콘솔 소유자(Google Cloud 프로젝트 소유자)를 잃는 경우만 영구히 잠깁니다. 소유자는 두 명 등록하는 것을 권합니다.
+
+## 규칙 자동 배포 (GitHub Actions)
+
+`.github/workflows/deploy-firestore-rules.yml` 이 `firestore.rules` 가 바뀐 커밋이 `main` 에 올라오면 단위 테스트와 규칙 테스트(에뮬레이터)를 돌린 뒤 규칙을 배포합니다. 처음 한 번만 서비스 계정 키를 시크릿으로 넣어 두면 됩니다.
+
+1. Firebase 콘솔 → 프로젝트 설정 → **서비스 계정** → **새 비공개 키 생성** 으로 JSON 키를 받습니다. (프로젝트 `sambong-world-2026`)
+   - 권한을 좁히려면 Google Cloud 콘솔 IAM 에서 이 계정에 **Firebase Rules Admin** 역할만 주어도 됩니다.
+2. GitHub 저장소 → Settings → Secrets and variables → Actions → **New repository secret**
+   - 이름: `FIREBASE_SERVICE_ACCOUNT`
+   - 값: 받은 JSON 파일 내용 전체
+3. 받은 JSON 파일은 PC에서 지웁니다. 저장소에 올리지 않습니다.
+4. Actions → **Deploy Firestore rules** → **Run workflow** 로 한 번 실행합니다.
+
+시크릿이 없으면 테스트만 하고 배포는 건너뜁니다(노란 경고로 표시). 테스트가 실패하면 배포하지 않습니다.

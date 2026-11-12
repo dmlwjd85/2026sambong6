@@ -32,9 +32,20 @@ import {
     ADMIN_EXPORT_SHEET_OPTIONS,
     downloadAdminStudentWorkbook,
     downloadAoaWorkbook,
+    downloadAoaSheetsWorkbook,
     downloadAdminStudentJson as exportStudentJsonFile,
     downloadAdminStudentCsv as exportStudentCsvFile,
 } from './lib/adminDataExport.js';
+import {
+    QUIZ_RESULTS_COLLECTION,
+    QUIZ_RESULTS_READ_LIMIT,
+    aggregateQuizResults,
+    buildLearningAnalyticsSheets,
+    learningAnalyticsHeadline,
+    summarizeQuizRaidSession,
+} from './lib/learningAnalytics.js';
+import { planRosterImport } from './lib/rosterImport.js';
+import { downloadRosterTemplate as downloadRosterTemplateFile, parseRosterWorkbook } from './lib/rosterWorkbook.js';
 import {
     QUIZ_RAID_DEFAULT_COUNT,
     QUIZ_RAID_MAX_COUNT,
@@ -282,13 +293,15 @@ import {
     remainingSeats,
     shouldAutoEnterBoardRoom,
     boardRoomKeyToForgetOnLeave,
+    alkkagiLiveOrphanCheckIds,
+    parseAlkkagiLiveOrphanMemory,
     requestJoinBoardRoom,
     roomMemberSeat,
     sanitizeBoardRoom,
     setBoardRoomTimer,
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
-import { createIdleRoomSweeper } from './lib/boardRoomSweep.js';
+import { createIdleRoomSweeper, createRoomDeleteOnce } from './lib/boardRoomSweep.js';
 import {
     ALKKAGI_BLACK,
     ALKKAGI_STONES_PER_SIDE,
@@ -305,10 +318,10 @@ import {
     isAlkkagiOver,
 } from './lib/alkkagiGame.js';
 import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
-import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey } from './lib/alkkagiLiveGame.js';
+import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey, isAlkkagiLiveOver } from './lib/alkkagiLiveGame.js';
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
-import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, parseAlkkagiResume } from './lib/alkkagiResume.js';
+import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
     DAILY_ALL_CLEAR_BONG,
     DAILY_ALL_CLEAR_XP,
@@ -461,9 +474,18 @@ import {
 import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll, runPraiseMidnightRollOnce } from './lib/preLoginGuard.js';
 import {
     clearPersistedLoginIdentity,
+    forgetSavedLoginPin,
+    isOtherStudentTakeover,
+    isOwnStudentDocId,
+    isStudentAutoLoginEnabled,
+    markAutoLoginHandoff,
+    normalizeStudentAutoLoginEnabled,
+    prepareStartupLogin,
     readPersistedLogin,
+    restoreSessionLoginIfCleared,
     shouldRestoreLoginWithoutServerPin,
     writePersistedLogin,
+    writeSessionLoginWithoutPin,
 } from './lib/loginSession.js';
 import {
     extractWeatherJson,
@@ -546,6 +568,7 @@ import {
     readClassCreateNotifySignature,
     readClassCreateUnlockFromClassData,
     readClassCreateUnlockSession,
+    readNewClassForm,
     readStoredClassCreateRequestId,
     sanitizeClassCreateRequest,
     writeClassCreateNotifySignature,
@@ -774,6 +797,16 @@ import {
     sanitizeClassToolShare,
 } from './lib/classToolShare.js';
 import {
+    GUEST_NAME_MASK,
+    buildGuestNameRegExp,
+    collectGuestMaskNames,
+    displayStudentNameFor,
+    installGuestNameShield,
+    isGuestViewer,
+    isStudentNameId,
+    maskNamesInText,
+} from './lib/guestNameMask.js';
+import {
     PASSWORD_CHANGE_BONG,
     planPasswordChange,
 } from './lib/studentPassword.js';
@@ -819,7 +852,7 @@ async function refreshStudentsCacheFromServer() {
     window.gmaData = gmaD;
 
     const myId = localStorage.getItem('sambong_student_id');
-    if (myId && window.playerState && !window.playerState.isGuest) {
+    if (myId && window.playerState && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
         const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
         if (myData) {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
@@ -1335,7 +1368,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.50';
+        const APP_VERSION = 'v1.54';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -2072,6 +2105,7 @@ function redrawPlazaGrantsUi() {
             const gmaField = document.getElementById('wsGmaEditStudentId')?.closest('label');
             if (gmaField) gmaField.classList.toggle('hidden', !getStaffMember('gm_a'));
             setVal('wsClassIdReadonly', meta.classId || (typeof appId !== 'undefined' ? appId : ''));
+            setCheck('wsStudentAutoLogin', isStudentAutoLoginEnabled(meta));
             setVal('wsRaidPassword', (window.globalSettings && window.globalSettings.raidPassword) || '');
             setVal('wsMasterDisplayName', meta.masterDisplayName || getMasterDisplayName());
             setVal('wsClassSchoolName', meta.schoolName || '');
@@ -2200,12 +2234,21 @@ function redrawPlazaGrantsUi() {
                         gmaEditStudentId,
                         inviteCode: window.classMeta?.inviteCode || generateInviteCode(),
                         isActive: true,
+                        studentAutoLoginEnabled: (document.getElementById('wsStudentAutoLogin')
+                            ? normalizeStudentAutoLoginEnabled(!!document.getElementById('wsStudentAutoLogin').checked)
+                            : isStudentAutoLoginEnabled(window.classMeta)),
                         roster: window.classMeta?.roster || buildDefaultRosterFromLegacy(),
                         staff,
                         updatedAt: serverTimestamp(),
                     };
                     await setDoc(doc(db, 'classes', appId), classPayload, { merge: true });
                     window.classMeta = { ...window.classMeta, ...classPayload };
+                    if (!isStudentAutoLoginEnabled(window.classMeta)) {
+                        // 지금 화면은 계속 쓰도록 학번은 두고, 다음에 저절로 들어오는 PIN만 지워요.
+                        forgetSavedPinKeepingSession();
+                    } else {
+                        restoreAutoLoginAfterReenable();
+                    }
                     syncNameGenderMaps();
                     populateLoginSelect();
                     updateClassDisplayLabels();
@@ -2815,6 +2858,7 @@ function redrawPlazaGrantsUi() {
                 gmaEditStudentId: '13',
                 isActive: true,
                 isDemoSeed: classId === SEED_CLASS_ID,
+                studentAutoLoginEnabled: true,
                 roster: buildDefaultRosterFromLegacy(),
                 staff: DEFAULT_CLASS_STAFF.map((s) => ({ ...s })),
             };
@@ -2839,6 +2883,7 @@ function redrawPlazaGrantsUi() {
                 gmaEditStudentId: '1',
                 isActive: true,
                 isDemoSeed: false,
+                studentAutoLoginEnabled: opts.studentAutoLoginEnabled !== false,
                 roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 24),
                 staff: [
                     { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
@@ -2900,6 +2945,52 @@ function redrawPlazaGrantsUi() {
             Object.assign(STUDENT_GENDERS, genders);
         }
 
+        /** 손님 모드('구경만 하기')인지 — 기존 playerState.isGuest를 그대로 봐요. */
+        function isGuestNameMaskOn() {
+            return isGuestViewer(window.playerState);
+        }
+
+        /** 학생 이름을 그리는 곳. 손님에게는 가린 글자(○○○), 로그인한 학생·교사에게는 원래 이름이에요. */
+        function displayStudentName(id, fallback) {
+            return displayStudentNameFor(id, { names: STUDENT_NAMES, isGuest: isGuestNameMaskOn(), fallback });
+        }
+
+        /** 글 속에서 찾아 가릴 학생 이름 목록(명단·이름표·학생 문서). 교사 이름은 빼요. */
+        function guestMaskNamesList() {
+            const meta = window.classMeta;
+            let staffNames = [];
+            try {
+                staffNames = getClassStaff().map((st) => st && st.name);
+                staffNames.push(getMasterDisplayName(), getCoMasterDisplayName());
+            } catch (_) { /* ignore */ }
+            return collectGuestMaskNames({
+                roster: (meta && Array.isArray(meta.roster)) ? meta.roster : [],
+                nameMap: STUDENT_NAMES,
+                students: Array.isArray(window.allStudentsData) ? window.allStudentsData : [],
+                staffNames,
+            });
+        }
+
+        /** 손님이면 글(상태메시지 등) 속 학생 실명을 가린 글자로 바꿔요. 아니면 그대로예요. */
+        function guestSafeText(text) {
+            if (!isGuestNameMaskOn()) return text;
+            return maskNamesInText(text, buildGuestNameRegExp(guestMaskNamesList()));
+        }
+
+        let _guestNameShield = null;
+        /** 손님 화면 지킴이를 켜요. 손님이 나가면 페이지를 새로 불러오므로 끄는 길은 따로 없어요. */
+        function startGuestNameShield() {
+            if (_guestNameShield || !isGuestNameMaskOn()) return;
+            try {
+                _guestNameShield = installGuestNameShield(document, {
+                    getNames: guestMaskNamesList,
+                    isActive: isGuestNameMaskOn,
+                });
+            } catch (e) {
+                console.warn('startGuestNameShield', e);
+            }
+        }
+
         function getActiveStudentIds() {
             const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
             const roster = window.classMeta && Array.isArray(window.classMeta.roster)
@@ -2913,7 +3004,9 @@ function redrawPlazaGrantsUi() {
             const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
             const roster = window.classMeta?.roster || fallback;
             const entry = roster.find((r) => String(r.id) === sid);
-            const name = entry ? entry.name : (STUDENT_NAMES[sid] || sid);
+            const name = (isGuestNameMaskOn() && isStudentNameId(sid))
+                ? GUEST_NAME_MASK
+                : (entry ? entry.name : (STUDENT_NAMES[sid] || sid));
             const suffix = entry && entry.label ? ` (${entry.label})` : '';
             return `${sid}. ${name}${suffix}`;
         }
@@ -3185,7 +3278,81 @@ function redrawPlazaGrantsUi() {
             sel.innerHTML = html;
         }
 
+        /** 자동 로그인을 끈 반: 이 탭이 로그인한 학번(다른 탭이 지우면 다시 적어요). */
+        let _sessionLoginIdentity = null;
+        /** '이 반으로 이동' 직후 한 번만 PIN 없이 들어가요(prepareStartupLogin 이 정해요). */
+        let _autoLoginHandoffOnce = false;
+
+        function rememberSessionLoginIdentity(pin = '') {
+            const id = String(localStorage.getItem('sambong_student_id') || '').trim();
+            if (!id || !_sambongLoggedIn) return;
+            if (_sessionLoginIdentity && _sessionLoginIdentity.studentId === id) return;
+            _sessionLoginIdentity = { studentId: id, role: localStorage.getItem('sambong_login_role') || '', pin: String(pin || '') };
+        }
+
+        /** 끈 반: 저장된 PIN은 지우되, 이 탭 메모리에는 남겨 둬요(다시 켤 때 씀). */
+        function forgetSavedPinKeepingSession() {
+            const pinBefore = localStorage.getItem('sambong_student_pin') || '';
+            rememberSessionLoginIdentity(pinBefore);
+            forgetSavedLoginPin(localStorage);
+        }
+
+        /** 꺼진 반에서 로그인한 이 탭이 설정을 다시 켜면, 메모리의 PIN으로 자동 로그인 저장을 되살려요. */
+        function restoreAutoLoginAfterReenable() {
+            const me = _sessionLoginIdentity;
+            if (!me || !me.pin) return;
+            if (String(localStorage.getItem('sambong_student_id') || '') !== me.studentId) return;
+            writePersistedLogin(localStorage, { studentId: me.studentId, pin: me.pin, role: me.role, classId: appId });
+            _sessionLoginIdentity = null;
+        }
+
+        /**
+         * 학생 스냅샷을 이 탭 playerState 에 넣어도 되는지: 이 탭이 로그인한 학생 문서와
+         * 기기 학번이 다르면(다른 탭에서 다른 학생이 들어옴) 넣지 않아요. 로그인 전(문서 없음)은 예전처럼.
+         */
+        function studentSnapshotBelongsToThisTab(myId) {
+            if (!currentStudentDocRef) return true;
+            return isOwnStudentDocId(currentStudentDocRef.id, myId);
+        }
+
+        let _otherStudentTakeoverShown = false;
+        /** 낡은 탭 안내(한 번만). 끈 반은 확인 뒤 로그인 화면으로 돌아가요. */
+        function notifyOtherStudentTakeover() {
+            if (_otherStudentTakeoverShown) return;
+            _otherStudentTakeoverShown = true;
+            const off = !isStudentAutoLoginEnabled(window.classMeta);
+            const msg = off
+                ? '다른 탭에서 다른 사람이 들어와서 이 탭은 나갔어요.\n다시 쓰려면 로그인해 주세요.'
+                : '다른 탭에서 다른 사람이 들어왔어요.\n이 탭에서 한 일은 저장되지 않아요. 새로고침해 주세요.';
+            Promise.resolve(window.customAlert ? window.customAlert(msg) : null).finally(() => {
+                if (off) location.reload();
+            });
+        }
+
+        window.addEventListener('storage', (e) => {
+            if (e.storageArea && e.storageArea !== localStorage) return;
+            if (e.key !== null && e.key !== 'sambong_student_id') return;
+            if (!_sessionLoginIdentity || !_sambongLoggedIn) return;
+            if (isStudentAutoLoginEnabled(window.classMeta)) return;
+            // 끈 반: 다른 탭에서 다른 학생이 들어오면 이 탭은 나가요. 지워진 경우만 내 학번을 다시 적어요.
+            if (isOtherStudentTakeover(_sessionLoginIdentity.studentId, localStorage.getItem('sambong_student_id'))) {
+                notifyOtherStudentTakeover();
+                return;
+            }
+            restoreSessionLoginIfCleared(localStorage, _sessionLoginIdentity);
+        });
+
+        /** 로그인 화면: 자동 로그인을 끈 반이면 '매번 넣어요' 안내를 보여요. */
+        function syncAutoLoginOffNotes() {
+            const off = !isStudentAutoLoginEnabled(window.classMeta);
+            for (const id of ['loginAutoLoginOffNote', 'loginAutoLoginOffNoteTeacher']) {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('hidden', !off);
+            }
+        }
+
         function populateLoginSelect() {
+            syncAutoLoginOffNotes();
             const sel = document.getElementById('loginId');
             if (!sel) return;
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
@@ -3777,7 +3944,7 @@ function redrawPlazaGrantsUi() {
         };
 
         /** 공통: 새 학급 Firestore 워크스페이스 생성 */
-        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword, copyFromClassId }) {
+        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword, copyFromClassId, studentAutoLoginEnabled }) {
             if (!db) throw new Error('no_db');
             await assertGmSettingsAuth();
             const inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
@@ -3798,6 +3965,7 @@ function redrawPlazaGrantsUi() {
                 inviteCode,
                 schoolName,
                 masterDisplayName: teacherName,
+                studentAutoLoginEnabled: studentAutoLoginEnabled !== false,
             });
             await setDoc(doc(db, 'classes', newClassId), {
                 ...newMeta,
@@ -4200,6 +4368,8 @@ function redrawPlazaGrantsUi() {
             if (req.teacherPin) {
                 localStorage.setItem('sambong_student_id', 'gm');
                 localStorage.setItem('sambong_student_pin', req.teacherPin);
+                // 자동 로그인을 끈 반이어도, 방금 만든 반으로 옮길 때 한 번은 PIN 없이 들어가요.
+                markAutoLoginHandoff(sessionStorage, req.newClassId);
                 localStorage.setItem('sambong_show_onboarding', '1');
                 localStorage.setItem('sambong_onboarding_invite', req.inviteCode || '');
             }
@@ -4283,6 +4453,9 @@ function redrawPlazaGrantsUi() {
             const studentCount = Number(document.getElementById('createClassStudentCount')?.value) || 25;
             const teacherPin = String(document.getElementById('createClassTeacherPin')?.value || '').trim();
             const applyDefaultTemplate = !!(document.getElementById('createClassApplyTemplate')?.checked);
+            const studentAutoLoginEnabled = document.getElementById('createClassStudentAutoLogin')
+                ? !!document.getElementById('createClassStudentAutoLogin').checked
+                : true;
             if (!displayName) {
                 return window.customAlert('학급명은 필수입니다.');
             }
@@ -4296,7 +4469,8 @@ function redrawPlazaGrantsUi() {
                 `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
                 `시즌: ${seasonLabel} / ${seasonTheme}\n` +
                 `마스터: ${teacherName}\n` +
-                `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n\n` +
+                `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n` +
+                `학생 자동 로그인: ${studentAutoLoginEnabled ? '켜짐' : '꺼짐'}\n\n` +
                 `허락되면 반이 생성되고 초대 코드가 발급됩니다.`
             );
             if (!ok) return;
@@ -4316,6 +4490,7 @@ function redrawPlazaGrantsUi() {
                     seasonLabel,
                     seasonTheme,
                     applyDefaultTemplate,
+                    studentAutoLoginEnabled,
                     requesterHint: 'login',
                     sourceClassId: appId,
                 });
@@ -4339,21 +4514,21 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
                 <tr class="border-b border-slate-700/80">
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${escapeHtmlAttr(r.id || '')}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${escapeHtmlAttr(r.name || '')}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
                     <td class="p-1">
                         <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
                             <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
                             <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
                         </select>
                     </td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${escapeHtmlAttr(r.label || '')}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
                     <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
                 </tr>`).join('');
             panel.innerHTML = `
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
                     <label class="text-[10px] text-slate-300">학급 표시 이름
-                        <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                        <input id="classMetaDisplayName" type="text" value="${escapeHtmlAttr(meta.displayName || '')}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                         <span class="block mt-1 text-[9px] text-amber-200/80">이 학급 마스터가 바꿀 수 있습니다. 명단 저장을 누르세요.</span>
                     </label>
                     <label class="text-[10px] text-slate-300">학급 ID (데이터 경로)
@@ -4367,6 +4542,12 @@ function redrawPlazaGrantsUi() {
                             <input id="classMetaGrade" type="number" min="1" max="6" value="${meta.grade || 6}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                             <input id="classMetaHomeroom" type="number" min="1" max="20" value="${meta.homeroom || 1}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                         </div>
+                    </label>
+                    <label class="text-[10px] text-slate-300 sm:col-span-2 flex items-start gap-2">
+                        <input id="classMetaStudentAutoLogin" type="checkbox" style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600" ${isStudentAutoLoginEnabled(meta) ? 'checked' : ''}>
+                        <span>학생 자동 로그인
+                            <span class="block text-[9px] text-slate-500 mt-0.5">공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣고, 새로고침해도 다시 물어요. 바꾼 값은 다음에 열 때부터 적용돼요.</span>
+                        </span>
                     </label>
                 </div>
                 <p class="text-[9px] text-slate-500 mb-2">
@@ -4383,6 +4564,15 @@ function redrawPlazaGrantsUi() {
                         <tbody id="classRosterEditorBody">${rosterRows}</tbody>
                     </table>
                 </div>
+                <div class="mb-3 p-2 rounded-xl border border-lime-500/50 bg-lime-950/30">
+                    <p class="text-[10px] font-black text-lime-200 mb-1"><i class="fa-solid fa-file-excel mr-1"></i>명단을 엑셀로 한 번에 넣기</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="window.downloadRosterTemplate()" class="bg-slate-800 hover:bg-slate-700 text-lime-100 text-[10px] font-bold py-2 px-3 rounded border border-lime-500/70">명단 서식 받기</button>
+                        <button type="button" onclick="window.pickRosterFile()" class="bg-lime-700 hover:bg-lime-600 text-white text-[10px] font-bold py-2 px-3 rounded border border-lime-400">엑셀·CSV로 명단 올리기</button>
+                        <input type="file" id="rosterFileInput" accept=".xlsx,.xls,.csv" class="sr-only" tabindex="-1" aria-hidden="true" onchange="window.onRosterFilePicked(event)">
+                    </div>
+                    <p class="text-[9px] text-lime-100/70 mt-1">번호·이름·성별·별칭을 적어 올리면 아래 표가 채워집니다. 확인 후 「명단 저장」을 눌러야 반영됩니다. 빠진 번호는 지우지 않고 비활성으로 남깁니다.</p>
+                </div>
                 <div class="flex flex-wrap gap-2 mb-3">
                     <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-2 px-3 rounded border border-slate-600">+ 학생 추가</button>
                     <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-4 rounded">명단 저장</button>
@@ -4396,7 +4586,13 @@ function redrawPlazaGrantsUi() {
                         <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
+                    <label class="flex items-start gap-2 text-[10px] text-slate-300 mb-2">
+                        <input id="newClassStudentAutoLogin" type="checkbox" checked style="width:22px;height:22px;accent-color:#0ea5e9" class="shrink-0 cursor-pointer rounded border-slate-600">
+                        <span>학생 자동 로그인
+                            <span class="block text-[9px] text-slate-500 mt-0.5">한 번 로그인하면 다음에도 바로 들어와요. 공용 컴퓨터라면 꺼 두세요. 끄면 선생님도 매번 PIN을 넣어요.</span>
+                        </span>
+                    </label>
+                    <button type="button" onclick="window.createNewClass({ source: 'panel' })" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
                     <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
                     <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
@@ -4406,6 +4602,59 @@ function redrawPlazaGrantsUi() {
             window.paintClassCreateInbox();
             window.paintClassCreateUnlockAdmin();
             void window.refreshManagedClassDirectory();
+        };
+
+        window.downloadRosterTemplate = function() {
+            if (!window.playerState?.isGM) return;
+            try {
+                const { fileName } = downloadRosterTemplateFile();
+                window.customAlert(`명단 서식을 내려받았습니다.\n파일: ${fileName}\n「명단」 시트에 학생을 적어 올려 주세요.\n학생 개인정보가 담기니 공유 폴더에 두지 마세요.`);
+            } catch (e) {
+                console.error('downloadRosterTemplate', e);
+                window.customAlert('서식 다운로드에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.pickRosterFile = function() {
+            if (!window.playerState?.isGM) return;
+            const input = document.getElementById('rosterFileInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        };
+
+        window.onRosterFilePicked = async function(ev) {
+            const file = ev && ev.target && ev.target.files && ev.target.files[0];
+            if (!file || !window.playerState?.isGM) return;
+            try {
+                const isCsv = /\.csv$/i.test(file.name);
+                const data = isCsv ? await file.text() : new Uint8Array(await file.arrayBuffer());
+                const parsed = parseRosterWorkbook(data);
+                if (!parsed.roster.length) {
+                    return window.customAlert('명단을 읽지 못했습니다.\n' + (parsed.errors.slice(0, 6).join('\n') || '서식을 확인해 주세요.'));
+                }
+                const plan = planRosterImport(readRosterFromEditor(), parsed.roster);
+                const lines = [
+                    `학생 ${parsed.roster.length}명을 읽었습니다.`,
+                    plan.added.length ? `· 새로 추가: ${plan.added.length}명` : '',
+                    plan.renamed.length ? `· 이름 바뀜: ${plan.renamed.length}명` : '',
+                    plan.deactivated.length ? `· 새 명단에 없어 비활성: ${plan.deactivated.map((id) => id + '번').join(', ')}` : '',
+                    parsed.errors.length ? `\n건너뛴 행:\n${parsed.errors.slice(0, 5).join('\n')}` : '',
+                    parsed.warnings.length ? `\n참고:\n${parsed.warnings.slice(0, 5).join('\n')}` : '',
+                    '\n표에 채울까요? (「명단 저장」을 눌러야 저장됩니다)',
+                ].filter(Boolean).join('\n');
+                const ok = await window.customConfirm(lines);
+                if (!ok) return;
+                const meta = window.classMeta || buildDefaultClassMeta(appId);
+                window.classMeta = { ...meta, roster: plan.roster };
+                window.renderClassAdminPanel();
+                if (window.showToast) window.showToast('명단을 표에 채웠습니다. 확인 후 「명단 저장」을 눌러 주세요.');
+            } catch (e) {
+                console.error('onRosterFilePicked', e);
+                window.customAlert('명단 파일을 읽지 못했습니다.\n' + (e && e.message ? e.message : String(e)));
+            } finally {
+                if (ev && ev.target) ev.target.value = '';
+            }
         };
 
         window.addClassRosterRow = function() {
@@ -4452,6 +4701,10 @@ function redrawPlazaGrantsUi() {
             const grade = Number(document.getElementById('classMetaGrade')?.value) || window.classMeta?.grade || 6;
             const homeroom = Number(document.getElementById('classMetaHomeroom')?.value) || window.classMeta?.homeroom || 1;
             const inviteCode = window.classMeta?.inviteCode || await generateUniqueInviteCode().catch(() => generateInviteCode());
+            const autoEl = document.getElementById('classMetaStudentAutoLogin');
+            const studentAutoLoginEnabled = autoEl
+                ? normalizeStudentAutoLoginEnabled(!!autoEl.checked)
+                : isStudentAutoLoginEnabled(window.classMeta);
             const payload = {
                 classId: appId,
                 displayName,
@@ -4461,6 +4714,7 @@ function redrawPlazaGrantsUi() {
                 inviteCode,
                 gmaEditStudentId: window.classMeta?.gmaEditStudentId || getGmaEditStudentId() || '1',
                 isActive: true,
+                studentAutoLoginEnabled,
                 roster,
                 staff: getClassStaff(),
                 updatedAt: serverTimestamp(),
@@ -4475,6 +4729,11 @@ function redrawPlazaGrantsUi() {
                 console.warn('registerInviteCode(save)', e);
             }
             window.classMeta = { ...window.classMeta, ...payload, roster, staff: payload.staff };
+            if (!isStudentAutoLoginEnabled(window.classMeta)) {
+                forgetSavedPinKeepingSession();
+            } else {
+                restoreAutoLoginAfterReenable();
+            }
             syncNameGenderMaps();
             populateLoginSelect();
             updateClassDisplayLabels();
@@ -4483,16 +4742,11 @@ function redrawPlazaGrantsUi() {
             await window.customAlert('✅ 학급 명단이 저장되었습니다.');
         };
 
-        window.createNewClass = async function() {
+        window.createNewClass = async function(opts = {}) {
             if (!window.playerState?.isGM || !db) return;
-            const displayName = document.getElementById('newClassDisplayName')?.value?.trim()
-                || document.getElementById('settingsNewClassDisplayName')?.value?.trim();
-            const schoolYear = Number(document.getElementById('newClassSchoolYear')?.value)
-                || Number(document.getElementById('settingsNewClassSchoolYear')?.value);
-            const grade = Number(document.getElementById('newClassGrade')?.value)
-                || Number(document.getElementById('settingsNewClassGrade')?.value);
-            const homeroom = Number(document.getElementById('newClassHomeroom')?.value)
-                || Number(document.getElementById('settingsNewClassHomeroom')?.value);
+            // 학급·명단 관리 패널과 설정 화면 폼이 함께 그려질 수 있어서, 누른 버튼의 폼 값을 읽어요.
+            const form = readNewClassForm((id) => document.getElementById(id), opts && opts.source);
+            const { displayName, schoolYear, grade, homeroom, studentAutoLoginEnabled } = form;
             if (!displayName || !schoolYear || !grade || !homeroom) {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
@@ -4503,8 +4757,8 @@ function redrawPlazaGrantsUi() {
             }
             const ok = await window.customConfirm(
                 immediate
-                    ? `새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`
-                    : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n허락되면 반이 만들어지고 초대 코드가 발급됩니다.`
+                    ? `새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n학생 자동 로그인: ${studentAutoLoginEnabled ? '켜짐' : '꺼짐'}\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`
+                    : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n학생 자동 로그인: ${studentAutoLoginEnabled ? '켜짐' : '꺼짐'}\n\n허락되면 반이 만들어지고 초대 코드가 발급됩니다.`
             );
             if (!ok) return;
             try {
@@ -4521,6 +4775,7 @@ function redrawPlazaGrantsUi() {
                         studentCount: 25,
                         teacherPin: '',
                         copySettingsFromCurrent: false,
+                        studentAutoLoginEnabled,
                     });
                     window.hideGlobalLoading();
                     await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
@@ -4538,6 +4793,7 @@ function redrawPlazaGrantsUi() {
                     requesterHint: 'settings',
                     sourceClassId: appId,
                     applyDefaultTemplate: false,
+                    studentAutoLoginEnabled,
                 });
                 if (!sent.ok) throw new Error('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
                 window.hideGlobalLoading();
@@ -12260,6 +12516,8 @@ ${subjectLine}
         // 실시간 입구 스위치가 켜졌을 때만 '· 실시간 대전' 같은 안내를 보여요.
         document.querySelectorAll('[data-alk-live-only]').forEach((el) => el.classList.toggle('hidden', !ALKKAGI_LIVE_ENABLED));
         const _alkLive = createAlkkagiLiveMode({
+            fs: { doc, collection, setDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, getDocFromServer, getDb: () => db },
+            roomRef: (roomId) => boardGameRoomRef(roomId),
             selfId: () => boardGameSelfId(),
             seatOf: (room, id) => roomMemberSeat(room, id),
             memberName: (room, seat) => memberNameBySeat(room, seat),
@@ -12271,9 +12529,12 @@ ${subjectLine}
             recordResult: (room) => maybeRecordBoardGameResult(room),
             myRecordText: () => myBoardGameRecordText('alkkagi'),
             loadFonts: () => loadAlkkagiFontsOnce(),
-            markLeft: (room) => _alkLeftRooms.add(boardRoomInstanceKey(room)),
+            // 나간 방은 이 탭(sessionStorage)에 기억해서 새로고침 뒤에도 다시 끌려가지 않아요.
+            markLeft: (room) => rememberLeftBoardRoomKey(boardRoomInstanceKey(room)),
             toLobby: () => {
                 _boardGameActiveId = '';
+                // 나가기·방 닫기로 로비에 오면 새로고침 복귀 기록도 지워요(끝난·나간 방으로 다시 끌려가지 않게).
+                saveAlkkagiResume('');
                 showBoardGameView('lobby');
                 renderBoardGameLobby();
             },
@@ -12353,11 +12614,74 @@ ${subjectLine}
             await Promise.all(['state', 'black', 'white'].map((d) => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms', id, 'live', d)).catch(() => {})));
         }
 
+        // 방 문서가 이미 없는 실시간 방 아래 남은 live 문서만 골라 지워요(#100).
+        // 먼저 live 하위 목록을 한 번 읽고(없으면 읽기 1회로 끝), 있는 문서만 지워요. 규칙: 방 문서가 없으면 로그인한 누구나 지울 수 있어요.
+        async function cleanupOrphanAlkkagiLive(roomId) {
+            const id = String(roomId || '');
+            if (!db || !id.startsWith('alkl_')) return 0;
+            try {
+                const snap = await getDocs(collection(boardGameRoomRef(id), 'live'));
+                if (snap.empty) return 0;
+                const room = await getDoc(boardGameRoomRef(id));
+                if (room.exists()) return 0; // 방이 있으면 건드리지 않아요(판 되감기 막기 규칙과 같아요)
+                let n = 0;
+                await Promise.all(snap.docs.map((d) => deleteDoc(d.ref).then(() => { n += 1; }).catch(() => {})));
+                return n;
+            } catch (e) {
+                console.warn('alkkagi live orphan cleanup', id, e && e.code);
+                return 0;
+            }
+        }
+
+        // #100 권장③: 이 화면에서 같은 방 지우기가 겹쳐 두 번 나가지 않게 방 id로 막아요(정리기·방 닫기 모두).
+        // (함수 선언이 먼저 불려도 안전하게 처음 쓸 때 만들어요)
+        function boardRoomDeleteOnce() {
+            if (!boardRoomDeleteOnce.v) boardRoomDeleteOnce.v = createRoomDeleteOnce();
+            return boardRoomDeleteOnce.v;
+        }
+
         /** 방 문서를 지우고(실패하면 조용히 넘어가요) 실시간 방이면 live 문서도 정리해요. */
         async function deleteBoardRoomDoc(roomId) {
-            try { await deleteDoc(boardGameRoomRef(roomId)); } catch (_) { return false; /* 목록 필터로도 빠져요 */ }
-            await deleteAlkkagiLiveDocs(roomId);
-            return true;
+            if (!boardRoomDeleteOnce().tryStart(roomId)) return false; // 이미 지우는 중이에요
+            try {
+                try { await deleteDoc(boardGameRoomRef(roomId)); } catch (_) {
+                    // 이미 다른 기기(예전 화면 포함)가 방만 지웠으면 지우기가 거절돼요. 그때 남은 live를 정리해요.
+                    void cleanupOrphanAlkkagiLive(roomId);
+                    return false; /* 목록 필터로도 빠져요 */
+                }
+                await deleteAlkkagiLiveDocs(roomId);
+                return true;
+            } finally {
+                boardRoomDeleteOnce().release(roomId);
+            }
+        }
+
+        // 내 실시간 방 id(alkl_학번, alkl_학번_기기)가 목록에 없으면 남은 live가 있는지 하루 한 번 봐요(스위치 켰을 때, 알까기 로비에서).
+        const ALK_LIVE_ORPHAN_KEY = 'sambong_alk_live_orphan_v1';
+        let _alkLiveOrphanRunning = false;
+        async function maybeCleanupMyOrphanAlkkagiLive(rows) {
+            if (!ALKKAGI_LIVE_ENABLED || _alkLiveOrphanRunning || !db || !auth || !auth.currentUser) return;
+            if (_boardGameType !== 'alkkagi' || _boardGameView !== 'lobby' || classtoolSub !== 'boardgames') return;
+            if (window.playerState && window.playerState.isGuest) return;
+            const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+            let mem = {};
+            try { mem = parseAlkkagiLiveOrphanMemory(localStorage.getItem(ALK_LIVE_ORPHAN_KEY), day); } catch (_) { mem = {}; }
+            const ids = alkkagiLiveOrphanCheckIds({
+                selfId: boardGameSelfId(),
+                uid: auth.currentUser.uid,
+                roomIds: (rows || []).map((r) => r.id),
+                memory: mem,
+                day,
+            });
+            if (!ids.length) return;
+            _alkLiveOrphanRunning = true;
+            try {
+                ids.forEach((id) => { mem[id] = day; });
+                try { localStorage.setItem(ALK_LIVE_ORPHAN_KEY, JSON.stringify(mem)); } catch (_) { /* 기억 못 해도 괜찮아요 */ }
+                for (const id of ids) await cleanupOrphanAlkkagiLive(id);
+            } finally {
+                _alkLiveOrphanRunning = false;
+            }
         }
 
         function currentBoardGameRoom() {
@@ -12533,6 +12857,7 @@ ${subjectLine}
             const now = Date.now();
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
+            void maybeCleanupMyOrphanAlkkagiLive(rows);
             const me = boardGameSelfId();
             const myUid = auth && auth.currentUser ? auth.currentUser.uid : '';
             // 두는 중 > 대기 > 결과 순서로 내 방을 골라요. 끝난 옛 방 때문에 방금 만든 방이 닫히지 않게 해요.
@@ -12604,19 +12929,30 @@ ${subjectLine}
                 if (!auth.currentUser || auth.currentUser.uid !== myUid) return;
                 if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) return;
                 // 지우기는 트랜잭션으로 해요. 먼저 지운 기기가 있으면 다시 읽어 없는 방이라 건너뛰어요(중복 지우기 0).
+                // #100 권장③: 이 화면에서 같은 방을 이미 지우는 중이면(다른 정리 키·방 닫기) 건너뛰어요.
+                // 트랜잭션은 한 번만 시도해요(maxAttempts 1). 다른 기기와 부딪혀 실패하면 다시 보내지 않고, 다음 정리나 그 기기가 맡아요.
+                if (!boardRoomDeleteOnce().tryStart(room.id)) return;
                 const ref = boardGameRoomRef(room.id);
                 let removed = false;
-                await runTransaction(db, async (tx) => {
-                    removed = false;
-                    const snap = await tx.get(ref);
-                    if (!snap.exists()) return;
-                    const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
-                    if (boardRoomCleanupKey(cur) !== key) return;
-                    if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
-                    tx.delete(ref);
-                    removed = true;
-                });
-                if (removed) await deleteAlkkagiLiveDocs(room.id);
+                let gone = false;
+                try {
+                    await runTransaction(db, async (tx) => {
+                        removed = false;
+                        gone = false;
+                        const snap = await tx.get(ref);
+                        // 이미 다른 기기가 방을 지웠어요. 예전 화면(v1.47)은 live를 남기므로 아래에서 남은 것만 정리해요.
+                        if (!snap.exists()) { gone = true; return; }
+                        const cur = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                        if (boardRoomCleanupKey(cur) !== key) return;
+                        if (!pickBoardRoomsToCleanup([cur], { now: Date.now(), uid: myUid }).length) return;
+                        tx.delete(ref);
+                        removed = true;
+                    }, { maxAttempts: 1 });
+                    if (removed) await deleteAlkkagiLiveDocs(room.id);
+                    else if (gone) await cleanupOrphanAlkkagiLive(room.id);
+                } finally {
+                    boardRoomDeleteOnce().release(room.id);
+                }
             },
             onError: (e, room) => console.warn('sweepIdleBoardRooms', room && room.id, e && e.code),
         });
@@ -13676,6 +14012,8 @@ ${subjectLine}
                     docSeen = snap.exists();
                     if (!snap.exists()) throw new Error('expired');
                     const room = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                    // #100 M1: 같은 트랜잭션에서 다른 문서(실시간 알까기 live/state)를 다시 확인해야 할 때만 써요.
+                    if (opts && typeof opts.txCheck === 'function' && !(await opts.txCheck(tx, room))) throw new Error('stale_live');
                     const result = mutator(room);
                     if (!result || result.ok === false) throw new Error((result && result.error) || 'invalid');
                     // 옛 화면이 hostUid 없이 덮어쓴 내 방이면 내 uid를 다시 적어 둬요.
@@ -14580,6 +14918,8 @@ ${subjectLine}
         function renderAlkkagiLivePlay(room) {
             showBoardGameView('play');
             _alkLive.render(room);
+            // 두는 중인 실시간 판은 새로고침해도 로비를 거치지 않고 바로 돌아오게 기억해요(끝난 판이면 지워요).
+            rememberAlkkagiResume(room && !isAlkkagiLiveOver(room.game) ? room : null);
             startGomokuTick();
         }
 
@@ -14637,7 +14977,13 @@ ${subjectLine}
             if (saved.kind === 'room') {
                 const room = (rows || []).find((r) => r.id === saved.id);
                 const me = boardGameSelfId();
-                if (!room || room.gameType !== 'alkkagi' || room.status !== 'playing' || !isRoomMember(room, me) || _alkLeftRooms.has(boardRoomInstanceKey(room))) {
+                // 턴제 알까기 방과(스위치를 켰을 때) 실시간 방 모두 두는 중인 판에만 돌아가요. 끝난 방·스스로 나온 방은 아니에요.
+                const ok = canResumeAlkkagiRoom(room, {
+                    isMember: !!room && isRoomMember(room, me),
+                    left: !!room && _alkLeftRooms.has(boardRoomInstanceKey(room)),
+                    liveEnabled: ALKKAGI_LIVE_ENABLED,
+                });
+                if (!ok) {
                     saveAlkkagiResume('');
                     return;
                 }
@@ -21785,7 +22131,7 @@ ${subjectLine}
                             if (classtoolSub === 'boardgames' && _boardGameView === 'lobby') renderBoardGameLobby();
                             
                             const myId = localStorage.getItem('sambong_student_id');
-                            if (myId && !window.playerState.isGuest) {
+                            if (myId && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     noteRemoteQuestCompletions(myData);
@@ -22313,7 +22659,13 @@ ${subjectLine}
                     void refreshTeacherAuthBadge();
                     openLoggedInServices(user);
                 });
-                const savedLogin = readPersistedLogin(localStorage);
+                syncAutoLoginOffNotes();
+                const startup = prepareStartupLogin(localStorage, sessionStorage, {
+                    classId: appId,
+                    enabled: window.classMeta,
+                });
+                _autoLoginHandoffOnce = startup.handoff;
+                const savedLogin = startup.savedLogin;
                 if (savedLogin) {
                     await attemptLogin(savedLogin.studentId, savedLogin.pin, true);
                 }
@@ -22640,7 +22992,7 @@ ${subjectLine}
         }
 
         function buildPlazaStatusMessageHtml(data, extraClass = '') {
-            const msg = sanitizeStatusMessage(data && data.statusMessage);
+            const msg = guestSafeText(sanitizeStatusMessage(data && data.statusMessage));
             if (!msg) return '';
             const cls = extraClass ? `plaza-card-status ${extraClass}` : 'plaza-card-status';
             return `<div class="${cls}" title="${escapeHtmlAttr(msg)}">${escapeConvenienceHtml(msg)}</div>`;
@@ -23546,7 +23898,7 @@ ${subjectLine}
                 const rowBg = rowDone === total && total > 0 ? 'bg-emerald-950/35' : '';
                 bodyRows += `
                 <tr class="${rowBg}">
-                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] || ''}">${shortName}. ${STUDENT_NAMES[sid] || '-'}</td>
+                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] ? displayStudentName(sid) : ''}">${shortName}. ${STUDENT_NAMES[sid] ? displayStudentName(sid) : '-'}</td>
                     ${cells}
                     <td class="p-0.5 text-center border-b border-slate-800/80 text-[8px] sm:text-[9px] tabular-nums text-slate-400 font-bold whitespace-nowrap">${rowDone}/${total}</td>
                 </tr>`;
@@ -23603,7 +23955,7 @@ ${subjectLine}
                     <div class="glass-panel p-4 rounded-xl border-2 border-yellow-500 bg-gradient-to-b from-yellow-900/60 flex flex-col items-center w-28">
                         <div class="text-3xl mb-1 drop-shadow-lg avatar-legend">👑</div>
                         <div class="text-3xl mb-2 drop-shadow-md">${face}</div>
-                        <div class="font-display text-white text-sm">${STUDENT_NAMES[s.id] || s.name || s.id}</div>
+                        <div class="font-display text-white text-sm">${displayStudentName(s.id, s.name)}</div>
                         <div class="text-[9px] text-yellow-400 mt-1 font-bold">${caption}</div>
                     </div>`;
                 }).join('');
@@ -26838,6 +27190,8 @@ ${subjectLine}
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
+            // 손님 화면에는 학생 실명 대신 가린 글자를 그려요(첫 화면을 그리기 전에 켜요).
+            startGuestNameShield();
             
             document.getElementById('loginOverlay').style.opacity = '0'; 
             setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
@@ -27063,7 +27417,11 @@ ${subjectLine}
                 updateUI();
                 return;
             }
-            localStorage.setItem('sambong_student_pin', planned.pin);
+            if (isStudentAutoLoginEnabled(window.classMeta)) {
+                localStorage.setItem('sambong_student_pin', planned.pin);
+            } else if (_sessionLoginIdentity) {
+                _sessionLoginIdentity = { ..._sessionLoginIdentity, pin: String(planned.pin) };
+            }
             updateUI();
             await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
@@ -27072,6 +27430,12 @@ ${subjectLine}
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
+                return;
+            }
+            const handoffOnce = _autoLoginHandoffOnce;
+            _autoLoginHandoffOnce = false;
+            if (isAutoLogin && !handoffOnce && !isStudentAutoLoginEnabled(window.classMeta)) {
+                clearPersistedLoginIdentity(localStorage);
                 return;
             }
             const dropTeacher = shouldSignOutNonAnonymousForPinLogin({
@@ -27208,7 +27572,16 @@ ${subjectLine}
                 const storedRole = isAutoLogin
                     ? (readPersistedLogin(localStorage)?.role || '')
                     : (window._pendingLoginRole === 'teacher' && isAdmin ? 'teacher' : (isAdmin ? 'master' : 'student'));
-                writePersistedLogin(localStorage, { studentId, pin, role: storedRole, classId: appId });
+                if (isStudentAutoLoginEnabled(window.classMeta)) {
+                    writePersistedLogin(localStorage, { studentId, pin, role: storedRole, classId: appId });
+                    _sessionLoginIdentity = null;
+                } else {
+                    // 꺼진 반: 로그인 중에는 학번·역할을 남겨 앱이 '나'를 찾게 하고, PIN은 저장하지 않아요.
+                    // 다음에 앱을 열면 prepareStartupLogin 이 학번까지 지워서 다시 로그인 화면이 나와요.
+                    writeSessionLoginWithoutPin(localStorage, { studentId, role: storedRole, classId: appId });
+                    // PIN은 저장소에 쓰지 않고 이 탭 메모리에만 둬요(수업 중 다시 켜면 그때 저장해요).
+                    _sessionLoginIdentity = { studentId: String(studentId), role: storedRole, pin: String(pin || '') };
+                }
                 currentStudentDocRef = docRef;
                 /** 로그인 직후에도 checkTimeEvents·스냅샷과 동일한 일일 퀘스트 달력 동기화 */
                 if (!isAdmin) {
@@ -27245,6 +27618,11 @@ ${subjectLine}
 
         async function saveDataToCloud(options = {}) {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
+            // 같은 브라우저 다른 탭에서 다른 학생이 들어와 학번이 바뀌었으면, 이 탭은 저장하지 않아요(PIN 덮어쓰기 방지).
+            if (!isOwnStudentDocId(currentStudentDocRef.id, localStorage.getItem('sambong_student_id'))) {
+                notifyOtherStudentTakeover();
+                return false;
+            }
             const opts = {
                 allowXpDecrease: false,
                 allowBongDecrease: false,
@@ -32286,12 +32664,19 @@ ${subjectLine}
                     if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                     const saved = await writeStoredMasterPin(newPin, stuId);
                     if (localStorage.getItem('sambong_student_id') === String(stuId)) {
-                        writePersistedLogin(localStorage, {
-                            studentId: stuId,
-                            pin: newPin,
-                            role: 'master',
-                            classId: appId,
-                        });
+                        if (isStudentAutoLoginEnabled(window.classMeta)) {
+                            writePersistedLogin(localStorage, {
+                                studentId: stuId,
+                                pin: newPin,
+                                role: 'master',
+                                classId: appId,
+                            });
+                        } else {
+                            forgetSavedLoginPin(localStorage);
+                            if (_sessionLoginIdentity && _sessionLoginIdentity.studentId === String(stuId)) {
+                                _sessionLoginIdentity = { ..._sessionLoginIdentity, pin: String(newPin) };
+                            }
+                        }
                     }
                     if (!saved.ok) {
                         return window.customAlert('이 기기에는 바꿨지만, 서버의 개인 문서(users/본인)에는 저장하지 못했습니다.');
@@ -34088,6 +34473,52 @@ ${subjectLine}
             await window.customAlert('문제 은행을 비웠습니다.');
         };
 
+        /**
+         * 퀴즈 레이드 마지막 문항을 정리하기 직전, 문항별 정답 기록을 학습 분석용으로 남깁니다.
+         * turnSubmissions는 곧 비워지므로 여기서 저장합니다. 같은 회차는 같은 문서로 덮입니다.
+         * 저장에 실패해도 레이드 진행·보상은 막지 않습니다.
+         */
+        async function archiveQuizRaidResult(st, lastTurnSkips) {
+            try {
+                const result = summarizeQuizRaidSession(st, { lastTurnSkips });
+                if (!result || !db) return;
+                await setDoc(doc(db, 'artifacts', appId, QUIZ_RESULTS_COLLECTION, result.id), result);
+            } catch (e) {
+                console.warn('archiveQuizRaidResult', e);
+            }
+        }
+
+        /** 선생님: 쌓인 퀴즈 레이드 결과로 학습 분석 엑셀을 받습니다. */
+        window.downloadLearningAnalytics = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 학습 분석을 볼 수 있습니다.');
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            try {
+                if (typeof window.showGlobalLoading === 'function') window.showGlobalLoading('학습 분석을 모으는 중…');
+                const snap = await getDocs(query(
+                    collection(db, 'artifacts', appId, QUIZ_RESULTS_COLLECTION),
+                    fsOrderBy('startedAt', 'desc'),
+                    fsLimit(QUIZ_RESULTS_READ_LIMIT),
+                ));
+                const sessions = snap.docs.map((d) => d.data()).filter(Boolean);
+                const agg = aggregateQuizResults(sessions);
+                if (typeof window.hideGlobalLoading === 'function') window.hideGlobalLoading();
+                if (!agg.sessionCount) return window.customAlert(learningAnalyticsHeadline(agg));
+                const sheets = buildLearningAnalyticsSheets(agg, {
+                    getName: (sid) => STUDENT_NAMES[sid] || '',
+                });
+                const stamp = getLocalDateStr().replace(/-/g, '');
+                const fileName = `삼봉월드_학습분석_${stamp}.xlsx`;
+                downloadAoaSheetsWorkbook(sheets, fileName);
+                await window.customAlert(`📊 학습 분석\n\n${learningAnalyticsHeadline(agg)}\n\n파일: ${fileName}`);
+            } catch (e) {
+                console.error('downloadLearningAnalytics', e);
+                if (typeof window.hideGlobalLoading === 'function') window.hideGlobalLoading();
+                await window.customAlert('학습 분석을 만들지 못했습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         async function tryAdvanceRaidTurn(opts = {}) {
             if(window._raidResolving) return;
             const st = window.currentRaidState;
@@ -34122,6 +34553,7 @@ ${subjectLine}
                 if(isLast) newLogs.push('✅ 퀴즈 레이드 완료!');
 
                 if(isLast) {
+                    await archiveQuizRaidResult(st, unanswered);
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                         status: 'waiting',
                         currentTurn: 0,

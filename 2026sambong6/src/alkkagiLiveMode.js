@@ -5,16 +5,28 @@
 import './alkkagiLive.css';
 import { ALKKAGI_BLACK, ALKKAGI_STONES_PER_SIDE, ALKKAGI_WHITE } from './lib/alkkagiGame.js';
 import {
+    ALKKAGI_LIVE_AIM_LOST_TEXT,
+    ALKKAGI_LIVE_COOLDOWN_MS,
     ALKKAGI_LIVE_ENABLED,
     alkkagiLiveEndText,
+    alkkagiLiveGuide,
+    alkkagiLiveOther,
     alkkagiLiveResultTitle,
     alkkagiLiveSeat,
     applyAlkkagiLiveForfeit,
+    finishAlkkagiLiveGame,
     isAlkkagiLiveOver,
+    liveCooldownLabel,
+    liveFinishMatches,
+    liveStateToDoc,
     liveAliveCount,
     sanitizeAlkkagiLiveGame,
 } from './lib/alkkagiLiveGame.js';
 import { createAlkkagiLiveBoard } from './lib/alkkagiLiveBoard.js';
+import { createLiveSession } from './lib/alkkagiLiveSession.js';
+import { alkkagiLiveTabLockName, createLiveTabLock } from './lib/alkkagiLiveTabLock.js';
+
+const TICK_MS = 50;
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
@@ -31,6 +43,13 @@ export function createAlkkagiLiveMode(deps) {
     let room = null;
     let shownStones = [];
     const dialogs = new Set();
+    // 지금 두는 판의 실시간 연결: { key, roomId, gid, seat, session, unsub, timer, liveCol }
+    let live = null;
+    const stats = { stateWrites: 0, intentWrites: 0, seatWrites: 0, roomWrites: 0, liveReads: 0, roomReads: 0, games: 0 };
+    let flashUntil = 0;
+    let failUntil = 0;
+    let aimLostUntil = 0;
+    let aimLostText = '';
 
     const $ = (id) => document.getElementById(id);
     const me = () => String(deps.selfId() || '');
@@ -45,13 +64,252 @@ export function createAlkkagiLiveMode(deps) {
         if (deps.loadFonts) deps.loadFonts();
         board = createAlkkagiLiveBoard(canvas, {
             boundsEl: $('boardgameAlkLivePlayView'),
-            frame: () => ({ stones: shownStones }),
-            onShot: () => {},
+            frame: () => frameForBoard(),
+            onShot: (shot) => onBoardShot(shot),
+            // #100 권장①: 당기던 알이 상대 샷에 밀리거나 떨어지면 짧게 알려 줘요.
+            onAimLost: (reason) => {
+                aimLostText = ALKKAGI_LIVE_AIM_LOST_TEXT[reason] || '';
+                aimLostUntil = aimLostText ? Date.now() + 1800 : 0;
+                liveChrome();
+            },
         });
         const view = $('boardgameAlkLivePlayView');
         if (view) view.addEventListener('pointerdown', () => { if (board) board.ensureSound(); }, { passive: true });
-        if (window.__sambongE2E) window.__alkLiveQA = { board: () => board, state: () => ({ room, stones: shownStones }) };
+        if (window.__sambongE2E) {
+            window.__alkLiveQA = {
+                board: () => board,
+                state: () => ({ room, stones: shownStones }),
+                session: () => (live ? live.session : null),
+                stats: () => ({ ...stats, session: live ? live.session.stats() : null, lock: live && live.lock ? { kind: live.lock.kind, held: live.lock.held() } : null }),
+                shoot: (shot) => onBoardShot(shot),
+            };
+        }
         return board;
+    }
+
+    function fsDeps() {
+        return deps.fs || {};
+    }
+
+    function liveCol(roomId) {
+        const { collection } = fsDeps();
+        return collection(deps.roomRef(roomId), 'live');
+    }
+
+    function frameForBoard() {
+        if (live && live.session.isReady()) {
+            const s = live.session;
+            s.tick(Date.now());
+            const ev = s.drainEvents();
+            for (const l of ev.launches) if (board) board.launched(l.power);
+            if (ev.fails.length) failUntil = Date.now() + 2200;
+            shownStones = s.stones();
+            return { stones: shownStones, hits: ev.hits, outs: ev.outs };
+        }
+        return { stones: shownStones };
+    }
+
+    function onBoardShot(shot) {
+        if (!live || !room || room.status !== 'playing') return { ok: false, error: 'not_ready' };
+        const r = live.session.shoot(shot, Date.now());
+        if (!r.ok && r.error === 'cooldown') flashUntil = Date.now() + 700;
+        if (board) board.kick();
+        liveChrome();
+        return r;
+    }
+
+    function stopLive() {
+        if (!live) return;
+        try { if (live.unsub) live.unsub(); } catch (_) { /* 무시 */ }
+        try { if (live.lock) live.lock.release(); } catch (_) { /* 무시 */ }
+        if (live.timer) clearInterval(live.timer);
+        live = null;
+    }
+
+    /** 두는 중인 판이면 live 하위 문서에 붙어요. 판(gid)이 바뀌면 새로 붙어요. */
+    function ensureLive() {
+        const g = game();
+        const seat = mySeat();
+        const key = `${room.id}:${g.gid}:${seat}`;
+        if (live && live.key === key) return;
+        stopLive();
+        if (!seat || room.status !== 'playing' || isAlkkagiLiveOver(g)) return;
+        const { doc, setDoc, onSnapshot, serverTimestamp, getDocFromServer } = fsDeps();
+        if (!doc || !onSnapshot) return;
+        const roomId = room.id;
+        const col = liveCol(roomId);
+        const sid = me();
+        const gid = g.gid;
+        const hostSeat = room.hostId && deps.seatOf(room, room.hostId) ? alkkagiLiveSeat(deps.seatOf(room, room.hostId)) || ALKKAGI_BLACK : ALKKAGI_BLACK;
+        const session = createLiveSession({
+            seat,
+            gid,
+            now: Date.now(),
+            // #100 M1: 같은 기기 창 잠금을 얻기 전까지는 보기만 해요(아래 lock).
+            hostRole: false,
+            send: {
+                writeState: (st) => { stats.stateWrites += 1; return setDoc(doc(col, 'state'), { ...liveStateToDoc(st), at: serverTimestamp() }); },
+                writeIntent: ({ n, shot }) => { stats.intentWrites += 1; return setDoc(doc(col, seat), { seat, sid, gid, n, shot, shotAt: serverTimestamp(), seenAt: serverTimestamp() }); },
+                // 스냅샷 쓰기가 거절됐을 때·창을 다시 맡았을 때 서버의 최신 판을 읽어 맞춰요(캐시 말고 서버).
+                readState: getDocFromServer
+                    ? () => { stats.liveReads += 1; return getDocFromServer(doc(col, 'state')).then((d) => (d.exists() ? d.data() : null)); }
+                    : undefined,
+                finish: (r) => { void finishFromHost(roomId, gid, seat, r); },
+            },
+        });
+        const cur = { key, roomId, gid, seat, session, unsub: null, timer: null, col, first: true, lock: null };
+        live = cur;
+        // #100 M1: 같은 기기(브라우저)에서는 한 판·한 자리를 창 하나만 맡아요. 가장 나중에 연 창이 맡고, 앞 창은 보기만 해요.
+        cur.lock = createLiveTabLock({
+            name: alkkagiLiveTabLockName({ roomId, gid, seat }),
+            onChange: (held) => {
+                if (live !== cur) return;
+                session.setHostRole(held, Date.now());
+                if (board) board.kick();
+                liveChrome();
+            },
+        });
+        stats.games += 1;
+        cur.unsub = onSnapshot(col, (snap) => {
+            if (live !== cur) return;
+            const t = Date.now();
+            const changes = snap.docChanges();
+            stats.liveReads += changes.length;
+            if (cur.first) {
+                cur.first = false;
+                let stateDoc = null;
+                let mine = null;
+                snap.forEach((d) => {
+                    if (d.id === 'state') stateDoc = d.data();
+                    if (d.id === seat) mine = d.data();
+                });
+                session.init(stateDoc, { hostSeat, nowMs: t, seatDoc: mine });
+                snap.forEach((d) => { if (d.id === alkkagiLiveOther(seat)) session.onSeatDoc(d.id, d.data(), t); });
+                // 내 자리 문서를 이번 판으로 만들어 둬요(번호 0). 같은 판을 새로고침한 거면 그대로 써요.
+                if (!mine || Number(mine.gid) !== gid) {
+                    stats.seatWrites += 1;
+                    setDoc(doc(col, seat), { seat, sid, gid, n: 0, shot: null, shotAt: serverTimestamp(), seenAt: serverTimestamp() })
+                        .catch((e) => console.warn('alkLive seat', e));
+                }
+                session.tick(t);
+                if (board) board.kick();
+                liveChrome();
+                return;
+            }
+            changes.forEach((ch) => {
+                if (ch.type === 'removed') return;
+                const id = ch.doc.id;
+                const data = ch.doc.data();
+                if (id === 'state') {
+                    const before = session.onStateDoc(data, t);
+                    if (before && board) { shownStones = session.stones(); board.correct(before); }
+                } else if (id === alkkagiLiveOther(seat) || id === seat) {
+                    // 내 자리 문서도 넘겨서 샷 번호가 어긋나면 맞춰요(#100).
+                    session.onSeatDoc(id, data, t);
+                }
+            });
+            if (board) board.kick();
+        }, (e) => console.warn('alkLive snapshot', e));
+        cur.timer = setInterval(() => {
+            if (live !== cur) return;
+            session.tick(Date.now());
+            liveChrome();
+            if (board && (session.isMoving() || session.cooldownLeft(seat, Date.now()) > 0)) board.kick();
+        }, TICK_MS);
+    }
+
+    /**
+     * 판 계산 창이 판 끝 스냅샷을 저장한 뒤 방을 끝내요.
+     * #100 M1: 같은 트랜잭션 안에서 live/state를 다시 읽어, 내가 저장한 판 끝(seq·epoch·승패)과 같을 때만 끝내요.
+     * 그사이 다른 창·기기가 더 앞선 판을 썼으면 끝내지 않고 그 판을 따라가요(틀린 승패 기록 막기).
+     */
+    async function finishFromHost(roomId, gid, seat, r) {
+        const { doc } = fsDeps();
+        const cur0 = live;
+        if (!cur0 || cur0.roomId !== roomId || cur0.gid !== gid || !cur0.session.hasRole()) return;
+        const stateRef = doc(liveCol(roomId), 'state');
+        let staleDoc;
+        stats.roomWrites += 1;
+        await deps.mutateRoom(roomId, (cur) => {
+            const g = sanitizeAlkkagiLiveGame(cur.game);
+            if (g.gid !== gid || cur.status !== 'playing') return { ok: false, error: 'stale' };
+            const done = finishAlkkagiLiveGame(cur.game, { winner: r.winner, endReason: r.endReason, stones: r.stones, shots: r.shots, now: Date.now() });
+            if (!done.ok) return done;
+            return { ok: true, room: deps.applyRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
+        }, {
+            silent: true,
+            txCheck: async (tx) => {
+                staleDoc = undefined;
+                // 이 창이 그사이 잠금을 잃었으면 끝내지 않아요(맡은 창이 끝내요).
+                if (live !== cur0 || !cur0.session.hasRole()) return false;
+                const snap = await tx.get(stateRef);
+                const data = snap.exists() ? snap.data() : null;
+                if (liveFinishMatches(data, { gid, seq: r.seq, epoch: r.epoch, winner: r.winner, endReason: r.endReason, hostSeat: seat })) return true;
+                staleDoc = data;
+                return false;
+            },
+        });
+        if (staleDoc !== undefined && live === cur0) {
+            console.warn('alkLive finish skipped: live/state moved on');
+            cur0.session.resyncTo(staleDoc, Date.now());
+            if (board) board.kick();
+        }
+    }
+
+    /** 쿨다운·연결 상태처럼 자주 바뀌는 부분만 다시 그려요. */
+    function liveChrome() {
+        if (!room) return;
+        const g = game();
+        const seat = mySeat();
+        const over = room.status === 'finished' || isAlkkagiLiveOver(g);
+        const s = live && live.session;
+        const t = Date.now();
+        const pill = $('alkLivePill');
+        const pillText = $('alkLivePillText');
+        const pillDot = $('alkLivePillDot');
+        if (over || !s) {
+            if (board) board.setView({ canShoot: false, cooldown: 0 });
+            return;
+        }
+        const left = s.cooldownLeft(seat, t);
+        const can = s.canShoot(t);
+        const guide = alkkagiLiveGuide({ enabled: ALKKAGI_LIVE_ENABLED, over: false, seat, connected: true, ready: s.isReady(), isHost: s.isHost(), viewOnly: s.isViewOnly() });
+        const playable = guide.phase === 'play';
+        let line = guide.line;
+        let cls = playable ? 'is-ready' : 'is-wait';
+        if (!playable) { /* 스위치 꺼짐·연결 중·구경: 안내 그대로 */ }
+        else if (s.aliveCount(seat) === 0) { line = '남은 알이 없어요'; cls = 'is-wait'; }
+        else if (can.error === 'sending') { line = '샷을 보내는 중이에요'; cls = 'is-wait'; }
+        else if (left > 0) { line = `다시 쏘기까지 ${liveCooldownLabel(left)}`; cls = 'is-wait'; }
+        if (flashUntil > t) cls = 'is-end';
+        if (failUntil > t) { line = '샷이 전달되지 않았어요. 다시 쏴 주세요'; cls = 'is-end'; }
+        if (playable && aimLostUntil > t && aimLostText) { line = aimLostText; cls = 'is-end'; }
+        if (pill) {
+            pill.classList.toggle('is-ready', cls === 'is-ready');
+            pill.classList.toggle('is-wait', cls === 'is-wait');
+            pill.classList.toggle('is-end', cls === 'is-end');
+        }
+        if (pillText && pillText.textContent !== line) pillText.textContent = line;
+        if (pillDot) pillDot.className = `alk-mini ${seat === ALKKAGI_WHITE ? 'w' : 'b'}`;
+        [['Black', ALKKAGI_BLACK], ['White', ALKKAGI_WHITE]].forEach(([k, color]) => {
+            const cool = $(`alkLiveCool${k}`);
+            if (!cool) return;
+            const l = s.cooldownLeft(color, t);
+            cool.style.setProperty('--k', String(Math.max(0, Math.min(1, 1 - l / ALKKAGI_LIVE_COOLDOWN_MS))));
+            cool.classList.toggle('is-ready', l <= 0);
+            const leftEl = $(`alkLiveLeft${k}`);
+            const alive = s.aliveCount(color);
+            if (leftEl && leftEl.textContent !== `${alive}개`) {
+                leftEl.textContent = `${alive}개`;
+                renderDots($(`alkLiveDots${k}`), alive, color === ALKKAGI_WHITE ? 'w' : 'b');
+            }
+        });
+        const tip = $('alkLiveTip');
+        if (tip) {
+            const html = `${esc(guide.tip)}${guide.who ? `<span class="alk-guide">${esc(guide.who)}</span>` : ''}`;
+            if (tip.innerHTML !== html) tip.innerHTML = html;
+        }
+        if (board) board.setView({ canShoot: playable && can.ok, cooldown: left / ALKKAGI_LIVE_COOLDOWN_MS });
     }
 
     function renderDots(el, alive, cls) {
@@ -94,13 +352,21 @@ export function createAlkkagiLiveMode(deps) {
         const pillText = $('alkLivePillText');
         const pillDot = $('alkLivePillDot');
         const tip = $('alkLiveTip');
-        let line = '판을 준비하고 있어요';
-        // 실시간 입구가 꺼져 있으면(1단계) '둘이 동시에 쏘고' 안내를 보이지 않아요.
-        let tipHtml = ALKKAGI_LIVE_ENABLED ? '차례가 없어요. 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.' : '실시간 대전은 준비하고 있어요.';
-        if (over) {
-            line = '판이 끝났어요';
-            tipHtml = `내 알까기 전적 ${esc(deps.myRecordText())}`;
-        }
+        // 상단 알약과 아래 안내가 같은 상태를 말하게 한곳(alkkagiLiveGuide)에서 골라요.
+        // 연결이 붙으면 liveChrome()이 같은 함수로 '지금 쏠 수 있어요'·쿨다운 안내로 바꿔요.
+        const s = live && live.session;
+        const guide = alkkagiLiveGuide({
+            enabled: ALKKAGI_LIVE_ENABLED,
+            over,
+            seat,
+            connected: !!s,
+            ready: !!(s && s.isReady()),
+            isHost: !!(s && s.isHost()),
+            viewOnly: !!(s && s.isViewOnly()),
+            recordText: over ? deps.myRecordText() : '',
+        });
+        const line = guide.line;
+        const tipHtml = `${esc(guide.tip)}${guide.who ? `<span class="alk-guide">${esc(guide.who)}</span>` : ''}`;
         if (pill) {
             pill.classList.toggle('is-end', over);
             pill.classList.toggle('is-ready', false);
@@ -137,14 +403,18 @@ export function createAlkkagiLiveMode(deps) {
         if (play) play.classList.toggle('hidden', over);
         if (result) result.classList.toggle('hidden', !over);
         if (board) board.setView({ flip: seat === ALKKAGI_WHITE, myColor: seat, canShoot: false, cooldown: 0, active: !over });
+        liveChrome();
     }
 
     /** 방 문서가 바뀔 때마다 불러요(판 화면에 있을 때). */
     function render(nextRoom) {
         room = nextRoom;
+        stats.roomReads += 1;
         const b = ensureBoard();
         const g = game();
-        shownStones = g.stones.map((s) => ({ ...s, vx: 0, vy: 0 }));
+        ensureLive();
+        // 실시간 판이 붙어 있으면 그 판을, 아니면(시작 전·끝난 판) 방 문서의 좌표를 보여 줘요.
+        if (!live || !live.session.isReady()) shownStones = g.stones.map((s) => ({ ...s, vx: 0, vy: 0 }));
         if (b) { b.resize(); b.kick(); }
         if (room.status === 'finished') deps.recordResult(room);
         chrome();
@@ -152,6 +422,7 @@ export function createAlkkagiLiveMode(deps) {
 
     function stop() {
         closeDialogs();
+        stopLive();
         room = null;
     }
 
@@ -204,7 +475,7 @@ export function createAlkkagiLiveMode(deps) {
         const seat = mySeat();
         const id = room.id;
         return deps.mutateRoom(id, (cur) => {
-            const done = applyAlkkagiLiveForfeit(cur.game, { color: seat, stones: shownStones, now: Date.now(), how });
+            const done = applyAlkkagiLiveForfeit(cur.game, { color: seat, stones: live ? live.session.stones() : shownStones, now: Date.now(), how });
             if (!done.ok) return { ok: false, error: done.error };
             return { ok: true, room: deps.applyRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
         });
@@ -251,7 +522,12 @@ export function createAlkkagiLiveMode(deps) {
         if (!ok || !room) return;
         const id = room.id;
         const closed = await deps.mutateRoom(id, (cur) => deps.closeRoom(cur, { actorId: me(), now: Date.now() }));
-        if (closed) await deps.deleteRoom(id);
+        if (closed) {
+            stopLive();
+            // 방 문서를 먼저 지우면 deps.deleteRoom(deleteBoardRoomDoc)이 live 하위 문서(state·black·white)도 지워요.
+            // 규칙은 방이 남아 있는 동안 live 지우기를 막아요(되감기 방지).
+            await deps.deleteRoom(id);
+        }
         stop();
         deps.toLobby();
     }
@@ -263,7 +539,7 @@ export function createAlkkagiLiveMode(deps) {
         return dialog(
             '차례가 없어요. 두 사람이 동시에 쏴요.<br>한 번 쏘면 5초 동안 쉬어요. 카드 아래 막대와 알 둘레 고리가 다 차면 다시 쏠 수 있어요.<br>'
             + '내 알을 꾹 잡고 반대쪽으로 당겼다가 놓으면 튕겨 나가요. 알이 움직이는 중에도 쏠 수 있어요.<br>'
-            + '상대 알을 먼저 모두 떨어뜨리면 이겨요. 마지막 알이 함께 떨어지면 비겨요.<br>판 계산은 방장 기기가 해요.',
+            + '상대 알을 먼저 모두 떨어뜨리면 이겨요. 마지막 알이 함께 떨어지면 비겨요.<br>방장 화면 판이 기준이에요. 한 기기에서는 창 하나로만 둘 수 있어요.',
             [{ label: '알겠어요', value: true, main: true }],
             '실시간 규칙',
         );
@@ -271,5 +547,5 @@ export function createAlkkagiLiveMode(deps) {
 
     function refresh() { if (room) chrome(); }
 
-    return { render, refresh, stop, leave, forfeit, continueGame, close, showRules, closeDialogs, isActive: () => !!room };
+    return { stats: () => ({ ...stats }), render, refresh, stop, leave, forfeit, continueGame, close, showRules, closeDialogs, isActive: () => !!room };
 }

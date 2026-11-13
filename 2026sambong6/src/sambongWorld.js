@@ -634,7 +634,7 @@ import {
     thermometerVotesShouldReplaceValues,
 } from './lib/learningThermometerVotes.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
-import { planEstateMerge } from './lib/estateWrite.js';
+import { countEstateOccupants, planEstateBackup, planEstateMerge, pushEstateBackup } from './lib/estateWrite.js';
 import { pinMasterCanEditShopPrices, pinMasterSkipsTeacherGoogle } from './lib/masterAdminAccess.js';
 import {
     listAllCharacterBases,
@@ -22454,25 +22454,15 @@ ${subjectLine}
                                     };
                                 }
                                 window.renderEstate(); 
+                            } else if (snap.metadata && snap.metadata.fromCache) {
+                                // #105: 인터넷이 끊긴 기기는 서버 답 없이 '문서 없음'을 캐시에서 먼저 받아요.
+                                // 예전에는 이때 새 4×4 판(12·13번만 앉은 판)을 만들어 저장해서, 연결이 돌아오면
+                                // 반 전체 자리표·배열·거래 기록을 덮어썼어요. 이제는 아무것도 쓰지 않고 서버 답을 기다려요.
+                                return;
                             } else if (isLoggedInSession()) {
-                                const built = buildEstateSeatsFromLayout(4, 4, {
-                                    defaultPrice: ESTATE_DEFAULT_PRICE,
-                                    hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
-                                });
-                                const initialSeats = built.seats;
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden = false;
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
-                                const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
-                                rememberEstateServer({});
-                                void commitEstateState({
-                                    seats: initialSeats,
-                                    layout: built.layout,
-                                    purchaseHistory: ph,
-                                }, { allowCreateSeats: true }).catch((e) => console.warn('estate create', e));
+                                // 서버가 '정말 없다'고 한 학급(새 학급)만 처음 판을 만들어요.
+                                // 그래도 트랜잭션 안에서 서버 문서를 다시 읽고, 자리가 있으면 절대 덮지 않아요.
+                                void createEstateIfMissing().catch((e) => console.warn('estate create', e));
                             } else {
                                 const built = buildEstateSeatsFromLayout(4, 4, {
                                     defaultPrice: ESTATE_DEFAULT_PRICE,
@@ -24042,6 +24032,8 @@ ${subjectLine}
             const estateAdmin = window.playerState.isAdmin;
             const resetBtn = document.getElementById('btnEstateReset');
             if (resetBtn) resetBtn.style.display = estateAdmin ? 'block' : 'none';
+            const restoreBtn = document.getElementById('btnEstateRestore');
+            if (restoreBtn) restoreBtn.style.display = estateAdmin ? 'block' : 'none';
             const shuffleBtn = document.getElementById('btnEstateShuffle');
             if (shuffleBtn) shuffleBtn.style.display = estateAdmin ? 'block' : 'none';
             const layoutBtn = document.getElementById('btnEstateLayout');
@@ -28170,17 +28162,77 @@ ${subjectLine}
             };
         }
 
+        /** 서버에 자리표 문서가 정말 없을 때만 처음 판을 만들어요(#105). */
+        async function createEstateIfMissing() {
+            if (!db) return false;
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state');
+            const built = buildEstateSeatsFromLayout(4, 4, {
+                defaultPrice: ESTATE_DEFAULT_PRICE,
+                hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
+            });
+            const seats = built.seats;
+            const history = [];
+            // 시드 학급만 예전처럼 12·13번 지정 자리를 넣어요.
+            if (isSeedDemoClass()) {
+                [[ESTATE_RESTORE_SEOK_SEAT_INDEX, '13'], [ESTATE_RESTORE_HHWANG_SEAT_INDEX, '12']].forEach(([i, sid]) => {
+                    if (!seats[i]) return;
+                    seats[i].owner = sid;
+                    seats[i].locked = false;
+                    seats[i].hidden = false;
+                });
+                history.push({ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' });
+            }
+            let created = false;
+            await runTransaction(db, async (tx) => {
+                const cur = await tx.get(ref);
+                const data = cur.exists() ? (cur.data() || {}) : null;
+                if (data && Array.isArray(data.seats) && data.seats.length > 0) return; // 이미 자리가 있어요: 덮지 않아요
+                tx.set(ref, { seats, layout: built.layout, purchaseHistory: history }, { merge: true });
+                created = true;
+            });
+            if (created) rememberEstateServer({ seats, layout: built.layout, purchaseHistory: history });
+            return created;
+        }
+
+        function estateHistoryRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'history');
+        }
+
+        /**
+         * 자리를 바꾸기 직전 서버에 있던 자리표를 estate/history 에 남겨요(최근 12개, #105).
+         * 마스터가 「자리표 되돌리기」로 고를 수 있어요. 백업이 실패해도 자리 저장은 그대로 해요.
+         */
+        async function backupEstateBeforeWrite(nextSeats, reason) {
+            const snap = planEstateBackup(window._estateServerState, nextSeats, { now: Date.now(), reason });
+            if (!snap) return;
+            try {
+                snap.by = String(boardGameSelfId() || '');
+                await runTransaction(db, async (tx) => {
+                    const cur = await tx.get(estateHistoryRef());
+                    const list = cur.exists() && Array.isArray(cur.data().snaps) ? cur.data().snaps : [];
+                    tx.set(estateHistoryRef(), { snaps: pushEstateBackup(list, snap), updatedAt: Date.now() });
+                });
+            } catch (e) {
+                console.warn('estate backup', e);
+            }
+        }
+
         /**
          * 자리표는 문서 전체를 교체하지 않고, 넘긴 필드만 merge 합니다.
          * 좌석이 없거나 앉은 학생을 빈 값으로 지우면 저장하지 않습니다.
+         * 앉은 학생이 한 번에 절반 넘게 사라지거나 배열이 바뀌는 저장도 마스터 편집(allowClearOccupants)이 아니면 막아요(#105).
+         * 자리를 바꾸기 전에는 서버에 있던 자리표를 자동으로 백업해요.
          */
         async function commitEstateState(patch, opts = {}) {
             if (!db) return false;
-            const plan = planEstateMerge(window._estateServerState, patch, { requireSeats: true, ...opts });
+            const { reason = '', ...mergeOpts } = opts;
+            const plan = planEstateMerge(window._estateServerState, patch, { requireSeats: true, ...mergeOpts });
             if (!plan.write) {
                 console.warn('estate write skipped', plan.seatsSkipped);
                 return false;
             }
+            if (plan.historySkipped) console.warn('estate history skipped', plan.historySkipped);
+            if (plan.patch.seats) await backupEstateBeforeWrite(plan.patch.seats, reason);
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), plan.patch, { merge: true });
             const prev = window._estateServerState || {};
             window._estateServerState = {
@@ -28541,9 +28593,67 @@ ${subjectLine}
                 seats: built.seats,
                 layout: built.layout,
                 purchaseHistory: prevHistory,
-            }, { allowClearOccupants: true, allowCreateSeats: true });
+            }, { allowClearOccupants: true, allowCreateSeats: true, reason: '전체 초기화' });
             if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
             window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록·배열 설정은 보존되었습니다.)");
+        };
+
+        /** ★ 마스터: 자동 백업에서 자리표 되돌리기(#105) ★ */
+        window.openEstateRestore = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 자리표를 되돌릴 수 있습니다.');
+            if (!db) return;
+            let snaps = [];
+            try {
+                const d = await getDoc(estateHistoryRef());
+                snaps = d.exists() && Array.isArray(d.data().snaps) ? d.data().snaps : [];
+            } catch (e) {
+                return window.customAlert('백업을 불러오지 못했습니다: ' + (e && e.message ? e.message : String(e)));
+            }
+            if (!snaps.length) {
+                return window.customAlert('아직 저장된 자리표 백업이 없습니다.\n이제부터 자리가 바뀔 때마다 바뀌기 직전 자리표를 최근 12개까지 자동으로 남깁니다.');
+            }
+            const nameOf = (sid) => {
+                const stu = (window.allStudentsData || []).find((x) => String(x.id) === String(sid));
+                return stu && stu.name ? stu.name : `${sid}번`;
+            };
+            const fmt = (t) => new Date(Number(t) || 0).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const escapeHtml = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const wrap = document.createElement('div');
+            wrap.className = 'fixed inset-0 z-[300] bg-black/70 flex items-center justify-center p-3';
+            wrap.innerHTML = `<div class="glass-panel bg-slate-900 rounded-2xl border border-teal-500/60 w-full max-w-md max-h-[86vh] overflow-y-auto p-4">
+                <h3 class="text-teal-200 font-bold text-base mb-1">자리표 되돌리기</h3>
+                <p class="text-[11px] text-slate-400 mb-3">자리가 바뀌기 직전의 자리표예요. 고르면 그때 자리표와 배열로 돌아가요. 지금 자리표도 백업에 남으니 다시 되돌릴 수 있어요.</p>
+                <div class="flex flex-col gap-2">${snaps.map((sn, i) => {
+                    const layout = sn.layout && sn.layout.rows ? `${sn.layout.rows}×${sn.layout.cols}` : '';
+                    const owners = (sn.seats || []).filter((x) => x && !x.hidden && (x.owner || x.assignee)).slice(0, 6).map((x) => nameOf(x.owner || x.assignee)).join(', ');
+                    return `<button type="button" data-i="${i}" class="text-left bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl px-3 py-2">
+                        <div class="text-white text-xs font-bold">${fmt(sn.at)} · ${Number(sn.occupants) || countEstateOccupants(sn.seats)}명 ${layout ? `· ${layout}` : ''}${sn.reason ? ` · ${escapeHtml(sn.reason)}` : ''}</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 truncate">${escapeHtml(owners)}${(Number(sn.occupants) || 0) > 6 ? ' …' : ''}</div>
+                    </button>`;
+                }).join('')}</div>
+                <button type="button" data-close class="mt-3 w-full bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 rounded-xl font-bold">닫기</button>
+            </div>`;
+            document.body.appendChild(wrap);
+            const close = () => wrap.remove();
+            wrap.querySelector('[data-close]').addEventListener('click', close);
+            wrap.querySelectorAll('[data-i]').forEach((btn) => btn.addEventListener('click', async () => {
+                const sn = snaps[Number(btn.getAttribute('data-i'))];
+                if (!sn) return;
+                const ok = await window.customConfirm(`${fmt(sn.at)} 자리표(${Number(sn.occupants) || countEstateOccupants(sn.seats)}명)로 되돌릴까요?\n지금 자리표는 백업에 남습니다.`);
+                if (!ok) return;
+                const history = Array.isArray(window.estateState && window.estateState.purchaseHistory) ? [...window.estateState.purchaseHistory] : [];
+                history.push({ studentId: 'gm', seatId: -1, price: 0, at: Date.now(), note: `자리표 되돌리기 → ${fmt(sn.at)} 백업` });
+                const patch = { seats: sn.seats.map((x) => ({ ...x })), purchaseHistory: history };
+                if (sn.layout && sn.layout.rows && sn.layout.cols) patch.layout = { rows: sn.layout.rows, cols: sn.layout.cols };
+                try {
+                    const wrote = await commitEstateState(patch, { allowClearOccupants: true, allowCreateSeats: true, reason: '되돌리기 전' });
+                    if (!wrote) return window.customAlert('자리표를 되돌리지 못했습니다.');
+                    close();
+                    await window.customAlert('✅ 자리표를 되돌렸습니다. 광장 배열도 함께 돌아옵니다.');
+                } catch (e) {
+                    await window.customAlert('되돌리기 실패: ' + (e && e.message ? e.message : String(e)));
+                }
+            }));
         };
 
         /**
@@ -28685,7 +28795,7 @@ ${subjectLine}
                         seats: built.seats,
                         layout: built.layout,
                         purchaseHistory: prevHistory,
-                    }, { allowClearOccupants: true, allowCreateSeats: true });
+                    }, { allowClearOccupants: true, allowCreateSeats: true, reason: '자리 배열 변경' });
                     if (!wrote) {
                         await window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
                         return;

@@ -118,6 +118,8 @@ export function createAlkkagiLiveMode(deps) {
         if (live && live.session.isReady()) {
             const s = live.session;
             s.tick(Date.now());
+            // #106: 내 샷을 기다리며 들고 있던 호스트 판을 이번에 맞췄으면 부드럽게 보정해요.
+            if (board && s.drainCorrections) for (const before of s.drainCorrections()) board.correct(before);
             const ev = s.drainEvents();
             for (const l of ev.launches) if (board) board.launched(l.power);
             if (ev.fails.length) failUntil = Date.now() + 2200;
@@ -240,7 +242,7 @@ export function createAlkkagiLiveMode(deps) {
             session.tick(Date.now());
             renderCountdown(Date.now());
             liveChrome();
-            if (board && (session.isMoving() || session.cooldownLeft(seat, Date.now()) > 0)) board.kick();
+            if (board && (session.isMoving() || session.isHolding() || session.cooldownLeft(seat, Date.now()) > 0)) board.kick();
         }, TICK_MS);
     }
 

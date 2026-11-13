@@ -16,6 +16,8 @@ function makeNet({ latency = 120, gid = 1000, stateDoc = null, failIntent = 0 } 
             seat,
             gid,
             now,
+            // 다시 보내기(#106)도 가짜 시계로 기다려요.
+            schedule: (fn, ms) => later(ms, fn),
             send: {
                 writeState: (st) => new Promise((res) => {
                     log.stateWrites += 1;
@@ -170,13 +172,13 @@ describe('실시간 알까기 동기화(가짜 네트워크)', () => {
         g.onSeatDoc('white', { seat: 'white', sid: '5', gid: 1000, n: 1, shot: null }, 30);
         assert.equal(g.myN(), 2);
     });
-    it('샷 의도를 못 보내면 내 화면에서 거두고 바로 다시 쏠 수 있어요', async () => {
-        const net = makeNet({ failIntent: 1 });
+    it('샷 의도를 두 번 다 못 보내면 내 화면에서 거두고 바로 다시 쏠 수 있어요', async () => {
+        const net = makeNet({ failIntent: 2 });
         const start = net.G.stones().map((s) => [s.id, s.x, s.y]);
         assert.equal(net.G.shoot(down('w3', 0.8), net.now()).ok, true);
         await net.run(60);
         assert.notDeepEqual(net.G.stones().map((s) => [s.id, s.x, s.y]), start);
-        await net.run(200);
+        await net.run(1200);
         assert.deepEqual(net.G.stones().map((s) => [s.id, s.x, s.y]), start);
         assert.equal(net.G.drainEvents().fails.length, 1);
         assert.equal(net.G.canShoot(net.now()).ok, true);
@@ -185,5 +187,29 @@ describe('실시간 알까기 동기화(가짜 네트워크)', () => {
         const a = net.H.stones().map((s) => [s.id, s.alive, s.x, s.y]);
         assert.deepEqual(net.G.stones().map((s) => [s.id, s.alive, s.x, s.y]), a);
         assert.equal(net.H.stats().applied, 1);
+    });
+
+    it('#106 한 번 거절된 샷은 잠깐 뒤 다시 보내서, 실패 문구 없이 전달돼요', async () => {
+        const net = makeNet({ failIntent: 1 });
+        await net.run(100);
+        assert.equal(net.G.shoot(down('w3', 0.8), net.now()).ok, true);
+        await net.run(4000);
+        assert.equal(net.G.drainEvents().fails.length, 0);
+        assert.equal(net.H.state().applied.white, 1);
+        assert.equal(net.G.stats().intentRetries, 1);
+        assert.deepEqual(net.G.stones(), net.H.stones());
+    });
+
+    it('#106 내 샷이 든 판이 오기 전의 중간 판으로는 되돌리지 않아요(같은 알이 두 번 굴러가지 않아요)', async () => {
+        const net = makeNet({ latency: 300 });
+        await net.run(100);
+        net.H.shoot(up('b2', 0.9), net.now());
+        await net.run(40);
+        net.G.shoot(down('w3', 0.8), net.now());
+        await net.run(1000);
+        assert.ok((net.G.stats().held || 0) >= 1, '중간 판을 들고 있었어요');
+        await net.run(5000);
+        assert.deepEqual(net.G.stones(), net.H.stones());
+        assert.equal(net.G.isHolding(), false);
     });
 });

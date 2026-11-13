@@ -35,12 +35,20 @@ import {
 } from './alkkagiLiveGame.js';
 
 export const ALKKAGI_LIVE_WRITE_GAP_MS = 250;
+/** 샷 의도 쓰기가 거절되면 이만큼 기다렸다가 같은 샷을 한 번 더 보내요(#106). */
+export const ALKKAGI_LIVE_INTENT_RETRY_MS = 700;
+/**
+ * 게스트: 내 샷이 아직 호스트 판에 들어가지 않은 동안에는 호스트의 중간 판으로 되돌리지 않고 기다려요.
+ * 예전에는 중간 판마다 내 샷을 다시 얹어서, 같은 알이 다른 자리에서 두세 번 굴러가고 겹쳐 보였어요(#106).
+ * 이 시간 안에 내 샷이 든 판이 오지 않으면 그때 한 번만 맞춰요.
+ */
+export const ALKKAGI_LIVE_PENDING_HOLD_MS = 1200;
 
 /**
  * @param {{ seat: string, gid: number, now: number,
  *   send: { writeState: (state:object)=>Promise<any>, writeIntent: (intent:{n:number, shot:object})=>Promise<any>, finish: (result:{winner:string,endReason:string,stones:any[],shots:number})=>void } }} opts
  */
-export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKAGI_LIVE_COOLDOWN_MS, writeGapMs = ALKKAGI_LIVE_WRITE_GAP_MS, hostRole = true } = {}) {
+export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKAGI_LIVE_COOLDOWN_MS, writeGapMs = ALKKAGI_LIVE_WRITE_GAP_MS, hostRole = true, retryMs = ALKKAGI_LIVE_INTENT_RETRY_MS, holdMs = ALKKAGI_LIVE_PENDING_HOLD_MS, schedule = (fn, ms) => setTimeout(fn, ms) } = {}) {
     const me = alkkagiLiveSeat(seat);
     const other = alkkagiLiveOther(me);
     let st = emptyLiveState({ gid }); // 마지막으로 알고 있는 스냅샷(호스트면 내가 쓰는 값)
@@ -56,7 +64,8 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     // 내 샷
     let myN = 0;
     let myLastAt = 0; // 내 시계
-    let pending = null; // 게스트: { n, shot }
+    let pending = null; // 게스트: { n, shot, at }
+    let held = null; // 게스트: 내 샷을 기다리느라 아직 맞추지 않은 호스트 판(#106)
     let inflight = false;
     // 상대 샷(표시용 쿨다운)
     let oppLastAt = 0;
@@ -64,6 +73,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
     let otherIntent = null; // 호스트: 상대 자리 문서 최신값
     const stats = { stateWrites: 0, intentWrites: 0, stateReads: 0, seatReads: 0, rejected: 0, applied: 0, stateWriteFailed: 0, resyncs: 0, foreignStates: 0 };
     const notes = [];
+    const heldReleases = []; // tick에서 맞춘 판의 이전 좌표(화면 보정용)
     // #100 M1: 이 창이 이 자리를 맡았는지(같은 기기 창 잠금). false면 보기만 해요.
     let role = hostRole !== false;
     // 마지막으로 저장에 성공한 내 스냅샷 seq(판 끝내기 전 다시 확인할 때 써요)
@@ -144,15 +154,26 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
             flush(t, true);
             return { ok: true, error: '' };
         }
-        pending = { n: myN, shot };
+        pending = { n: myN, shot, at: t };
         inflight = true;
         stats.intentWrites += 1;
         const n = myN;
-        Promise.resolve()
-            .then(() => send.writeIntent({ n, shot }))
+        const sendOnce = () => Promise.resolve().then(() => send.writeIntent({ n, shot }));
+        // #106: 처음 거절되면(간격·연결) 잠깐 기다렸다가 같은 샷을 한 번 더 보내요. 두 번째도 실패할 때만 알려요.
+        const sendWithRetry = () => sendOnce().catch((e) => new Promise((resolve, reject) => {
+            if (!pending || pending.n !== n) { reject(e); return; }
+            stats.intentRetries = (stats.intentRetries || 0) + 1;
+            note('intent_retry', { n });
+            schedule(() => {
+                if (!pending || pending.n !== n) { reject(e); return; }
+                stats.intentWrites += 1;
+                sendOnce().then(resolve, reject);
+            }, retryMs);
+        }));
+        sendWithRetry()
             .then(() => { inflight = false; })
             .catch(() => {
-                // 규칙(서버 시각 4.5초)이나 연결 때문에 못 보냈어요. 번호를 되돌리고 다시 쏠 수 있게 해요.
+                // 다시 보내도 못 보냈어요(규칙·연결). 번호를 되돌리고 다시 쏠 수 있게 해요.
                 inflight = false;
                 if (pending && pending.n === n) pending = null;
                 myN = Math.max(0, n - 1);
@@ -160,7 +181,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
                 note('intent_failed', { n });
                 events.fails.push({ n, reason: 'send' });
                 // 내 화면에만 먼저 굴린 샷을 거둬요: 마지막으로 받은 방장 판으로 돌아가요.
-                if (!isHost()) engine.adopt(st.stones, { step: st.step, nowMs: lastTick });
+                if (!isHost()) { held = null; engine.adopt(st.stones, { step: st.step, nowMs: lastTick }); }
             });
         return { ok: true, error: '' };
     }
@@ -196,6 +217,27 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
             markOppShot(t);
             events.launches.push({ by: other, id: next.last.id, power: 0.6 });
         }
+        // #106: 게스트이고 내 샷이 아직 이 판에 없으면, 잠깐 맞추지 않고 들고 있어요(tick에서 시간이 넘으면 맞춰요).
+        if (shouldHold(next, t)) {
+            held = next;
+            stats.held = (stats.held || 0) + 1;
+            return null;
+        }
+        held = null;
+        return adoptState(next, t);
+    }
+
+    function shouldHold(next, t) {
+        if (!pending || next.hostSeat === me || next.over) return false;
+        if (next.applied[me] >= pending.n || next.rejected[me] >= pending.n) return false;
+        return t - pending.at < holdMs;
+    }
+
+    /** 들고 있던 호스트 판을 이제 맞춰요. 화면 보정용 이전 좌표를 돌려줘요. */
+    function releaseHeld(t) {
+        if (!held) return null;
+        const next = held;
+        held = null;
         return adoptState(next, t);
     }
 
@@ -223,6 +265,7 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         const next = sanitizeLiveState(doc);
         if (next.gid !== gid) return null;
         stats.resyncs += 1;
+        held = null;
         note('resync', { seq: next.seq, mine: st.seq });
         finishPending = null;
         // 내가 쓴 판 끝이 저장되지 않았으면 판은 아직 안 끝난 거예요.
@@ -361,6 +404,10 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         } else if (isHost()) {
             flush(t); // 끝난 판의 마지막 스냅샷이 아직 못 나갔으면 보내요
         } else {
+            if (held && !shouldHold(held, t)) {
+                const before = releaseHeld(t);
+                if (before) heldReleases.push(before);
+            }
             wasMoving = !engine.isResting();
         }
     }
@@ -388,6 +435,9 @@ export function createLiveSession({ seat, gid, now = 0, send, cooldownMs = ALKKA
         writtenSeq: () => writtenSeq,
         isResyncing: () => resyncing,
         isReady: () => ready,
+        /** tick에서 들고 있던 판을 맞췄으면 그 이전 좌표들(화면 보정용)을 꺼내요. */
+        drainCorrections: () => heldReleases.splice(0),
+        isHolding: () => !!held,
         isFinished: () => finished,
         stones: () => engine.stones(),
         aliveCount: (c) => engine.aliveCount(c),

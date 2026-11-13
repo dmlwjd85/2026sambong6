@@ -44,9 +44,13 @@ export function liveCountdownEndAt({ startedAt = 0, seenAt = 0, countdownMs = AL
     const left = Math.max(0, Math.min(countdownMs, (Number(startedAt) || 0) + countdownMs - seen));
     return left > 0 ? seen + left : 0;
 }
-/** 호스트가 받는 쪽에서 허용하는 최소 간격(도착 시간 흔들림 여유). 규칙은 서버 시각으로 4.5초를 봐요. */
-export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 4000;
-export const ALKKAGI_LIVE_RULE_GAP_MS = 4500;
+/**
+ * 화면은 5초 쿨다운을 보여 주지만, 샷이 서버·호스트에 도착하는 시각은 인터넷 상태에 따라 1~2초씩 흔들려요.
+ * 앞 샷이 늦게 닿고 다음 샷이 제때 닿으면 실제로는 5초 간격인데 4초도 안 된 것처럼 보여 거절됐어요(#106).
+ * 그래서 받는 쪽은 여유를 크게 둬요: 규칙(서버 시각) 3.5초, 호스트(받은 시각) 3초.
+ */
+export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 3000;
+export const ALKKAGI_LIVE_RULE_GAP_MS = 3500;
 export const ALKKAGI_LIVE_END_REASONS = Object.freeze(['out', 'forfeit', 'draw', 'disconnect']);
 export const ALKKAGI_LIVE_SEATS = Object.freeze([ALKKAGI_BLACK, ALKKAGI_WHITE]);
 /**

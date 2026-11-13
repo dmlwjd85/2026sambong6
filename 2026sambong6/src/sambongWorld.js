@@ -398,9 +398,13 @@ import {
     unlockClassModule,
 } from './lib/classModules.js';
 import {
+    EXTERNAL_PORTAL_MAX,
+    appendExternalPortal,
+    externalPortalInputMessage,
     resolveExternalPortals,
     sanitizeExternalPortal,
     sanitizeExternalPortals,
+    validateExternalPortalInput,
 } from './lib/externalPortals.js';
 import {
     applyBankTransfer,
@@ -2791,10 +2795,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function currentExternalPortals() {
-            return resolveExternalPortals(window.globalSettings && window.globalSettings.externalPortals, {
-                isSeed: isSeedDemoClass(),
-                hasModuleRecord: hasClassModuleRecord(window.globalSettings),
-            });
+            return resolveExternalPortals(window.globalSettings && window.globalSettings.externalPortals, { classId: appId });
         }
 
         function buildDefaultRosterFromLegacy() {
@@ -10520,30 +10521,156 @@ ${subjectLine}
             return `${label}은(는) 아직 열려 있지 않습니다.\n선생님이 설정 → 기능에서 해금하면 쓸 수 있어요.`;
         }
 
+        let _externalPortalFormOpen = false;
+        let _externalPortalSaving = false;
+
+        function canRegisterExternalPortal() {
+            return !!(window.playerState && window.playerState.isAdmin && !window.playerState.isGuest);
+        }
+
+        function externalPortalFormHtml() {
+            return `<form id="externalPortalAddForm" class="rounded-2xl border border-cyan-400/50 bg-slate-950/70 p-4 space-y-3" onsubmit="event.preventDefault(); void window.submitExternalPortalAdd();" novalidate>
+                    <div class="text-cyan-100 font-black text-sm">새 링크 등록</div>
+                    <label class="block text-[11px] text-slate-300 font-bold">이름
+                        <input id="externalPortalAddName" type="text" maxlength="24" autocomplete="off" enterkeyhint="next" placeholder="예: 우리 반 패들렛" class="mt-1 w-full min-h-[44px] bg-slate-900 border border-slate-600 focus:border-cyan-400 text-white rounded-xl px-3 py-2 text-sm font-bold">
+                    </label>
+                    <label class="block text-[11px] text-slate-300 font-bold">주소(URL)
+                        <input id="externalPortalAddUrl" type="url" inputmode="url" maxlength="300" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="https://" class="mt-1 w-full min-h-[44px] bg-slate-900 border border-slate-600 focus:border-cyan-400 text-white rounded-xl px-3 py-2 text-sm">
+                    </label>
+                    <p id="externalPortalAddError" class="hidden text-[11px] text-rose-300 font-bold" role="alert"></p>
+                    <p class="text-[10px] text-slate-500">http:// 또는 https:// 주소만 등록돼요. 이 학급에만 저장됩니다.</p>
+                    <div class="flex gap-2 justify-end">
+                        <button type="button" onclick="window.closeExternalPortalAddForm()" class="min-h-[44px] px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">취소</button>
+                        <button type="submit" id="externalPortalAddSubmit" class="min-h-[44px] px-5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-black">등록</button>
+                    </div>
+                </form>`;
+        }
+
         function renderExternalPortalList() {
             const box = document.getElementById('externalPortalList');
             if (!box) return;
             const list = currentExternalPortals();
-            if (!list.length) {
-                box.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-6 leading-relaxed">이 학급에 등록된 외부 세계 링크가 없습니다.<br>선생님이 설정 → 기능에서 주소를 넣을 수 있어요.</p>';
+            const canAdd = canRegisterExternalPortal();
+            if (!canAdd) _externalPortalFormOpen = false;
+            const full = list.length >= EXTERNAL_PORTAL_MAX;
+            if (!list.length && !_externalPortalFormOpen) {
+                box.innerHTML = canAdd
+                    ? `<div class="rounded-2xl border-2 border-dashed border-cyan-400/40 bg-slate-950/40 px-4 py-8 text-center">
+                        <p class="text-white font-black text-base">링크를 등록하세요</p>
+                        <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">+ 버튼을 눌러 이름과 주소를 넣으면<br>학생들이 여기서 바로 이동할 수 있어요.</p>
+                        <button type="button" onclick="window.openExternalPortalAddForm()" aria-label="링크 등록" class="mt-4 mx-auto w-16 h-16 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white text-4xl leading-none font-black flex items-center justify-center shadow-lg shadow-cyan-900/50 transition"><span aria-hidden="true" class="-mt-1">+</span></button>
+                    </div>`
+                    : `<div class="rounded-2xl border-2 border-dashed border-slate-600 bg-slate-950/40 px-4 py-8 text-center">
+                        <p class="text-white font-black text-base">링크를 등록하세요</p>
+                        <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">아직 등록된 외부 세계가 없어요.<br>선생님이 링크를 등록하면 여기에 나타나요.</p>
+                    </div>`;
                 return;
             }
-            box.innerHTML = list.map((row) => {
+            const cards = list.map((row) => {
                 const tone = PORTAL_TONE_UI[row.tone] || PORTAL_TONE_UI.sky;
                 const name = escapeHtmlAttr(row.name);
                 const desc = escapeHtmlAttr(row.desc || '새 창으로 이동합니다');
                 const url = escapeHtmlAttr(row.url);
                 const emoji = escapeHtmlAttr(row.emoji || '🌐');
+                // 'ㄱㄴㄷ'처럼 글자 아이콘은 한 줄에 작게(아이콘 칸 밖으로 넘치지 않게)
+                const emojiSize = Array.from(String(row.emoji || '🌐')).length > 2 ? 'text-sm font-black whitespace-nowrap text-white' : 'text-3xl';
                 return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border ${tone.border} ${tone.bg} p-4 flex items-center gap-3 transition">
-                    <div class="w-12 h-12 rounded-2xl ${tone.wrap} flex items-center justify-center text-3xl group-hover:scale-110 transition">${emoji}</div>
+                    <div class="w-12 h-12 shrink-0 rounded-2xl ${tone.wrap} flex items-center justify-center ${emojiSize} group-hover:scale-110 transition">${emoji}</div>
                     <div class="flex-1 min-w-0">
-                        <div class="${tone.name} font-black text-sm">${name}</div>
-                        <div class="text-[10px] text-slate-400">${desc}</div>
+                        <div class="${tone.name} font-black text-sm truncate">${name}</div>
+                        <div class="text-[10px] text-slate-400 truncate">${desc}</div>
                     </div>
                     <i class="fa-solid fa-arrow-up-right-from-square ${tone.icon}"></i>
                 </a>`;
-            }).join('');
+            });
+            if (canAdd && _externalPortalFormOpen) {
+                cards.push(externalPortalFormHtml());
+            } else if (canAdd && !full) {
+                cards.push(`<button type="button" onclick="window.openExternalPortalAddForm()" class="rounded-2xl border-2 border-dashed border-cyan-400/40 hover:border-cyan-300 bg-slate-950/30 hover:bg-slate-900/50 p-4 min-h-[64px] flex items-center justify-center gap-2 text-cyan-200 text-sm font-black transition" aria-label="링크 등록">
+                    <span aria-hidden="true" class="text-xl leading-none">+</span> 링크 등록
+                </button>`);
+            } else if (canAdd && full) {
+                cards.push(`<p class="text-[10px] text-slate-500 text-center">링크는 ${EXTERNAL_PORTAL_MAX}개까지 등록할 수 있어요. 설정 → 기능에서 정리할 수 있어요.</p>`);
+            }
+            box.innerHTML = cards.join('');
         }
+
+        window.openExternalPortalAddForm = function() {
+            if (!canRegisterExternalPortal()) return window.customAlert(`링크 등록은 ${getMasterDisplayName()}만 할 수 있어요.`);
+            if (currentExternalPortals().length >= EXTERNAL_PORTAL_MAX) return window.customAlert(externalPortalInputMessage('full'));
+            _externalPortalFormOpen = true;
+            renderExternalPortalList();
+            const nameEl = document.getElementById('externalPortalAddName');
+            if (nameEl) {
+                nameEl.focus();
+                nameEl.scrollIntoView({ block: 'nearest' });
+            }
+        };
+
+        window.closeExternalPortalAddForm = function() {
+            _externalPortalFormOpen = false;
+            renderExternalPortalList();
+        };
+
+        function showExternalPortalAddError(msg) {
+            const el = document.getElementById('externalPortalAddError');
+            if (!el) return;
+            el.textContent = msg || '';
+            el.classList.toggle('hidden', !msg);
+        }
+
+        /** + 버튼 등록: 서버 목록을 트랜잭션으로 읽어 끝에 1개만 붙입니다(다른 기기에서 넣은 링크를 덮지 않음). */
+        window.submitExternalPortalAdd = async function() {
+            if (_externalPortalSaving) return;
+            if (!canRegisterExternalPortal()) return window.customAlert(`링크 등록은 ${getMasterDisplayName()}만 할 수 있어요.`);
+            const name = document.getElementById('externalPortalAddName')?.value || '';
+            const url = document.getElementById('externalPortalAddUrl')?.value || '';
+            const check = validateExternalPortalInput({ name, url });
+            if (!check.ok) {
+                showExternalPortalAddError(externalPortalInputMessage(check.reason));
+                document.getElementById(check.reason === 'name' || check.reason === 'name_long' ? 'externalPortalAddName' : 'externalPortalAddUrl')?.focus();
+                return;
+            }
+            if (!db) return showExternalPortalAddError('서버에 연결되지 않았습니다.');
+            const btn = document.getElementById('externalPortalAddSubmit');
+            _externalPortalSaving = true;
+            if (btn) { btn.disabled = true; btn.textContent = '등록 중…'; }
+            showExternalPortalAddError('');
+            let failReason = '';
+            let savedList = null;
+            try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
+                const ref = getGlobalSettingsDocRef();
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const serverList = snap.exists() ? (snap.data() || {}).externalPortals : undefined;
+                    const res = appendExternalPortal(serverList, { name, url }, { classId: appId });
+                    if (!res.ok) {
+                        failReason = res.reason;
+                        return;
+                    }
+                    savedList = res.list;
+                    tx.set(ref, { externalPortals: res.list }, { merge: true });
+                });
+                if (failReason) {
+                    showExternalPortalAddError(externalPortalInputMessage(failReason));
+                    return;
+                }
+                window.globalSettings = { ...(window.globalSettings || {}), externalPortals: savedList };
+                _externalPortalFormOpen = false;
+                renderExternalPortalList();
+                renderGmExternalPortalEditor();
+                window.showToast && window.showToast(`'${check.name}' 링크를 등록했습니다.`);
+            } catch (e) {
+                console.error('submitExternalPortalAdd', e);
+                showExternalPortalAddError('저장하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.');
+            } finally {
+                _externalPortalSaving = false;
+                const b2 = document.getElementById('externalPortalAddSubmit');
+                if (b2) { b2.disabled = false; b2.textContent = '등록'; }
+            }
+        };
 
         function renderClassModuleUnlockList() {
             const box = document.getElementById('classModuleUnlockList');
@@ -10570,10 +10697,6 @@ ${subjectLine}
         function renderGmExternalPortalEditor() {
             const box = document.getElementById('gmExternalPortalEditor');
             if (!box) return;
-            if (isSeedDemoClass()) {
-                box.innerHTML = '<p class="text-[11px] text-slate-300 leading-relaxed">기존 삼봉 교실의 기본 외부 세계 링크는 그대로 둡니다. 새 학급에서는 링크가 비어 있고, 그 반에서만 따로 넣을 수 있습니다.</p>';
-                return;
-            }
             const list = currentExternalPortals();
             const rows = list.map((row, idx) => `
                 <div class="gm-portal-editor-row">
@@ -10588,7 +10711,7 @@ ${subjectLine}
                     <button type="button" onclick="window.addExternalPortalEditorRow()" class="min-h-[40px] px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">링크 추가</button>
                     <button type="button" onclick="void window.saveExternalPortalsFromEditor()" class="min-h-[40px] px-3 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black">링크 저장</button>
                 </div>
-                <p class="text-[9px] text-slate-500 mt-2">http 또는 https 주소만 저장됩니다. 이전 교실 링크는 자동으로 가져오지 않습니다.</p>`;
+                <p class="text-[9px] text-slate-500 mt-2">http 또는 https 주소만 저장됩니다. 외부 세계 창의 + 버튼으로도 등록할 수 있습니다.</p>`;
         }
 
         window.addExternalPortalEditorRow = function() {
@@ -10611,7 +10734,6 @@ ${subjectLine}
 
         window.saveExternalPortalsFromEditor = async function() {
             if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 저장할 수 있습니다.');
-            if (isSeedDemoClass()) return window.customAlert('기존 삼봉 교실의 기본 링크는 여기서 바꾸지 않습니다.');
             if (!db) return window.customAlert('서버에 연결되지 않았습니다.');
             const rows = [...document.querySelectorAll('#gmExternalPortalEditor .gm-portal-editor-row')].map((row, idx) => ({
                 emoji: row.querySelector('[data-portal-field="emoji"]')?.value,
@@ -11898,6 +12020,7 @@ ${subjectLine}
         };
 
         window.closeExternalPortal = function() {
+            _externalPortalFormOpen = false;
             const modal = document.getElementById('externalPortalModal');
             if (modal) modal.classList.add('hidden');
         };

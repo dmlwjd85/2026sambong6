@@ -62,7 +62,10 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
                 <div class="mathviz-units">${MATH_UNITS.filter((u) => u.term === term).map((u) => `<button type="button" class="mathviz-unit${u.id === unit.id ? ' is-on' : ''}" data-math="unit" data-unit="${u.id}"><b>${u.no}</b><span>${esc(u.name)}</span></button>`).join('')}</div>
             </div>
             <div class="mathviz-main">
+                <div class="mathviz-top">
                 <div class="mathviz-concepts">${unit.concepts.map((c) => `<button type="button" class="mathviz-chip${c.id === concept.id ? ' is-on' : ''}" data-math="concept" data-concept="${c.id}">${esc(c.name)}</button>`).join('')}</div>
+                    <button type="button" class="mathviz-btn mathviz-fullbtn" data-math="screen" aria-pressed="${isFull() ? 'true' : 'false'}">${isFull() ? '🗗 전체화면 끄기' : '⛶ 전체화면'}</button>
+                </div>
                 <div class="mathviz-params">${concept.params.map((p) => paramHtml(p, st.params[p.key])).join('')}
                     <button type="button" class="mathviz-reset" data-math="reset">처음 값으로</button>
                 </div>
@@ -71,13 +74,30 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
                     <button type="button" class="mathviz-btn is-main" data-math="png">🖼️ 그림(PNG) 저장</button>
                     <button type="button" class="mathviz-btn" data-math="copy">📋 그림 복사</button>
                     <button type="button" class="mathviz-btn" data-math="svg">SVG 저장</button>
-                    <button type="button" class="mathviz-btn" data-math="full">🔍 크게 보기</button>
+                    <button type="button" class="mathviz-btn" data-math="full">🔍 그림만 크게</button>
                 </div>
                 <p class="mathviz-note">숫자를 바꾸면 그림이 바로 바뀌어요. 저장한 그림은 학습지·발표 자료에 붙여 쓸 수 있어요.</p>
             </div>
         </div>`;
         st.rendering = false;
         remember();
+    }
+
+    /** 도구 전체를 전체화면으로(숫자를 바꾸면서 TV에 띄울 때). 전체화면이 안 되는 기기는 화면을 가득 덮어요. */
+    const isFull = () => { const el = host(); return !!el && (document.fullscreenElement === el || el.classList.contains('is-full')); };
+    async function toggleScreen() {
+        const el = host();
+        if (!el) return;
+        if (document.fullscreenElement === el) { await document.exitFullscreen(); return; }
+        if (el.classList.contains('is-full')) { el.classList.remove('is-full'); render(); return; }
+        if (document.fullscreenElement) await document.exitFullscreen();
+        try {
+            if (!el.requestFullscreen) throw new Error('no fullscreen');
+            await el.requestFullscreen({ navigationUI: 'hide' });
+        } catch (_) {
+            el.classList.add('is-full');
+            render();
+        }
     }
 
     const fileName = () => `수학개념_${(last ? last.title : '').replace(/[^0-9A-Za-z가-힣\s-]/g, '').trim().replace(/\s+/g, '_')}`;
@@ -127,6 +147,7 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
                 toast('그림을 복사했어요. 붙여넣기 하면 돼요.');
                 return;
             }
+            if (kind === 'screen') { await toggleScreen(); return; }
             if (kind === 'full') {
                 const stage = host().querySelector('[data-math-stage]');
                 if (document.fullscreenElement) await document.exitFullscreen();
@@ -142,6 +163,14 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         const el = host();
         if (!el || st.bound) return;
         st.bound = true;
+        el.classList.add('mathviz-root');
+        // 전체화면에 들어가거나 나오면(Esc 포함) 버튼 글자를 맞춰요.
+        document.addEventListener('fullscreenchange', () => {
+            const h = host();
+            if (!h || !h.isConnected) return;
+            const now = document.fullscreenElement === h;
+            if (now !== !!st.wasFull) { st.wasFull = now; render(); } // '그림만 크게'일 때는 다시 그리지 않아요
+        });
         el.addEventListener('click', (e) => {
             const t = e.target.closest('[data-math]');
             if (!t || !el.contains(t)) return;

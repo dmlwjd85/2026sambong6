@@ -40,3 +40,18 @@
     .mathviz-units { flex-direction: row; flex-wrap: wrap; }
     .mathviz-unit { flex: 1 1 46%; font-size: 12px; }
 }
+
+/* 전체화면: 도구 전체를 화면 가득(숫자를 바꾸면서 TV에 띄울 때) */
+.mathviz-top { display: flex; align-items: flex-start; gap: 0.5rem; }
+.mathviz-top .mathviz-concepts { flex: 1; min-width: 0; }
+.mathviz-fullbtn { flex: 0 0 auto; background: #1e3a8a; border-color: #93c5fd; color: #fff; white-space: nowrap; }
+.mathviz-root:fullscreen, .mathviz-root.is-full { background: #0b1220; padding: 0.8rem; overflow: auto; box-sizing: border-box; }
+.mathviz-root.is-full { position: fixed; inset: 0; z-index: 300; }
+.mathviz-root:fullscreen .mathviz, .mathviz-root.is-full .mathviz { min-height: 100%; grid-template-columns: 12rem minmax(0, 1fr); }
+/* 그림이 화면 높이 안에 다 들어오게 폭을 높이에 맞춰요(그림 비율 800:520) */
+.mathviz-root:fullscreen .mathviz-stage, .mathviz-root.is-full .mathviz-stage { width: min(100%, calc((100vh - 15rem) * 800 / 520)); margin: 0 auto; }
+.mathviz-root:fullscreen .mathviz-note, .mathviz-root.is-full .mathviz-note { display: none; }
+@media (max-width: 760px) {
+    .mathviz-root:fullscreen .mathviz, .mathviz-root.is-full .mathviz { grid-template-columns: minmax(0, 1fr); }
+    .mathviz-root:fullscreen .mathviz-stage, .mathviz-root.is-full .mathviz-stage { width: 100%; }
+}

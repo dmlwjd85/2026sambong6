@@ -483,7 +483,7 @@ export function bindOxQuiz(stage, api) {
     });
 
     return {
-        async open(mode) {
+        async open(mode, roomId) {
             stage.classList.remove('hidden');
             try {
                 const loaded = await api.load();
@@ -505,7 +505,7 @@ export function bindOxQuiz(stage, api) {
             render();
             if (classUi) classUi.open();
             if (challengeUi) challengeUi.open();
-            if (mode === 'boss' && bossUi) switchMode('boss');
+            if (mode === 'boss' && bossUi) { switchMode('boss'); if (roomId) void bossUi.join(roomId); }
         },
         close() {
             stopTimer();

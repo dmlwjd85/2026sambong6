@@ -651,5 +651,13 @@ export function createPetMode(deps) {
         }
     }
 
-    return { open, render, showsClass: () => tab === 'class' && !busy, isOpen, close: () => raid.stop() };
+    /** 위쪽 알림에서 '참가'를 누르면: 탐험 탭을 열고 그 방에 들어가요. */
+    function joinRaid(partyId) {
+        tab = 'raid';
+        raid.start();
+        render();
+        void raid.join(String(partyId));
+    }
+
+    return { joinRaid, open, render, showsClass: () => tab === 'class' && !busy, isOpen, close: () => raid.stop() };
 }

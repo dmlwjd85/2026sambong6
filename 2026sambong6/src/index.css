@@ -7035,3 +7035,23 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .plaza-card-pet .pet-art { position: relative; display: block; width: 100%; height: 100%; }
         .plaza-card-pet img, .plaza-card-pet svg { width: 100%; height: 100%; object-fit: contain; display: block; }
         @media (min-width: 640px) { .plaza-card-pet { width: 34px; height: 34px; } }
+
+        /* 맨 위 작은 알림: 누군가 탐험 방을 만들면 '도움이 필요합니다!' */
+        .raid-call {
+            position: fixed; z-index: 95; left: 50%; top: calc(6px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+            display: flex; align-items: stretch; max-width: min(94vw, 30rem); border-radius: 999px; overflow: hidden;
+            background: linear-gradient(90deg, #b91c1c, #ea580c); border: 2px solid #fde68a; color: #fff;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+        }
+        .raid-call.hidden { display: none; }
+        .raid-call.is-new { animation: raid-call-in 0.45s cubic-bezier(.2, 1.5, .4, 1), raid-call-pulse 1.1s ease-in-out 0.45s 3; }
+        @keyframes raid-call-in { from { transform: translate(-50%, -140%); } }
+        @keyframes raid-call-pulse { 50% { box-shadow: 0 0 0 6px rgba(253, 230, 138, 0.45), 0 6px 18px rgba(0, 0, 0, 0.45); } }
+        .raid-call-main { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 4px 4px 10px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+        .raid-call-sos { font-size: 1.1rem; }
+        .raid-call-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+        .raid-call-text b { font-size: 12px; font-weight: 900; }
+        .raid-call-text i { font-style: normal; font-size: 10px; font-weight: 700; color: #ffedd5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .raid-call-go { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; background: #fde68a; color: #7c2d12; font-size: 12px; font-weight: 900; }
+        .raid-call-x { flex: 0 0 auto; width: 30px; background: rgba(0, 0, 0, 0.25); border: 0; color: #fff; font-size: 12px; cursor: pointer; }
+        @media (prefers-reduced-motion: reduce) { .raid-call.is-new { animation: none; } }

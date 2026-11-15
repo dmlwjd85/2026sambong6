@@ -326,6 +326,9 @@ import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { createChessTutorial } from './chessTutorial.js';
 import { createMindMode } from './mindMode.js';
 import { createPetMode } from './petMode.js';
+import { createRaidCallBanner } from './raidCallBanner.js';
+import { raidMaxParty, sanitizeRaidSettings } from './lib/petRaid.js';
+import { isOxbOpen, sanitizeOxbSettings } from './lib/oxBossRaid.js';
 import { petBoxMain, sanitizePetBox } from './lib/petGame.js';
 import { petArtHtml } from './lib/petArt.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
@@ -1376,7 +1379,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.61';
+        const APP_VERSION = 'v1.62';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10532,8 +10535,8 @@ ${subjectLine}
             if (oxQuizUi) void oxQuizUi.open();
         };
         /** 주말 보스레이드(OX 릴레이)를 바로 열어요. */
-        window.openOxBossRaid = function() {
-            if (oxQuizUi) void oxQuizUi.open('boss');
+        window.openOxBossRaid = function(roomId) {
+            if (oxQuizUi) void oxQuizUi.open('boss', typeof roomId === 'string' ? roomId : '');
         };
         window.closeOxQuiz = function() {
             if (oxQuizUi) oxQuizUi.close();
@@ -10599,6 +10602,30 @@ ${subjectLine}
                 window.globalSettings = { ...(window.globalSettings || {}), petSettings };
             },
         });
+
+        // 누군가 탐험 방을 만들면 화면 맨 위에 '도움이 필요합니다!'가 떠요. 누르면 바로 참가해요.
+        const _raidCalls = createRaidCallBanner({
+            canShow: () => !!(db && window.playerState && !window.playerState.isGuest && currentStudentDocRef && localStorage.getItem('sambong_student_id')),
+            selfId: () => String(localStorage.getItem('sambong_student_id') || ''),
+            watchPet: (cb) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'petRaids'), (snap) => {
+                cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+            }, (err) => { console.warn('petRaids call', err); cb([]); }),
+            watchBoss: (cb) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'oxBossRaids'), (snap) => {
+                cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+            }, (err) => { console.warn('oxBossRaids call', err); cb([]); }),
+            petMax: () => raidMaxParty(sanitizeRaidSettings(((window.globalSettings && window.globalSettings.petSettings) || {}).raid), getActiveStudentIds().length),
+            petStageName: (stage) => { const st = sanitizeRaidSettings(((window.globalSettings && window.globalSettings.petSettings) || {}).raid).stages[stage - 1]; return st ? st.name : ''; },
+            bossOpen: () => !!(window.playerState && window.playerState.isAdmin) || isOxbOpen(getLocalDateStr(), window.globalSettings && window.globalSettings.oxBossSettings),
+            bossName: (idx) => { const b = sanitizeOxbSettings(window.globalSettings && window.globalSettings.oxBossSettings).bosses[idx]; return b ? b.name : ''; },
+            joinPet: (roomId) => {
+                window.closeOxQuiz();
+                challengeSub = 'pet';
+                window.switchTab('challenge', 'pet');
+                _petMode.joinRaid(roomId);
+            },
+            joinBoss: (roomId) => { window.openOxBossRaid(String(roomId)); },
+        });
+        window.refreshRaidCalls = () => _raidCalls.sync();
 
         window.refreshPetModeIfOpen = () => { if (challengeSub === 'pet' && _petMode.isOpen() && _petMode.showsClass()) _petMode.render(); };
 

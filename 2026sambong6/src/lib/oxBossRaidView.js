@@ -717,5 +717,5 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
         stage.classList.remove('is-boss', 'is-play');
     }
 
-    return { isActive: () => st.active, enter, leave: leaveMode, close: leaveMode, render: () => { if (!$('.oxb-scene') || st.result) render(); }, handleClick };
+    return { isActive: () => st.active, enter, join, leave: leaveMode, close: leaveMode, render: () => { if (!$('.oxb-scene') || st.result) render(); }, handleClick };
 }

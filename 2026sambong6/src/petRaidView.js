@@ -598,5 +598,5 @@ export function createPetRaidView(ctx) {
         if (sel) void changeStage(Number(sel.value) || 1);
     }
 
-    return { start, stop, html, handle, onChange, maybePlay, isPlaying: () => !!playing, _playBattle: playBattle };
+    return { start, stop, html, handle, onChange, maybePlay, join, isPlaying: () => !!playing, _playBattle: playBattle };
 }

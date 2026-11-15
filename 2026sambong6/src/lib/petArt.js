@@ -1,5 +1,7 @@
 /**
- * 메이트 펫 그림(SVG 문자열, DOM 없음). 일곱 종 × 세 단계를 도형으로 그려요.
+ * 메이트 펫 그림(문자열, DOM 없음).
+ * 기본 그림은 public/pets/ 의 일러스트(종 × 단계 21장 + 알, WebP)예요. petArtHtml·petEggHtml 이 <img>를 만들어요.
+ * 아래 petSvg 는 그림 파일을 못 불러올 때 대신 쓰는 도형 그림이에요. 일곱 종 × 세 단계를 도형으로 그려요.
  * 모두 이 앱을 위해 새로 만든 몬스터예요. 종마다 귀·꼬리·머리 장식이 다르고, 단계가 오를수록 몸이 커지고 장식이 늘어요.
  * shiny(색이 다른 펫)는 색만 바꿔요. mood에 따라 눈·입이 달라져요.
  */
@@ -223,4 +225,57 @@ ${cracks}
 /** 도감용 그림자(아직 못 만난 종) */
 export function petSilhouetteSvg() {
     return `<svg class="pet-svg" viewBox="0 0 120 120" role="img" aria-hidden="true"><ellipse cx="60" cy="86" rx="24" ry="20" fill="#334155"/><circle cx="60" cy="52" r="26" fill="#334155"/><text x="60" y="62" text-anchor="middle" font-size="28" font-weight="900" fill="#64748b">?</text></svg>`;
+}
+
+/* ---------- 일러스트(그림 파일) ---------- */
+
+const ART_SPECIES = Object.freeze(['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake']);
+
+/** 앱 기준 주소(Vite base). 테스트(node)에서는 상대 경로를 써요. */
+function assetBase() {
+    try {
+        const b = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || '';
+        return b ? (b.endsWith('/') ? b : `${b}/`) : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+const safeSpecies = (species) => (ART_SPECIES.includes(species) ? species : 'emberkit');
+const safeStage = (stage) => Math.max(1, Math.min(3, Math.floor(stage) || 1));
+
+/** 펫 그림 파일 주소 */
+export function petImageUrl(species, stage = 1) {
+    return `${assetBase()}pets/${safeSpecies(species)}_${safeStage(stage)}.webp`;
+}
+
+/** 알 그림 파일 주소 */
+export function petEggImageUrl() {
+    return `${assetBase()}pets/egg.webp`;
+}
+
+/**
+ * 펫 일러스트 마크업. 그림을 못 불러오면 화면 쪽(petMode)이 data-* 값으로 petSvg 를 대신 넣어요.
+ * shiny 는 같은 그림에 CSS 색 필터를 씌워요(.is-shiny.sp-종). silhouette 은 도감의 '아직 못 만난' 그림자예요.
+ * @param {{ species: string, stage?: number, shiny?: boolean, mood?: string, eager?: boolean, silhouette?: boolean, alt?: string }} o
+ */
+export function petArtHtml({ species = 'emberkit', stage = 1, shiny = false, mood = 'happy', eager = false, silhouette = false, alt = '' } = {}) {
+    const sp = safeSpecies(species);
+    const st = safeStage(stage);
+    const m = ['happy', 'ok', 'hungry', 'starving'].includes(mood) ? mood : 'happy';
+    const cls = `pet-art sp-${sp} st-${st} mood-${m}${shiny && !silhouette ? ' is-shiny' : ''}${silhouette ? ' is-silhouette' : ''}`;
+    const a = String(alt || '').replace(/[<>&"]/g, '');
+    return `<span class="${cls}" data-pet-sp="${sp}" data-pet-st="${st}" data-pet-shiny="${shiny ? 1 : 0}" data-pet-mood="${m}"><img class="pet-img" src="${petImageUrl(sp, st)}" alt="${a}" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false"></span>`;
+}
+
+/** 알 일러스트 + 금(taps가 늘수록 늘어요). 금은 그림 위에 SVG로 겹쳐 그려요. */
+export function petEggHtml({ taps = 0, total = 10, eager = true } = {}) {
+    const k = Math.max(0, Math.min(1, taps / Math.max(1, total)));
+    const cracks = [
+        'M40 40l7 5l-4 7l8 4',
+        'M70 30l-6 6l5 6l-5 7',
+        'M34 66l8-3l4 6l7-3',
+        'M72 62l-7 2l-3 7',
+    ].slice(0, Math.ceil(k * 4)).map((d) => `<path d="${d}" fill="none" stroke="#3b2a1a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#fff8e1" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" transform="translate(0.8 0.8)" opacity="0.8"/>`).join('');
+    return `<span class="pet-art is-egg" data-pet-egg="1" data-pet-taps="${Math.round(k * 100)}"><img class="pet-img" src="${petEggImageUrl()}" alt="" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false">${cracks ? `<svg class="pet-egg-cracks" viewBox="0 0 100 100" aria-hidden="true">${cracks}</svg>` : ''}</span>`;
 }

@@ -1,83 +1,186 @@
-/* 메이트 펫(#challengePane-pet) */
+/* 메이트 펫(#challengePane-pet): 몬스터 키우기 게임 느낌의 타입별 색 카드·무대 */
 #challengePane-pet { position: relative; }
-.pet-body { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.6rem; }
-.pet-tabs { display: flex; align-items: center; gap: 0.35rem; }
+.pet-body { max-width: 600px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.65rem; }
+
+/* 타입 색(밝은색 --t1, 진한색 --t2, 아주 진한색 --t3, 하늘 --sky) */
+#challengePane-pet { --t1: #facc15; --t2: #b45309; --t3: #422006; --sky: #fde68a; }
+#challengePane-pet .type-fire { --t1: #fb923c; --t2: #ea580c; --t3: #7c2d12; --sky: #fed7aa; }
+#challengePane-pet .type-water { --t1: #60a5fa; --t2: #2563eb; --t3: #1e3a8a; --sky: #dbeafe; }
+#challengePane-pet .type-grass { --t1: #4ade80; --t2: #16a34a; --t3: #14532d; --sky: #dcfce7; }
+#challengePane-pet .type-electric { --t1: #facc15; --t2: #ca8a04; --t3: #713f12; --sky: #fef9c3; }
+#challengePane-pet .type-ice { --t1: #67e8f9; --t2: #0891b2; --t3: #164e63; --sky: #ecfeff; }
+#challengePane-pet .type-rock { --t1: #d6c7a1; --t2: #a16207; --t3: #44403c; --sky: #f5f5f4; }
+#challengePane-pet .type-star { --t1: #a78bfa; --t2: #7c3aed; --t3: #2e1065; --sky: #ede9fe; }
+
+/* 탭 */
+.pet-tabs { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
 .pet-tab {
     min-height: 40px;
-    padding: 0 0.9rem;
+    padding: 0 0.85rem;
     border-radius: 999px;
-    border: 1px solid #475569;
+    border: 2px solid #334155;
     background: #1e293b;
     color: #cbd5e1;
     font-size: 13px;
     font-weight: 900;
+    box-shadow: 0 2px 0 #0b1220;
 }
-.pet-tab.is-on { background: #facc15; border-color: #fde68a; color: #422006; }
-.pet-wallet { margin-left: auto; font-size: 12px; font-weight: 800; color: #94a3b8; white-space: nowrap; }
+.pet-tab.is-on { background: linear-gradient(180deg, #ef4444, #b91c1c); border-color: #fecaca; color: #fff; box-shadow: 0 2px 0 #7f1d1d; }
+.pet-wallet {
+    margin-left: auto;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    font-size: 12px;
+    font-weight: 800;
+    color: #94a3b8;
+    white-space: nowrap;
+}
 .pet-wallet b { color: #fde68a; font-size: 14px; }
 
+/* 카드: 위쪽 띠가 타입 색이에요 */
 .pet-card {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.8rem;
-    border-radius: 1.2rem;
-    border: 1px solid #475569;
-    background: linear-gradient(180deg, #1e293b, #0f172a);
+    gap: 0.55rem;
+    padding: 0.7rem 0.75rem 0.85rem;
+    border-radius: 1.3rem;
+    border: 3px solid var(--t2);
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--t1) 28%, #0f172a) 0, #111827 9rem),
+        #111827;
+    box-shadow: 0 0 0 2px #0b1220, 0 10px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
+.pet-card.is-egg-card { --t1: #fde68a; --t2: #d97706; --t3: #78350f; --sky: #fffbeb; }
+
+/* 무대: 하늘 + 빛줄기 + 둥근 발판 */
 .pet-stage {
     position: relative;
-    display: grid;
-    place-items: center;
-    height: clamp(180px, 34vh, 250px);
+    display: block;
+    width: 100%;
+    height: clamp(200px, 36vh, 290px);
     border-radius: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: linear-gradient(180deg, #38bdf8 0%, #bae6fd 58%, #86efac 58%, #4ade80 100%);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    background:
+        radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.85) 0, rgba(255, 255, 255, 0) 55%),
+        repeating-conic-gradient(from 0deg at 50% 62%, rgba(255, 255, 255, 0.16) 0 8deg, rgba(255, 255, 255, 0) 8deg 20deg),
+        linear-gradient(180deg, var(--sky) 0%, var(--t1) 70%, var(--t2) 100%);
     overflow: hidden;
+    box-shadow: inset 0 -18px 30px rgba(0, 0, 0, 0.18);
 }
-.pet-stage.type-fire { background: linear-gradient(180deg, #fb923c 0%, #fed7aa 58%, #d6a36c 58%, #b45309 100%); }
-.pet-stage.type-water { background: linear-gradient(180deg, #38bdf8 0%, #e0f2fe 58%, #7dd3fc 58%, #0284c7 100%); }
-.pet-stage.type-grass { background: linear-gradient(180deg, #7dd3fc 0%, #dcfce7 58%, #86efac 58%, #16a34a 100%); }
-.pet-stage.type-electric { background: linear-gradient(180deg, #818cf8 0%, #fef9c3 58%, #fde047 58%, #ca8a04 100%); }
-.pet-stage.type-ice { background: linear-gradient(180deg, #93c5fd 0%, #f0f9ff 58%, #e0f2fe 58%, #bae6fd 100%); }
-.pet-stage.type-rock { background: linear-gradient(180deg, #a5b4fc 0%, #e7e5e4 58%, #a8a29e 58%, #78716c 100%); }
-.pet-stage.type-star { background: linear-gradient(180deg, #1e1b4b 0%, #4c1d95 58%, #312e81 58%, #1e1b4b 100%); }
-.pet-stage.is-egg { background: linear-gradient(180deg, #fef3c7 0%, #fde68a 58%, #d6a36c 58%, #a16207 100%); width: 100%; padding: 0; cursor: pointer; }
-.pet-stage.is-away { filter: grayscale(0.7); }
-.pet-stage.mood-starving, .pet-stage.mood-hungry { filter: saturate(0.7); }
+.pet-stage.type-star {
+    background:
+        radial-gradient(2px 2px at 18% 22%, #fff 50%, transparent 51%),
+        radial-gradient(2px 2px at 72% 14%, #fff 50%, transparent 51%),
+        radial-gradient(1.5px 1.5px at 40% 34%, #fde68a 50%, transparent 51%),
+        radial-gradient(1.5px 1.5px at 86% 40%, #fff 50%, transparent 51%),
+        radial-gradient(2px 2px at 10% 52%, #c4b5fd 50%, transparent 51%),
+        radial-gradient(120% 80% at 50% 10%, rgba(196, 181, 253, 0.55) 0, rgba(196, 181, 253, 0) 60%),
+        linear-gradient(180deg, #1e1b4b 0%, #4c1d95 70%, #2e1065 100%);
+}
+.pet-stage.is-egg { padding: 0; cursor: pointer; }
+.pet-stage.is-away { filter: grayscale(0.75); display: grid; place-items: center; }
+.pet-ground {
+    position: absolute;
+    left: 50%;
+    bottom: 5%;
+    width: min(78%, 330px);
+    height: 18%;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2) 60%, rgba(0, 0, 0, 0) 100%),
+        linear-gradient(180deg, color-mix(in srgb, var(--t2) 70%, #fff), var(--t2));
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 6px 0 color-mix(in srgb, var(--t3) 80%, transparent), inset 0 -6px 12px rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+}
+
+/* 그림 */
+.pet-art { position: relative; display: block; width: 100%; height: 100%; }
+.pet-img { display: block; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; }
 .pet-svg { width: 100%; height: 100%; display: block; overflow: visible; }
-/* 그림은 무대 바닥 가운데에 세워요(단계가 오를수록 커져요). */
+.pet-art.is-silhouette > * { filter: brightness(0) opacity(0.55); }
+.pet-art.is-silhouette > .pet-img { filter: brightness(0) invert(0.2) opacity(0.7); }
+/* 색이 다른 펫: 같은 그림에 색 필터 */
+.pet-art.is-shiny.sp-emberkit > .pet-img { filter: hue-rotate(195deg) saturate(1.15); }
+.pet-art.is-shiny.sp-dropotter > .pet-img { filter: hue-rotate(115deg) saturate(1.4); }
+.pet-art.is-shiny.sp-sproutdeer > .pet-img { filter: hue-rotate(-55deg) saturate(1.25); }
+.pet-art.is-shiny.sp-zapowl > .pet-img { filter: hue-rotate(115deg) saturate(1.1); }
+.pet-art.is-shiny.sp-snowbun > .pet-img { filter: hue-rotate(70deg) saturate(1.8); }
+.pet-art.is-shiny.sp-pebbletle > .pet-img { filter: sepia(0.35) hue-rotate(-35deg) saturate(1.9); }
+.pet-art.is-shiny.sp-stardrake > .pet-img { filter: saturate(0.3) brightness(0.72) contrast(1.2); }
+.pet-art.is-shiny::after {
+    content: '✨';
+    position: absolute;
+    right: 4%;
+    top: 4%;
+    font-size: clamp(10px, 16%, 26px);
+    animation: pet-twinkle 1.6s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* 무대 위 그림: 발판 가운데에 세워요(단계가 오를수록 커져요) */
 .pet-sprite {
     position: absolute;
     left: 50%;
-    bottom: 4%;
-    height: 74%;
-    aspect-ratio: 148 / 154;
+    bottom: 9%;
+    height: 72%;
+    aspect-ratio: 1 / 1;
     transform: translateX(-50%);
     pointer-events: none;
+    filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.12));
 }
-.pet-sprite.stage-2 { height: 84%; }
-.pet-sprite.stage-3 { height: 94%; }
-.pet-sprite.is-egg { height: 82%; aspect-ratio: 1 / 1; }
-.pet-sprite .pet-svg { animation: pet-bob 2.4s ease-in-out infinite; transform-origin: 50% 100%; }
-.pet-stage.mood-starving .pet-sprite .pet-svg { animation-duration: 4.5s; }
-.pet-sprite.is-egg .pet-svg { animation: pet-wobble 2.2s ease-in-out infinite; transform-origin: 50% 92%; }
-.pet-egg-btn.is-tap .pet-sprite .pet-svg { animation: pet-tap 0.3s ease-out; }
-.pet-stage.is-evolve::after {
+.pet-sprite.stage-2 { height: 82%; }
+.pet-sprite.stage-3 { height: 92%; bottom: 7%; }
+.pet-sprite.is-egg { height: 76%; }
+.pet-sprite > .pet-art { animation: pet-bob 2.6s ease-in-out infinite; transform-origin: 50% 96%; }
+.pet-stage.mood-hungry .pet-sprite > .pet-art { animation-duration: 3.6s; }
+.pet-stage.mood-starving .pet-sprite > .pet-art { animation: pet-droop 4.5s ease-in-out infinite; }
+.pet-stage.mood-starving .pet-sprite { filter: saturate(0.55) brightness(0.92); }
+.pet-sprite.is-egg > .pet-art { animation: pet-wobble 2.4s ease-in-out infinite; transform-origin: 50% 92%; }
+.pet-egg-btn.is-tap .pet-sprite > .pet-art { animation: pet-tap 0.3s ease-out; }
+.pet-shine { animation: pet-twinkle 1.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+.pet-egg-cracks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.pet-bubble {
+    position: absolute;
+    left: calc(50% + min(22%, 110px));
+    top: 12%;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px 999px 999px 4px;
+    background: #fff;
+    border: 2px solid #1f2937;
+    color: #1f2937;
+    font-size: 14px;
+    font-weight: 900;
+    animation: pet-float 2.4s ease-in-out infinite;
+    pointer-events: none;
+}
+.pet-bubble.is-good { color: #db2777; }
+.pet-bubble.is-bad { background: #dbeafe; }
+
+/* 진화·부화 연출 */
+.pet-stage.is-evolve::after, .pet-stage.is-hatch::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0) 70%);
-    animation: pet-flash 1.1s ease-out forwards;
+    background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0.85) 25%, rgba(255, 255, 255, 0) 70%);
+    animation: pet-flash 1.3s ease-out forwards;
     pointer-events: none;
 }
-.pet-shine { animation: pet-twinkle 1.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
-.pet-away-note { font-size: 3.4rem; }
-@keyframes pet-bob { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-4%) scale(1.02, 0.98); } }
+.pet-stage.is-evolve .pet-sprite > .pet-art { animation: pet-evolve 1.4s ease-out, pet-bob 2.6s ease-in-out 1.4s infinite; }
+.pet-stage.is-hatch .pet-sprite > .pet-art { animation: pet-hatch 0.9s cubic-bezier(.2, 1.6, .4, 1), pet-bob 2.6s ease-in-out 0.9s infinite; }
+.pet-away-note { font-size: 3.4rem; position: relative; }
+@keyframes pet-bob { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-4%) scale(1.015, 0.985); } }
+@keyframes pet-droop { 0%, 100% { transform: translateY(1%) rotate(-1deg); } 50% { transform: translateY(2%) rotate(1deg); } }
 @keyframes pet-wobble { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-5deg); } 40% { transform: rotate(5deg); } 60% { transform: rotate(-2deg); } 80% { transform: rotate(0); } }
 @keyframes pet-tap { 0% { transform: scale(1); } 40% { transform: scale(0.92, 1.06) rotate(-6deg); } 100% { transform: scale(1); } }
 @keyframes pet-flash { 0% { opacity: 0; transform: scale(0.2); } 30% { opacity: 1; transform: scale(1.4); } 100% { opacity: 0; transform: scale(2); } }
-@keyframes pet-twinkle { 0%, 100% { opacity: 0.3; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.1); } }
+@keyframes pet-evolve { 0% { filter: brightness(1); transform: scale(1); } 25% { filter: brightness(0) invert(1); transform: scale(0.85); } 55% { filter: brightness(0) invert(1); transform: scale(1.12); } 100% { filter: brightness(1); transform: scale(1); } }
+@keyframes pet-hatch { 0% { opacity: 0; transform: scale(0.3) translateY(20%); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes pet-twinkle { 0%, 100% { opacity: 0.35; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.1); } }
+@keyframes pet-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 
 .pet-fx {
     position: absolute;
@@ -87,7 +190,8 @@
     max-width: 92%;
     padding: 0.3rem 0.8rem;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.88);
+    background: rgba(15, 23, 42, 0.9);
+    border: 2px solid rgba(255, 255, 255, 0.7);
     color: #fff;
     font-size: 13px;
     font-weight: 900;
@@ -95,41 +199,63 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    z-index: 2;
     animation: pet-fx-in 0.3s ease-out;
 }
-.pet-fx.is-good { background: #facc15; color: #422006; }
+.pet-fx.is-good { background: #facc15; color: #422006; border-color: #fff; }
 .pet-fx.is-bad { background: #7f1d1d; color: #fecaca; }
 @keyframes pet-fx-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
+/* 이름표 */
 .pet-name-row { display: flex; align-items: center; justify-content: center; gap: 0.4rem; }
-.pet-title { font-size: 1.25rem; font-weight: 900; color: #fff; text-align: center; }
-.pet-mini { width: 36px; height: 36px; border-radius: 50%; border: 1px solid #475569; background: #1e293b; font-size: 14px; }
+.pet-title { font-size: 1.3rem; font-weight: 900; color: #fff; text-align: center; letter-spacing: -0.01em; }
+.pet-mini { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #475569; background: #1e293b; font-size: 14px; }
 .pet-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem; }
 .pet-chip {
     padding: 0.18rem 0.55rem;
     border-radius: 999px;
-    background: #334155;
-    color: #e2e8f0;
+    background: #1f2937;
+    border: 1px solid #374151;
+    color: #e5e7eb;
     font-size: 11px;
     font-weight: 800;
     white-space: nowrap;
 }
-.pet-chip.is-lv { background: #2563eb; color: #fff; }
-.pet-chip.is-enh { background: #f59e0b; color: #422006; }
-.pet-chip.is-shiny { background: #fef08a; color: #713f12; vertical-align: middle; }
+.pet-chip.is-lv { background: #2563eb; border-color: #93c5fd; color: #fff; }
+.pet-chip.is-enh { background: #f59e0b; border-color: #fde68a; color: #422006; }
+.pet-chip.is-shiny { background: #fef08a; border-color: #fff; color: #713f12; vertical-align: middle; }
+/* 타입 배지 */
+.pet-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0.16rem 0.6rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--t1), var(--t2));
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 900;
+    white-space: nowrap;
+    text-shadow: 0 1px 0 var(--t3);
+    box-shadow: 0 1px 0 var(--t3);
+}
 .pet-lead, .pet-mood { font-size: 13px; font-weight: 700; line-height: 1.5; color: #cbd5e1; text-align: center; word-break: keep-all; }
 .pet-lead.is-warn, .pet-mood.is-warn { color: #fca5a5; }
 .pet-note { font-size: 11px; font-weight: 700; color: #94a3b8; text-align: center; word-break: keep-all; }
 .pet-sub { font-size: 12px; font-weight: 900; color: #fde68a; margin-top: 0.2rem; }
 .pet-sub em { font-style: normal; color: #94a3b8; font-weight: 700; }
 
-.pet-bar { display: grid; grid-template-columns: 3.4rem 1fr auto; align-items: center; gap: 0.5rem; font-size: 11px; font-weight: 800; color: #cbd5e1; }
-.pet-bar-track { height: 12px; border-radius: 999px; background: #0f172a; border: 1px solid #475569; overflow: hidden; }
-.pet-bar-track i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #38bdf8, #2563eb); transition: width 0.4s ease; }
-.pet-bar.is-full .pet-bar-track i { background: linear-gradient(90deg, #86efac, #16a34a); }
-.pet-bar.is-low .pet-bar-track i { background: linear-gradient(90deg, #fca5a5, #dc2626); }
+/* 막대(체력바 느낌) */
+.pet-bar { display: grid; grid-template-columns: 3.4rem 1fr auto; align-items: center; gap: 0.5rem; font-size: 11px; font-weight: 900; color: #e5e7eb; }
+.pet-bar-label { padding: 0.05rem 0.35rem; border-radius: 6px; background: #374151; text-align: center; }
+.pet-bar-track { height: 12px; border-radius: 999px; background: #0b1220; border: 2px solid #4b5563; overflow: hidden; }
+.pet-bar-track i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(180deg, #7dd3fc, #2563eb); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35); transition: width 0.4s ease; }
+.pet-bar.is-full .pet-bar-track i { background: linear-gradient(180deg, #86efac, #16a34a); }
+.pet-bar.is-low .pet-bar-track i { background: linear-gradient(180deg, #fca5a5, #dc2626); }
 .pet-bar-num { font-variant-numeric: tabular-nums; min-width: 4.2rem; text-align: right; }
 
+/* 버튼 */
 .pet-btn {
     display: flex;
     flex-direction: column;
@@ -139,20 +265,22 @@
     min-height: 48px;
     padding: 0.4rem 0.6rem;
     border-radius: 0.9rem;
-    border: 1px solid #64748b;
-    background: #334155;
+    border: 2px solid #4b5563;
+    background: linear-gradient(180deg, #374151, #1f2937);
     color: #fff;
     font-size: 13px;
     font-weight: 900;
     text-align: center;
+    box-shadow: 0 3px 0 #0b1220;
 }
 .pet-btn b { font-weight: 900; }
 .pet-btn i { font-style: normal; font-size: 10.5px; font-weight: 700; color: #cbd5e1; word-break: keep-all; }
-.pet-btn:not(:disabled):active { transform: translateY(1px); }
+.pet-btn:not(:disabled):active { transform: translateY(2px); box-shadow: 0 1px 0 #0b1220; }
 .pet-btn:disabled { opacity: 0.45; }
-.pet-btn.is-main { background: linear-gradient(180deg, #facc15, #d97706); border-color: #fde68a; color: #422006; font-size: 15px; }
+.pet-btn.is-main { background: linear-gradient(180deg, #facc15, #d97706); border-color: #fef3c7; color: #422006; font-size: 15px; box-shadow: 0 3px 0 #78350f; }
+.pet-btn.is-main i, .pet-btn.is-main b { color: #422006; }
 .pet-btn.is-evolve { background: linear-gradient(90deg, #f472b6, #a78bfa, #38bdf8); border-color: #fff; font-size: 15px; animation: pet-pulse 1.2s ease-in-out infinite; }
-.pet-btn.is-food { background: #14532d; border-color: #4ade80; }
+.pet-btn.is-food { background: linear-gradient(180deg, #166534, #14532d); border-color: #4ade80; box-shadow: 0 3px 0 #052e16; }
 @keyframes pet-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(244, 114, 182, 0.6); } 50% { box-shadow: 0 0 0 8px rgba(244, 114, 182, 0); } }
 .pet-foods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
 .pet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
@@ -162,51 +290,138 @@
 }
 .pet-link { align-self: center; padding: 0.4rem 0.8rem; font-size: 11px; font-weight: 700; color: #64748b; text-decoration: underline; background: none; border: 0; }
 
-.pet-lineup { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.3rem; }
-.pet-lineup-item { position: relative; width: 62px; height: 66px; border-radius: 0.7rem; background: #0f172a; border: 1px solid #334155; padding: 2px; }
-.pet-lineup-item.is-rare { border-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.5); }
-.pet-lineup-item i { position: absolute; right: 2px; bottom: 0; font-style: normal; font-size: 11px; }
+/* 알 가게의 일곱 종 */
+.pet-lineup { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.35rem; }
+.pet-lineup-item {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, var(--sky), var(--t1) 75%);
+    border: 2px solid var(--t2);
+    padding: 3px;
+    box-shadow: 0 2px 0 var(--t3);
+}
+.pet-lineup-item.is-rare { border-color: #facc15; box-shadow: 0 0 10px rgba(250, 204, 21, 0.7); }
+.pet-lineup-item i { position: absolute; right: -2px; bottom: -2px; font-style: normal; font-size: 12px; background: #111827; border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid #374151; }
 
 /* 반 펫 랭킹 */
-.pet-rank { display: flex; flex-direction: column; gap: 0.35rem; }
+.pet-rank { display: flex; flex-direction: column; gap: 0.4rem; }
 .pet-rank-row {
     display: grid;
-    grid-template-columns: 2rem 56px 1fr auto;
+    grid-template-columns: 2rem 60px 1fr auto;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.6rem;
-    border-radius: 0.9rem;
-    border: 1px solid #334155;
-    background: #1e293b;
+    padding: 0.35rem 0.6rem 0.35rem 0.4rem;
+    border-radius: 1rem;
+    border: 2px solid var(--t2);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--t1) 30%, #111827) 0, #111827 60%);
+    box-shadow: 0 2px 0 #0b1220;
 }
-.pet-rank-row.is-me { border-color: #facc15; background: #422006; }
+.pet-rank-row.is-me { border-color: #facc15; box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35), 0 2px 0 #0b1220; }
 .pet-rank-row.is-away { opacity: 0.6; }
 .pet-rank-no { font-size: 15px; font-weight: 900; color: #fde68a; text-align: center; }
-.pet-rank-art { width: 56px; height: 58px; display: grid; place-items: center; }
+.pet-rank-art {
+    width: 60px;
+    height: 60px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, var(--sky), var(--t1) 80%);
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    overflow: hidden;
+}
+.pet-rank-art .pet-art { width: 56px; height: 56px; }
 .pet-away-mini { font-size: 1.4rem; }
-.pet-rank-text { display: flex; flex-direction: column; min-width: 0; }
+.pet-rank-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pet-rank-text b { font-size: 14px; font-weight: 900; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pet-rank-text b em { font-style: normal; color: #fbbf24; }
-.pet-rank-text i { font-style: normal; font-size: 11px; font-weight: 700; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pet-rank-power { font-size: 15px; font-weight: 900; color: #7dd3fc; font-variant-numeric: tabular-nums; }
+.pet-rank-text i { font-style: normal; font-size: 11px; font-weight: 700; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pet-rank-text .pet-type { align-self: flex-start; font-size: 10px; padding: 0.05rem 0.45rem; }
+.pet-rank-power { display: flex; flex-direction: column; align-items: flex-end; font-size: 16px; font-weight: 900; color: #7dd3fc; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.pet-rank-power small { font-size: 9px; font-weight: 800; color: #94a3b8; }
 
 /* 도감 */
-.pet-dex { display: flex; flex-direction: column; gap: 0.35rem; }
-.pet-dex-row { display: grid; grid-template-columns: 3.2rem repeat(3, minmax(0, 1fr)); align-items: center; gap: 0.35rem; padding: 0.35rem; border-radius: 0.9rem; border: 1px solid #334155; background: #1e293b; }
-.pet-dex-type { font-size: 11px; font-weight: 900; color: #e2e8f0; text-align: center; line-height: 1.3; }
-.pet-dex-type em { font-style: normal; color: #facc15; font-size: 10px; }
-.pet-dex-cell { display: flex; flex-direction: column; align-items: center; background: #0f172a; border-radius: 0.7rem; padding: 2px 2px 4px; }
-.pet-dex-cell .pet-svg { height: 72px; width: auto; }
-.pet-dex-cell i { font-style: normal; font-size: 10.5px; font-weight: 800; color: #e2e8f0; }
-.pet-dex-cell.is-unknown i { color: #64748b; }
+.pet-dex-head {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem 0.9rem;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #ef4444, #b91c1c);
+    border: 3px solid #fecaca;
+    color: #fff;
+    overflow: hidden;
+    box-shadow: 0 3px 0 #7f1d1d;
+}
+.pet-dex-head b { font-size: 15px; font-weight: 900; }
+.pet-dex-head span { font-size: 12px; font-weight: 800; }
+.pet-dex-head em { font-style: normal; font-size: 16px; color: #fef08a; }
+.pet-dex-head i { position: absolute; left: 0.9rem; right: 0.9rem; bottom: 0.35rem; height: 5px; border-radius: 999px; background: linear-gradient(90deg, #fef08a var(--p), rgba(0, 0, 0, 0.3) var(--p)); }
+.pet-dex { display: grid; grid-template-columns: 1fr; gap: 0.45rem; }
+@media (min-width: 900px) {
+    .pet-body.is-tab-dex, .pet-body.is-tab-class { max-width: 920px; }
+    .pet-dex, .pet-rank { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.pet-dex-row {
+    display: grid;
+    grid-template-columns: 4.4rem 1fr;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem;
+    border-radius: 1rem;
+    border: 2px solid #374151;
+    background: #111827;
+}
+.pet-dex-row.is-found { border-color: var(--t2); background: linear-gradient(90deg, color-mix(in srgb, var(--t1) 26%, #111827), #111827 70%); }
+.pet-dex-type { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.pet-dex-type b { font-size: 11px; font-weight: 900; color: #e5e7eb; font-variant-numeric: tabular-nums; }
+.pet-dex-type .pet-type { font-size: 10px; padding: 0.08rem 0.45rem; }
+.pet-dex-type em { font-style: normal; color: #facc15; font-size: 10px; font-weight: 900; }
+.pet-dex-line { display: grid; grid-template-columns: minmax(0, 1fr) 0.7rem minmax(0, 1fr) 0.7rem minmax(0, 1fr); align-items: center; }
+.pet-dex-arrow { color: #64748b; font-size: 11px; text-align: center; }
+.pet-dex-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    min-width: 0;
+    padding: 3px 2px 4px;
+    border-radius: 0.8rem;
+    background: radial-gradient(circle at 50% 38%, var(--sky) 0, var(--t1) 70%, var(--t2) 100%);
+    border: 2px solid rgba(255, 255, 255, 0.55);
+}
+.pet-dex-cell.is-unknown { background: radial-gradient(circle at 50% 38%, #334155, #1e293b 75%); border-color: #334155; }
+.pet-dex-cell .pet-art { width: 100%; max-width: 84px; aspect-ratio: 1 / 1; height: auto; }
+.pet-dex-cell i {
+    max-width: 100%;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: rgba(17, 24, 39, 0.78);
+    font-style: normal;
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pet-dex-cell.is-unknown i { color: #64748b; background: none; }
 
 /* 반응(oxQuizFeedback): 큰 O/X·글자는 빼고 색 번짐·소리·진동만 써요. */
 #challengePane-pet .ox-fx-mark, #challengePane-pet .ox-fx-label { display: none; }
 #challengePane-pet .ox-fx { position: fixed; }
 
 @media (prefers-reduced-motion: reduce) {
-    .pet-sprite .pet-svg, .pet-btn.is-evolve, .pet-shine, .pet-stage.is-evolve::after { animation: none; }
+    .pet-sprite > .pet-art, .pet-btn.is-evolve, .pet-shine, .pet-art.is-shiny::after, .pet-bubble,
+    .pet-stage.is-evolve::after, .pet-stage.is-hatch::after,
+    .pet-stage.is-evolve .pet-sprite > .pet-art, .pet-stage.is-hatch .pet-sprite > .pet-art { animation: none; }
 }
+
+/* 아래 메뉴의 '메이트 펫' 아이콘(알 그림) */
+.app-sub-icon.is-pet img { object-fit: contain; padding: 4px; }
 
 /* 앱 공통 여백이 끼어들지 않게 */
 .pet-body h3, .pet-body p { margin: 0; }

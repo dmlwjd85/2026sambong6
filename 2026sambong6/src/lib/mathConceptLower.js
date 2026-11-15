@@ -37,7 +37,7 @@ const roJosa = (n) => `${n}${[0, 3, 6].includes(Math.abs(Math.round(Number(n))) 
 export const josa = (n, withB, withoutB) => `${n}${hasBatchim(n) ? withB : withoutB}`;
 
 export function buildLowerUnits(kit) {
-    const { C, PALETTE, text, line, rect, poly, frac, fracResult, simplifyFraction, S, P, numText, textWidth, r2, gcd, lcm, isoCube, drawLongDivision, parseGraphItems } = kit;
+    const { C, PALETTE, text, line, rect, poly, frac, fracResult, simplifyFraction, S, M, T, P, numText, textWidth, r2, gcd, lcm, isoCube, drawLongDivision, parseGraphItems } = kit;
     const W = kit.MATH_W;
     const circle = (cx, cy, r, { fill = C.blue, stroke = 'none', width = 2, extra = '' } = {}) => `<circle cx="${r2(cx)}" cy="${r2(cy)}" r="${r2(r)}" fill="${fill}" stroke="${stroke}" stroke-width="${width}" ${extra}/>`;
     const path = (d, { fill = 'none', stroke = C.line, width = 2, dash = '' } = {}) => `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
@@ -128,7 +128,8 @@ export function buildLowerUnits(kit) {
         const gap = 62;
         const x0 = (W - (a + b - 1) * gap) / 2;
         let g = S(1, dotRow(a, x0, 170, 24, gap, C.blue) + text(x0 + ((a - 1) * gap) / 2, 120, `${a}`, { size: 34, fill: C.blue }));
-        g += S(2, dotRow(b, x0 + a * gap, 170, 24, gap, C.orange) + text(x0 + a * gap + ((b - 1) * gap) / 2, 120, `${b}`, { size: 34, fill: '#c2410c' }), 'drop');
+        // 주황 구슬이 오른쪽에서 굴러와 옆에 붙어요.
+        g += M(2, dotRow(b, x0 + a * gap, 170, 24, gap, C.orange) + text(x0 + a * gap + ((b - 1) * gap) / 2, 120, `${b}`, { size: 34, fill: '#c2410c' }), { dx: 170, dy: 150, dur: 1.5 });
         g += S(3, path(`M ${x0 - 24} 210 Q ${W / 2} 262 ${x0 + (a + b - 1) * gap + 24} 210`, { stroke: C.green, width: 4 }) + text(W / 2, 290, `모두 ${a + b}`, { size: 30, fill: '#15803d' }));
         g += S(4, big(W / 2, 390, `${a} + ${b} = ${a + b}`, '#1e3a8a', 60));
         return { body: g, caption: `${a} 더하기 ${b}는 ${a + b}와 같습니다.  ${a} + ${b} = ${a + b}`, steps: [`파란 구슬이 ${a}개 있어요.`, `주황 구슬 ${b}개가 더 왔어요.`, `모두 세어 보면 ${a + b}개예요.`, `식으로 쓰면 ${a} + ${b} = ${a + b}. "${a} 더하기 ${b}는 ${a + b}와 같습니다."`] };
@@ -137,13 +138,16 @@ export function buildLowerUnits(kit) {
     function drawSubDots({ a, b }) {
         const gap = 62;
         const x0 = (W - (a - 1) * gap) / 2;
-        let g = S(1, dotRow(a, x0, 170, 24, gap, C.blue) + text(W / 2, 120, `${a}`, { size: 34, fill: C.blue }));
+        const keep = a - b;
+        // 남는 구슬은 그대로, 덜어 낼 구슬은 2단계에서 아래로 내려가요.
+        let g = S(1, dotRow(keep, x0, 170, 24, gap, C.blue) + text(W / 2, 120, `${a}`, { size: 34, fill: C.blue })) + T(1, 2, dotRow(b, x0 + keep * gap, 170, 24, gap, C.blue));
+        const gone = dotRow(b, x0 + keep * gap, 262, 24, gap, '#bfdbfe');
         let xs = '';
-        for (let i = a - b; i < a; i += 1) xs += cross(x0 + i * gap, 170, 22);
-        g += S(2, xs + text(x0 + (a - b + (b - 1) / 2) * gap, 232, `${b}개를 덜어 내요`, { size: 20, fill: C.red }));
-        g += S(3, (a - b > 0 ? path(`M ${x0 - 24} 204 Q ${x0 + ((a - b - 1) * gap) / 2} 250 ${x0 + (a - b - 1) * gap + 24} 204`, { stroke: C.green, width: 4 }) : '') + text(W / 2, 300, `남은 것 ${a - b}`, { size: 30, fill: '#15803d' }));
-        g += S(4, big(W / 2, 390, `${a} − ${b} = ${a - b}`, '#1e3a8a', 60));
-        return { body: g, caption: `${a} 빼기 ${b}는 ${a - b}와 같습니다.  ${a} − ${b} = ${a - b}`, steps: [`구슬이 ${a}개 있어요.`, `그중 ${b}개를 덜어 내요.`, `남은 구슬을 세어 보면 ${a - b}개예요.`, `식으로 쓰면 ${a} − ${b} = ${a - b}. "${a} 빼기 ${b}는 ${a - b}와 같습니다."`] };
+        for (let i = keep; i < a; i += 1) xs += cross(x0 + i * gap, 262, 20);
+        g += M(2, gone, { dy: -92, dur: 1.3 }) + S(2, text(x0 + (keep + (b - 1) / 2) * gap, 316, `${b}개를 덜어 내요`, { size: 20, fill: C.red }));
+        g += S(3, xs + path(`M ${x0 - 24} 204 Q ${x0 + ((keep - 1) * gap) / 2} 236 ${x0 + (keep - 1) * gap + 24} 204`, { stroke: C.green, width: 4 }) + text(x0 + ((keep - 1) * gap) / 2, 262, `남은 것 ${keep}`, { size: 24, fill: '#15803d' }));
+        g += S(4, big(W / 2, 400, `${a} − ${b} = ${keep}`, '#1e3a8a', 56));
+        return { body: g, caption: `${a} 빼기 ${b}는 ${keep}와 같습니다.  ${a} − ${b} = ${keep}`, steps: [`구슬이 ${a}개 있어요.`, `그중 ${b}개를 덜어 내요.`, `남은 구슬을 세어 보면 ${keep}개예요.`, `식으로 쓰면 ${a} − ${b} = ${keep}. "${a} 빼기 ${b}는 ${keep}와 같습니다."`] };
     }
 
     function drawCompare({ a, b }) {
@@ -235,10 +239,14 @@ export function buildLowerUnits(kit) {
         let g = S(1, tf.box + tf.pts.slice(0, a).map((p) => circle(p[0], p[1], 20, { fill: C.blue })).join('') + text(x0 + cell * 2.5, 96, `${a}`, { size: 28, fill: C.blue }));
         const bx = 530;
         const bdot = (i) => [bx + (i % 5) * 58, 140 + Math.floor(i / 5) * 58];
-        let outside = '';
-        for (let i = 0; i < b; i += 1) { const p = bdot(i); outside += circle(p[0], p[1], 20, { fill: i < move ? C.orangeL : C.orange, stroke: '#c2410c', width: 2 }); }
-        g += S(2, outside + text(bx + 116, 96, `${b}`, { size: 28, fill: '#c2410c' }));
-        g += S(3, tf.pts.slice(a, 10).map((p) => circle(p[0], p[1], 20, { fill: C.orange })).join('') + arrow(bx - 30, 150, x0 + cell * 5 + 12, 150) + text(438, 136, `${move}개 옮기기`, { size: 17, fill: C.red }), 'pop');
+        let stay = '';
+        let leave = '';
+        for (let i = 0; i < b; i += 1) { const p = bdot(i); const c = circle(p[0], p[1], 20, { fill: C.orange, stroke: '#c2410c', width: 2 }); if (i < move) leave += c; else stay += c; }
+        // 옮겨 갈 구슬은 3단계에서 원래 자리를 떠나요.
+        g += S(2, stay + text(bx + 116, 96, `${b}`, { size: 28, fill: '#c2410c' })) + T(2, 3, leave);
+        g += S(3, text(438, 136, `${move}개 옮기기`, { size: 17, fill: C.red }));
+        // 구슬이 하나씩 빈칸으로 날아가 10을 채워요.
+        tf.pts.slice(a, 10).forEach((p, j) => { const from = bdot(j); g += M(3, circle(p[0], p[1], 20, { fill: C.orange, stroke: '#c2410c', width: 2 }), { dx: from[0] - p[0], dy: from[1] - p[1], delay: j * 0.35, dur: 1.1 }); });
         g += S(4, text(x0 + cell * 2.5, 260, '10', { size: 34, fill: '#15803d' }) + text(bx + 116, 290, `남은 ${rest}`, { size: 26, fill: '#c2410c' }));
         g += S(5, big(W / 2, 380, `${a} + ${b} = 10 + ${rest} = ${a + b}`, '#1e3a8a', 44));
         return { body: g, caption: `10을 먼저 만들어요. ${b}를 ${move}와 ${rest}로 가르면 ${a} + ${move} = 10, 10 + ${rest} = ${a + b}`, steps: [
@@ -388,7 +396,7 @@ export function buildLowerUnits(kit) {
                 const out = sum % 10;
                 const c2 = Math.floor(sum / 10);
                 line1 = `${place(i)}의 자리: ${top[i]} + ${bot[i]}${carry ? ` + ${carry}` : ''} = ${sum}${c2 ? ` → ${out}을 쓰고 ${c2}을 윗자리로 올려요.` : ''}`;
-                if (c2 && i > 0) note = text(col(i - 1) + 16, yA - 52, c2, { size: 24, fill: C.red });
+                if (c2 && i > 0) note = `\u0000${M(0, text(col(i - 1) + 16, yA - 52, c2, { size: 24, fill: C.red }), { dx: cw - 40, dy: yR - yA + 44, delay: 0.5, dur: 1.1 })}`;
                 carry = c2;
             } else {
                 const t = top[i] - lend[i] + (borrow[i] ? 10 : 0);
@@ -400,7 +408,10 @@ export function buildLowerUnits(kit) {
                 }
             }
             if (dr[i] === ' ' && !note) continue;
-            g += S(k, note + text(col(i), yR, dr[i], { size: 54, fill: C.blue }) + (dp && i === len - dp ? dot(yR) : ''), 'drop');
+            // 받아올리는 수는 답 자리에서 윗자리 위로 날아가요.
+            const flying = note.startsWith('\u0000');
+            g += S(k, (flying ? '' : note) + text(col(i), yR, dr[i], { size: 54, fill: C.blue }) + (dp && i === len - dp ? dot(yR) : ''), 'drop');
+            if (flying) g += note.slice(1).replace('data-step="0"', `data-step="${k}"`);
             steps.push(line1);
             k += 1;
         }
@@ -520,17 +531,24 @@ export function buildLowerUnits(kit) {
         vals.forEach((v, i) => { for (let k = 0; k < v; k += 1) all.push(i); });
         let mixed = '';
         const stride = [7, 11, 13, 5, 3, 1].find((k) => gcd(k, all.length) === 1);
-        all.forEach((t, idx) => { const j = (idx * stride + 3) % all.length; const col = j % 12; const row = Math.floor(j / 12); mixed += circle(110 + col * 52, 120 + row * 46, 17, { fill: PALETTE[t] }); });
-        let g = S(1, mixed + text(W / 2, 92, '여러 가지가 섞여 있어요', { size: 20, fill: C.sub }));
+        const mixPos = all.map((t, idx) => { const j = (idx * stride + 3) % all.length; return [110 + (j % 12) * 52, 120 + Math.floor(j / 12) * 46]; });
+        const firstOf = vals.map((v, i) => vals.slice(0, i).reduce((t, x) => t + x, 0));
+        // 섞여 있던 것들은 자기 모둠으로 옮겨 가는 단계에 원래 자리를 떠나요.
+        let g = S(1, text(W / 2, 92, '여러 가지가 섞여 있어요', { size: 20, fill: C.sub }));
+        all.forEach((t, idx) => { g += T(1, 2 + t, circle(mixPos[idx][0], mixPos[idx][1], 17, { fill: PALETTE[t] })); });
         const rowsUsed = Math.ceil(all.length / 12);
         const y0 = 130 + rowsUsed * 46 + 24;
         const cw = Math.min(150, 660 / rows.length);
         const x0 = (W - cw * rows.length) / 2;
         const steps = ['여러 가지가 섞여 있어요. 기준을 정해서 나누어 봐요.'];
         rows.forEach((r, i) => {
-            let grp = rect(x0 + i * cw + 6, y0, cw - 12, 150, { fill: '#f8fafc', stroke: PALETTE[i], width: 3, rx: 10 }) + text(x0 + i * cw + cw / 2, y0 + 24, r.label, { size: 18, fill: PALETTE[i] });
-            for (let k = 0; k < vals[i]; k += 1) grp += circle(x0 + i * cw + 26 + (k % 4) * ((cw - 52) / 3), y0 + 52 + Math.floor(k / 4) * 30, 11, { fill: PALETTE[i] });
-            g += S(2 + i, grp, 'drop');
+            g += S(2 + i, rect(x0 + i * cw + 6, y0, cw - 12, 150, { fill: '#f8fafc', stroke: PALETTE[i], width: 3, rx: 10 }) + text(x0 + i * cw + cw / 2, y0 + 24, r.label, { size: 18, fill: PALETTE[i] }));
+            for (let k = 0; k < vals[i]; k += 1) {
+                const fx = x0 + i * cw + 26 + (k % 4) * ((cw - 52) / 3);
+                const fy = y0 + 52 + Math.floor(k / 4) * 30;
+                const from = mixPos[firstOf[i] + k];
+                g += M(2 + i, circle(fx, fy, 11, { fill: PALETTE[i] }), { dx: from[0] - fx, dy: from[1] - fy, delay: k * 0.12, dur: 1.1 });
+            }
             steps.push(`${r.label}끼리 모으면 ${vals[i]}개예요.`);
         });
         const most = vals.indexOf(Math.max(...vals));
@@ -639,23 +657,34 @@ export function buildLowerUnits(kit) {
         const r = a % b;
         const pw = Math.min(150, 680 / b);
         const x0 = (W - pw * b) / 2;
-        let g = S(1, dotRow(a, (W - (a - 1) * Math.min(30, 640 / a)) / 2, 110, Math.min(12, 300 / a), Math.min(30, 640 / a), C.blue) + text(W / 2, 86, `${a}개를 ${b}명(접시)에게 똑같이 나누어요`, { size: 19, fill: C.sub }));
+        const gapT = Math.min(30, 640 / a);
+        const rT = Math.min(12, 300 / a);
+        const topX = (i) => (W - (a - 1) * gapT) / 2 + i * gapT;
+        const slow = q <= 6; // 한 바퀴씩 천천히 보여 줄지
+        const stepOfRound = (k) => (slow ? 3 + k : 3);
+        const end = 3 + (slow ? Math.max(1, q) : 1);
+        // 위에 놓인 것들은 접시(또는 남는 자리)로 옮겨 가는 단계에 사라져요.
+        let g = S(1, text(W / 2, 86, `${a}개를 ${b}명(접시)에게 똑같이 나누어요`, { size: 19, fill: C.sub }));
+        for (let i = 0; i < a; i += 1) g += T(1, i < q * b ? stepOfRound(Math.floor(i / b)) : end, circle(topX(i), 110, rT, { fill: C.blue }));
         let plates = '';
         for (let i = 0; i < b; i += 1) plates += `<ellipse cx="${r2(x0 + i * pw + pw / 2)}" cy="270" rx="${r2(pw / 2 - 8)}" ry="70" fill="#fef9c3" stroke="#a16207" stroke-width="2.5"/>`;
         g += S(2, plates);
         const steps = [`${a}개가 있어요.`, `${b}개의 접시에 똑같이 나누어 담을 거예요.`];
         const per = Math.min(4, Math.ceil(Math.sqrt(Math.max(1, q))));
         for (let k = 0; k < q; k += 1) {
-            let round = '';
-            for (let i = 0; i < b; i += 1) round += circle(x0 + i * pw + pw / 2 - ((per - 1) * 22) / 2 + (k % per) * 22, 240 + Math.floor(k / per) * 22, 9, { fill: C.blue });
-            if (q <= 6) { g += S(3 + k, round, 'drop'); steps.push(`한 접시에 하나씩 놓아요. 접시마다 ${k + 1}개씩.`); } else g += S(3, round, 'drop');
+            for (let i = 0; i < b; i += 1) {
+                const px = x0 + i * pw + pw / 2 - ((per - 1) * 22) / 2 + (k % per) * 22;
+                const py = 240 + Math.floor(k / per) * 22;
+                const idx = k * b + i;
+                // 하나씩 접시로 날아가요.
+                g += M(stepOfRound(k), circle(px, py, 9, { fill: C.blue }), { dx: topX(idx) - px, dy: 110 - py, delay: slow ? i * 0.22 : idx * (2.2 / (q * b)), dur: 1 });
+            }
+            if (slow) steps.push(`한 접시에 하나씩 놓아요. 접시마다 ${k + 1}개씩.`);
         }
-        if (q > 6) steps.push(`하나씩 번갈아 놓으면 접시마다 ${q}개씩 담겨요.`);
+        if (!slow) steps.push(`하나씩 번갈아 놓으면 접시마다 ${q}개씩 담겨요.`);
         if (q === 0) { g += S(3, ''); steps.push('한 접시에 하나씩 놓기에도 모자라요.'); }
-        const end = 3 + (q <= 6 ? Math.max(1, q) : 1);
-        let rem = '';
-        for (let i = 0; i < r; i += 1) rem += circle(W / 2 - ((r - 1) * 26) / 2 + i * 26, 366, 10, { fill: C.orange });
-        g += S(end, (r ? rem + text(W / 2, 400, `남은 것 ${r}개`, { size: 18, fill: '#c2410c' }) : '') + big(W / 2, r ? 440 : 410, r ? `${a} ÷ ${b} = ${q} … ${r}` : `${a} ÷ ${b} = ${q}`, '#1e3a8a', r ? 30 : 44));
+        for (let i = 0; i < r; i += 1) { const rx = W / 2 - ((r - 1) * 26) / 2 + i * 26; g += M(end, circle(rx, 366, 10, { fill: C.orange }), { dx: topX(q * b + i) - rx, dy: 110 - 366, delay: i * 0.15, dur: 1.1 }); }
+        g += S(end, (r ? text(W / 2, 400, `남은 것 ${r}개`, { size: 18, fill: '#c2410c' }) : '') + big(W / 2, r ? 440 : 410, r ? `${a} ÷ ${b} = ${q} … ${r}` : `${a} ÷ ${b} = ${q}`, '#1e3a8a', r ? 30 : 44));
         steps.push(r ? `한 접시에 ${q}개씩 담고 ${r}개가 남아요. ${a} ÷ ${b} = ${q} … ${r} (몫 ${q}, 나머지 ${r})` : `한 접시에 ${q}개씩이에요. ${a} ÷ ${b} = ${q}. 곱셈으로 확인하면 ${b} × ${q} = ${a}`);
         return { body: g, caption: r ? `${a} ÷ ${b} = ${q} … ${r}  (몫 ${q}, 나머지 ${r}).  확인: ${b} × ${q} + ${r} = ${a}` : `${josa(a, '을', '를')} ${roJosa(b)} 똑같이 나누면 ${q}.  ${a} ÷ ${b} = ${q}  ↔  ${b} × ${q} = ${a}`, steps };
     }
@@ -947,28 +976,60 @@ export function buildLowerUnits(kit) {
         g += S(3, line(lx - 110, ly, lx + 190, ly, { width: 3 }) + text(lx + 40, ly - 86, '세 각을 한 점에 모으면', { size: 18, fill: C.sub }));
         const r3 = 70;
         const seg = (s0, s1, color) => path(`M ${lx + 40} ${ly} L ${r2(lx + 40 + r3 * Math.cos(s0))} ${r2(ly - r3 * Math.sin(s0))} A ${r3} ${r3} 0 0 0 ${r2(lx + 40 + r3 * Math.cos(s1))} ${r2(ly - r3 * Math.sin(s1))} Z`, { fill: color, stroke: C.line, width: 1.5 });
-        g += S(4, seg(0, ra, C.blue) + seg(ra, ra + (c * Math.PI) / 180, C.green) + seg(ra + (c * Math.PI) / 180, Math.PI, C.orange) + text(lx + 40, ly + 30, '일직선 = 180°', { size: 20, fill: C.red }));
+        // 세 각이 꼭짓점에서 떨어져 나와 한 점에 모여요(가운데 각은 반 바퀴 돌아요).
+        const px = lx + 40;
+        g += M(4, seg(0, ra, C.blue), { dx: A[0] - px, dy: A[1] - ly, dur: 1.5 });
+        g += M(4, seg(ra + (c * Math.PI) / 180, Math.PI, C.orange), { dx: Bp[0] - px, dy: Bp[1] - ly, delay: 0.5, dur: 1.5 });
+        g += M(4, seg(ra, ra + (c * Math.PI) / 180, C.green), { dx: Cp[0] - px, dy: Cp[1] - ly, rot: 180, ox: px, oy: ly, delay: 1, dur: 1.6 });
+        g += S(4, text(px, ly + 30, '일직선 = 180°', { size: 20, fill: C.red }));
         g += S(5, big(600, 330, `${a}° + ${b}° + ${c}° = 180°`, '#1e3a8a', 28) + text(600, 366, '삼각형의 세 각의 크기의 합은 180°', { size: 17, fill: '#15803d' }));
         return { body: g, caption: `삼각형의 세 각의 크기의 합은 항상 180°예요.  ${a}° + ${b}° + ${c}° = 180°  (사각형은 360°)`, steps: ['삼각형이 있어요.', `세 각의 크기는 ${a}°, ${b}°, ${c}°예요.`, '세 각을 잘라서 꼭짓점이 한 점에 모이게 붙여 봐요.', '세 각이 딱 맞아 일직선이 돼요. 일직선은 180°예요.', `그래서 삼각형의 세 각의 합은 180°. ${a} + ${b} + ${c} = 180`] };
     }
 
     function drawMove({ kind }) {
-        const u = 34;
+        const u = 32;
+        const gx = 60;
+        const gy = 108;
         const shape = [[0, 0], [0, 1], [0, 2], [1, 2], [0, 3], [1, 0]]; // F 비슷한 모양(칸 좌표)
         const cells = (pts, ox, oy, fill) => pts.map(([x, y]) => rect(ox + x * u, oy + y * u, u, u, { fill, stroke: C.line, width: 1.5 })).join('');
-        const gridBg = (ox, oy, w, h) => { let s = ''; for (let i = 0; i <= w; i += 1) s += line(ox + i * u, oy, ox + i * u, oy + h * u, { width: 1, stroke: '#cbd5e1' }); for (let j = 0; j <= h; j += 1) s += line(ox, oy + j * u, ox + w * u, oy + j * u, { width: 1, stroke: '#cbd5e1' }); return s; };
-        const ox = 120;
-        const oy = 150;
-        let g = S(1, gridBg(60, 110, 20, 8) + cells(shape, ox, oy, C.blue) + text(ox + u, oy - 14, '처음 도형', { size: 17, fill: C.blue }));
-        let moved = shape;
-        let label = '';
-        let steps = [];
-        let cap = '';
-        const tx = 470;
-        if (kind === 'flipH') { moved = shape.map(([x, y]) => [1 - x, y]); label = '오른쪽으로 뒤집기'; steps = ['도형을 오른쪽으로 뒤집어 봐요.', '가운데 세로선이 거울이라고 생각해요.', '왼쪽과 오른쪽이 서로 바뀌어요. 위아래는 그대로예요.']; cap = '오른쪽(왼쪽)으로 뒤집으면 왼쪽과 오른쪽이 서로 바뀌어요.'; } else if (kind === 'flipV') { moved = shape.map(([x, y]) => [x, 3 - y]); label = '아래쪽으로 뒤집기'; steps = ['도형을 아래쪽으로 뒤집어 봐요.', '가운데 가로선이 거울이라고 생각해요.', '위쪽과 아래쪽이 서로 바뀌어요. 왼쪽·오른쪽은 그대로예요.']; cap = '위쪽(아래쪽)으로 뒤집으면 위쪽과 아래쪽이 서로 바뀌어요.'; } else if (kind === 'rot90') { moved = shape.map(([x, y]) => [3 - y, x]); label = '시계 방향으로 90° 돌리기'; steps = ['도형을 시계 방향으로 90° 돌려 봐요.', '직각만큼 오른쪽으로 돌아가요.', '위쪽에 있던 부분이 오른쪽으로 가요.']; cap = '시계 방향으로 90° 돌리면 위쪽 부분이 오른쪽으로 이동해요.'; } else if (kind === 'rot180') { moved = shape.map(([x, y]) => [1 - x, 3 - y]); label = '180° 돌리기'; steps = ['도형을 180° 돌려 봐요.', '반 바퀴 돌아가요.', '위쪽은 아래쪽으로, 왼쪽은 오른쪽으로 가요.']; cap = '180° 돌리면 위쪽 부분이 아래쪽으로, 왼쪽 부분이 오른쪽으로 이동해요.'; } else { label = '오른쪽으로 밀기'; steps = ['도형을 오른쪽으로 밀어 봐요.', '모양과 크기는 그대로예요.', '위치만 바뀌어요.']; cap = '도형을 밀면 모양과 크기는 변하지 않고 위치만 바뀌어요.'; }
-        const flip = kind === 'flipH' || kind === 'flipV';
-        g += S(2, (kind === 'flipH' ? line(330, 120, 330, 372, { stroke: C.red, width: 3, dash: '8 6' }) : kind === 'flipV' ? line(80, 300, 720, 300, { stroke: C.red, width: 3, dash: '8 6' }) : arrow(ox + 2 * u + 30, oy + 2 * u, tx - 30, oy + 2 * u)) + text(W / 2, 100, label, { size: 22, fill: C.red }));
-        g += S(3, kind === 'flipV' ? cells(moved, ox, 310, C.orange) + text(ox + u, 310 + 4 * u + 20, '뒤집은 도형', { size: 17, fill: '#c2410c' }) : cells(moved, tx + (kind === 'flipH' ? -2 * u : 0), oy, C.orange) + text(tx + u, oy - 14, flip ? '뒤집은 도형' : kind === 'push' ? '민 도형' : '돌린 도형', { size: 17, fill: '#c2410c' }), 'pop');
+        const gridBg = (w, h) => { let s2 = ''; for (let i = 0; i <= w; i += 1) s2 += line(gx + i * u, gy, gx + i * u, gy + h * u, { width: 1, stroke: '#cbd5e1' }); for (let j = 0; j <= h; j += 1) s2 += line(gx, gy + j * u, gx + w * u, gy + j * u, { width: 1, stroke: '#cbd5e1' }); return s2; };
+        const ox = gx + 2 * u;
+        const oy = kind === 'flipV' ? gy : gy + u;
+        const tx = gx + 12 * u;
+        let g = S(1, gridBg(21, 10) + cells(shape, ox, oy, C.blue) + text(ox + u, oy + 4 * u + 20, '처음 도형', { size: 16, fill: C.blue }));
+        let guide;
+        let mover;
+        let label;
+        let steps;
+        let cap;
+        const lab = (x, y, t) => text(x, y, t, { size: 16, fill: '#c2410c' });
+        if (kind === 'flipH') {
+            const L = gx + 7 * u; // 거울(세로선)
+            const mx = 2 * L - ox - 2 * u;
+            guide = line(L, gy, L, gy + 10 * u, { stroke: C.red, width: 3, dash: '8 6' });
+            mover = M(3, cells(shape.map(([x, y]) => [1 - x, y]), mx, oy, C.orange) + lab(mx + u, oy + 4 * u + 20, '뒤집은 도형'), { sx: -1, ox: L, oy: 0, dur: 1.8 });
+            label = '오른쪽으로 뒤집기'; steps = ['도형을 오른쪽으로 뒤집어 봐요.', '가운데 세로선을 따라 책장을 넘기듯 뒤집어요.', '왼쪽과 오른쪽이 서로 바뀌어요. 위아래는 그대로예요.']; cap = '오른쪽(왼쪽)으로 뒤집으면 왼쪽과 오른쪽이 서로 바뀌어요.';
+        } else if (kind === 'flipV') {
+            const L = gy + 5 * u; // 거울(가로선)
+            const my = 2 * L - oy - 4 * u;
+            guide = line(gx, L, gx + 21 * u, L, { stroke: C.red, width: 3, dash: '8 6' });
+            mover = M(3, cells(shape.map(([x, y]) => [x, 3 - y]), ox, my, C.orange) + text(ox + 2 * u + 12, my + 2 * u + 6, '뒤집은 도형', { size: 16, fill: '#c2410c', anchor: 'start' }), { sy: -1, ox: 0, oy: L, dur: 1.8 });
+            label = '아래쪽으로 뒤집기'; steps = ['도형을 아래쪽으로 뒤집어 봐요.', '가로선을 따라 아래로 넘기듯 뒤집어요.', '위쪽과 아래쪽이 서로 바뀌어요. 왼쪽·오른쪽은 그대로예요.']; cap = '위쪽(아래쪽)으로 뒤집으면 위쪽과 아래쪽이 서로 바뀌어요.';
+        } else if (kind === 'rot90') {
+            guide = arrow(ox + 2 * u + 30, oy + 2 * u, tx - 30, oy + 2 * u);
+            mover = M(3, cells(shape.map(([x, y]) => [3 - y, x]), tx, oy, C.orange) + lab(tx + 2 * u, oy + 2 * u + 20, '돌린 도형'), { rot: -90, dx: (ox + u) - (tx + 2 * u), dy: (oy + 2 * u) - (oy + u) - 10, dur: 2 });
+            label = '시계 방향으로 90° 돌리기'; steps = ['도형을 시계 방향으로 90° 돌려 봐요.', '직각만큼 오른쪽으로 돌아가요.', '위쪽에 있던 부분이 오른쪽으로 가요.']; cap = '시계 방향으로 90° 돌리면 위쪽 부분이 오른쪽으로 이동해요.';
+        } else if (kind === 'rot180') {
+            guide = arrow(ox + 2 * u + 30, oy + 2 * u, tx - 30, oy + 2 * u);
+            mover = M(3, cells(shape.map(([x, y]) => [1 - x, 3 - y]), tx, oy, C.orange) + lab(tx + u, oy + 4 * u + 20, '돌린 도형'), { rot: -180, dx: ox - tx, dy: -10, dur: 2.2 });
+            label = '180° 돌리기'; steps = ['도형을 180° 돌려 봐요.', '반 바퀴 돌아가요.', '위쪽은 아래쪽으로, 왼쪽은 오른쪽으로 가요.']; cap = '180° 돌리면 위쪽 부분이 아래쪽으로, 왼쪽 부분이 오른쪽으로 이동해요.';
+        } else {
+            guide = arrow(ox + 2 * u + 30, oy + 2 * u, tx - 30, oy + 2 * u);
+            mover = M(3, cells(shape, tx, oy, C.orange) + lab(tx + u, oy + 4 * u + 20, '민 도형'), { dx: ox - tx, dur: 1.8 });
+            label = '오른쪽으로 밀기'; steps = ['도형을 오른쪽으로 밀어 봐요.', '모양과 크기는 그대로예요.', '위치만 바뀌어요.']; cap = '도형을 밀면 모양과 크기는 변하지 않고 위치만 바뀌어요.';
+        }
+        g += S(2, guide + text(W / 2, 98, label, { size: 22, fill: C.red }));
+        g += mover;
         return { body: g, caption: cap, steps };
     }
 
@@ -1104,7 +1165,15 @@ export function buildLowerUnits(kit) {
         const bar = (y, n, fill, startAt = 0) => { let s = ''; for (let u = 0; u < units; u += 1) for (let i = 0; i < d; i += 1) { const idx = u * d + i; s += rect(x0 + u * (w / units + 0) * 1 + (i * cw) / units, y, cw / units, 50, { fill: idx >= startAt && idx < startAt + n ? fill : '#f8fafc', stroke: C.line, width: 1.2 }); } for (let u = 0; u < units; u += 1) s += rect(x0 + (u * w) / units, y, w / units, 50, { width: 3 }); return s; };
         let g = S(1, bar(120, a, C.blue) + frac(600, 146, a, d, { size: 24, fill: C.blue }) + text(660, 154, `1/${d}이 ${a}개`, { size: 17, fill: C.sub, anchor: 'start' }));
         g += S(2, (sub ? bar(200, b, C.red, a - b) : bar(200, b, C.orange, a)) + frac(600, 226, b, d, { size: 24, fill: sub ? C.red : '#c2410c' }) + text(660, 234, sub ? `1/${d}을 ${b}개 덜어요` : `1/${d}이 ${b}개 더`, { size: 17, fill: C.sub, anchor: 'start' }));
-        g += S(3, bar(280, res, C.green) + text(660, 314, `1/${d}이 ${res}개`, { size: 17, fill: C.sub, anchor: 'start' }) + frac(600, 306, res, d, { size: 24, fill: '#15803d' }), 'wipe');
+        if (sub) g += S(3, bar(280, res, C.green), 'wipe');
+        else {
+            // 위의 두 띠에서 색칠한 칸이 아래 띠로 내려와 이어 붙어요.
+            const cellAt = (idx, y, fill) => rect(x0 + (idx * cw) / units, y, cw / units, 50, { fill, stroke: C.line, width: 1.2 });
+            g += S(3, bar(280, 0, C.green));
+            g += M(3, Array.from({ length: a }, (_, i) => cellAt(i, 280, C.blue)).join(''), { dy: -160, dur: 1.4 });
+            g += M(3, Array.from({ length: b }, (_, i) => cellAt(a + i, 280, C.orange)).join(''), { dy: -80, delay: 0.7, dur: 1.4 });
+        }
+        g += S(3, text(660, 314, `1/${d}이 ${res}개`, { size: 17, fill: C.sub, anchor: 'start' }) + frac(600, 306, res, d, { size: 24, fill: '#15803d' }));
         let eq = `${frac(230, 400, a, d, { size: 28 })}${text(280, 410, sub ? '−' : '+', { size: 32 })}${frac(330, 400, b, d, { size: 28 })}${text(380, 410, '=', { size: 32 })}${frac(440, 400, `${a}${sub ? '−' : '+'}${b}`, d, { size: 24 })}${text(500, 410, '=', { size: 32 })}${frac(550, 400, res, d, { size: 28, fill: '#15803d' })}`;
         if (res >= d) eq += text(596, 410, '=', { size: 32 }) + fracResult(650, 400, res, d, { size: 28, fill: '#15803d' });
         g += S(4, eq);
@@ -1306,15 +1375,18 @@ export function buildLowerUnits(kit) {
             steps = ['넓이가 1 cm²인 칸으로 넓이를 알아봐요.', `가로 ${w} cm, 세로 ${h} cm인 직사각형이에요.`, `1 cm² 칸이 한 줄에 ${w}개씩 ${h}줄 있어요.`, `그래서 넓이는 ${w} × ${h} = ${w * h} cm²`];
             cap = `(직사각형의 넓이) = (가로) × (세로) = ${w} × ${h} = ${w * h} cm²`;
         } else if (kind === 'para') {
-            g += S(2, poly([P2(2, 0), P2(w + 2, 0), P2(w, h), P2(0, h)], { fill: C.blueL, width: 3, opacity: 0.8 }) + dim(`밑변 ${w}`, x0 + (w * u) / 2 - 30, y0 + h * u + 26) + line(x0 + 2 * u, y0, x0 + 2 * u, y0 + h * u, { stroke: C.purple, width: 2.5, dash: '5 4' }) + text(x0 + 2 * u + 8, y0 + (h * u) / 2, `높이 ${h}`, { size: 17, fill: C.purple, anchor: 'start' }));
-            g += S(3, poly([P2(2, 0), P2(2, h), P2(0, h)], { fill: C.orange, width: 2, opacity: 0.8 }) + text(tx, 170, '왼쪽 삼각형을 잘라서', { size: 19, fill: '#c2410c' }));
-            g += S(4, poly([P2(w + 2, 0), P2(w + 2, h), P2(w, h)], { fill: C.orange, width: 2, opacity: 0.8 }) + arrow(x0 + u, y0 - 16, x0 + (w + 1) * u, y0 - 16) + text(tx, 200, '오른쪽에 붙이면 직사각형!', { size: 19, fill: '#c2410c' }), 'pop');
+            g += S(2, poly([P2(2, 0), P2(w + 2, 0), P2(w, h), P2(2, h)], { fill: C.blueL, width: 3, opacity: 0.8 }) + line(x0, y0 + h * u, x0 + 2 * u, y0 + h * u, { width: 3 }) + dim(`밑변 ${w}`, x0 + (w * u) / 2 - 30, y0 + h * u + 26) + line(x0 + 2 * u, y0, x0 + 2 * u, y0 + h * u, { stroke: C.purple, width: 2.5, dash: '5 4' }) + text(x0 + 2 * u + 8, y0 + (h * u) / 2, `높이 ${h}`, { size: 17, fill: C.purple, anchor: 'start' }));
+            // 왼쪽 삼각형은 처음엔 파랑, 자를 때 주황, 그리고 오른쪽으로 미끄러져 가요.
+            g += T(2, 3, poly([P2(2, 0), P2(2, h), P2(0, h)], { fill: C.blueL, width: 3, opacity: 0.8 }));
+            g += T(3, 4, poly([P2(2, 0), P2(2, h), P2(0, h)], { fill: C.orange, width: 2, opacity: 0.8 })) + S(3, line(x0 + 2 * u, y0, x0 + 2 * u, y0 + h * u, { stroke: C.red, width: 3, dash: '7 5' }) + text(tx, 170, '왼쪽 삼각형을 잘라서', { size: 19, fill: '#c2410c' }));
+            g += M(4, poly([P2(w + 2, 0), P2(w + 2, h), P2(w, h)], { fill: C.orange, width: 2, opacity: 0.8 }), { dx: -w * u, dur: 1.8 }) + S(4, arrow(x0 + u, y0 - 16, x0 + (w + 1) * u, y0 - 16) + text(tx, 200, '오른쪽에 붙이면 직사각형!', { size: 19, fill: '#c2410c' }));
             g += S(5, big(tx, 280, `${w} × ${h} = ${w * h} cm²`, '#1e3a8a', 30) + text(tx, 320, '(평행사변형의 넓이) = (밑변) × (높이)', { size: 15, fill: '#15803d' }));
             steps = ['넓이가 1 cm²인 칸 위에 그려 봐요.', `밑변 ${w} cm, 높이 ${h} cm인 평행사변형이에요.`, '왼쪽 삼각형 부분을 잘라요.', '오른쪽으로 옮겨 붙이면 직사각형이 돼요.', `그래서 넓이는 밑변 × 높이 = ${w} × ${h} = ${w * h} cm²`];
             cap = `(평행사변형의 넓이) = (밑변) × (높이) = ${w} × ${h} = ${w * h} cm²`;
         } else if (kind === 'tri') {
             g += S(2, poly([P2(0, h), P2(w, h), P2(w * 0.35, 0)], { fill: C.blueL, width: 3, opacity: 0.85 }) + dim(`밑변 ${w}`, x0 + (w * u) / 2 - 30, y0 + h * u + 26) + line(x0 + w * 0.35 * u, y0, x0 + w * 0.35 * u, y0 + h * u, { stroke: C.purple, width: 2.5, dash: '5 4' }) + text(x0 + w * 0.35 * u + 8, y0 + (h * u) * 0.6, `높이 ${h}`, { size: 17, fill: C.purple, anchor: 'start' }));
-            g += S(3, poly([P2(w, h), P2(w * 0.35, 0), P2(w + w * 0.35, 0)], { fill: C.orange, width: 2, opacity: 0.6 }) + text(tx, 170, '똑같은 삼각형을 뒤집어 붙이면', { size: 18, fill: '#c2410c' }) + text(tx, 198, '평행사변형이 돼요', { size: 18, fill: '#c2410c' }), 'pop');
+            // 똑같은 삼각형이 원래 삼각형 위에서 반 바퀴 돌아 옆에 붙어요.
+            g += M(3, poly([P2(w, h), P2(w * 0.35, 0), P2(w + w * 0.35, 0)], { fill: C.orange, width: 2, opacity: 0.6 }), { rot: 180, ox: x0 + ((w + w * 0.35) / 2) * u, oy: y0 + (h / 2) * u, dur: 2 }) + S(3, text(tx, 170, '똑같은 삼각형을 돌려 붙이면', { size: 18, fill: '#c2410c' }) + text(tx, 198, '평행사변형이 돼요', { size: 18, fill: '#c2410c' }));
             g += S(4, text(tx, 240, `평행사변형의 넓이: ${w} × ${h} = ${w * h}`, { size: 18, fill: C.sub }));
             g += S(5, big(tx, 300, `${w} × ${h} ÷ 2 = ${numText((w * h) / 2)} cm²`, '#1e3a8a', 26) + text(tx, 338, '(삼각형의 넓이) = (밑변) × (높이) ÷ 2', { size: 15, fill: '#15803d' }));
             steps = ['넓이가 1 cm²인 칸 위에 그려 봐요.', `밑변 ${w} cm, 높이 ${h} cm인 삼각형이에요.`, '똑같은 삼각형을 하나 더 뒤집어 붙이면 평행사변형이 돼요.', `평행사변형의 넓이는 ${w} × ${h} = ${w * h}`, `삼각형은 그 절반이니까 ${w} × ${h} ÷ 2 = ${numText((w * h) / 2)} cm²`];
@@ -1383,6 +1455,8 @@ export function buildLowerUnits(kit) {
         const idx = s.length - String(p).length;
         g += S(3, text(W / 2, 330, kind === 'round' ? `${placeName}의 자리 바로 아래 숫자: ${digit}  →  ${digit >= 5 ? '5 이상이니 올려요' : '5보다 작으니 버려요'}` : kind === 'up' ? `${placeName}의 자리 아래 수(${n % p})를 ${p}으로 봐요` : `${placeName}의 자리 아래 수(${n % p})를 0으로 봐요`, { size: 20, fill: '#c2410c' }));
         g += S(4, arrow(xOf(n), y - 54, xOf(res), y - 54, '#15803d', 4) + circle(xOf(res), y, 13, { fill: 'none', stroke: '#15803d', width: 5 }));
+        // 점이 수직선을 따라 어림한 수로 옮겨 가요.
+        g += M(4, circle(xOf(res), y, 9, { fill: '#15803d' }), { dx: xOf(n) - xOf(res), delay: 0.4, dur: 1.5 });
         g += S(5, big(W / 2, 410, `${n}  →  ${res}`, '#15803d', 44));
         void idx;
         return { body: g, caption: `올림: 아래 수를 올려요 · 버림: 아래 수를 버려요 · 반올림: 바로 아래 자리 숫자가 0~4면 버리고 5~9면 올려요.  ${n} → ${res}`, steps: [`${n}을 ${name}하여 ${placeName}의 자리까지 나타내 봐요.`, `${n}은 ${low}과 ${high} 사이에 있어요.`, kind === 'round' ? `${placeName}의 자리 바로 아래 숫자가 ${digit}이에요. ${digit >= 5 ? '5, 6, 7, 8, 9이면 올려요.' : '0, 1, 2, 3, 4이면 버려요.'}` : kind === 'up' ? `올림은 구하려는 자리 아래 수를 올려서 나타내요.` : `버림은 구하려는 자리 아래 수를 버려서 나타내요.`, `${res} 쪽으로 가요.`, `${n}을 ${name}하면 ${res}`] };
@@ -1501,11 +1575,27 @@ export function buildLowerUnits(kit) {
         const colW = Math.min(100, 560 / rows.length);
         const x0 = (W - colW * rows.length) / 2;
         const base = 372;
-        const stack = (heights, fillOf) => rows.map((r, i) => { let s = ''; for (let k = 0; k < heights[i]; k += 1) s += rect(x0 + i * colW + colW * 0.2, base - (k + 1) * u, colW * 0.6, u, { fill: fillOf(i, k), stroke: '#fff', width: 1.5 }); return s + text(x0 + i * colW + colW / 2, base + 24, r.label, { size: 16 }); }).join('');
-        let g = S(1, stack(vals, (i) => PALETTE[i % 8]) + line(x0 - 10, base, x0 + rows.length * colW + 10, base, { width: 3 }) + rows.map((r, i) => text(x0 + i * colW + colW / 2, base - vals[i] * u - 8, vals[i], { size: 18 })).join(''));
+        const bx = (i) => x0 + i * colW + colW * 0.2;
+        const block = (i, k, fill) => rect(bx(i), base - (k + 1) * u, colW * 0.6, u, { fill, stroke: '#fff', width: 1.5 });
+        // 평균이 자연수이면 넘치는 블록이 모자란 쪽으로 실제로 옮겨 가요.
+        const moves = [];
+        if (Number.isInteger(avg)) {
+            const need = [];
+            vals.forEach((v, j) => { for (let k = v; k < avg; k += 1) need.push([j, k]); });
+            vals.forEach((v, i) => { for (let k = v - 1; k >= avg; k -= 1) { const to = need.shift(); if (to) moves.push({ from: [i, k], to }); } });
+        }
+        const canMove = moves.length > 0 && moves.length <= 40;
+        const leaving = new Set(canMove ? moves.map((m) => `${m.from[0]}:${m.from[1]}`) : []);
+        let stay = '';
+        let leave = '';
+        vals.forEach((v, i) => { for (let k = 0; k < v; k += 1) { if (leaving.has(`${i}:${k}`)) leave += block(i, k, PALETTE[i % 8]); else stay += block(i, k, PALETTE[i % 8]); } });
+        const names = rows.map((r, i) => text(x0 + i * colW + colW / 2, base + 24, r.label, { size: 16 })).join('');
+        const tops = rows.map((r, i) => text(x0 + i * colW + colW / 2, base - vals[i] * u - 8, vals[i], { size: 18 })).join('');
+        let g = S(1, stay + names + line(x0 - 10, base, x0 + rows.length * colW + 10, base, { width: 3 })) + (canMove ? T(1, 4, leave + tops) : S(1, tops));
         g += S(2, text(W / 2, 100, `모두 더하면 ${vals.join(' + ')} = ${sum}`, { size: 20, fill: C.sub }));
         g += S(3, line(x0 - 10, base - avg * u, x0 + rows.length * colW + 10, base - avg * u, { stroke: C.red, width: 3.5, dash: '9 6' }) + text(x0 + rows.length * colW + 16, base - avg * u + 6, `평균 ${numText(avg)}`, { size: 18, fill: C.red, anchor: 'start' }), 'wipe');
         g += S(4, text(W / 2, 132, '많은 쪽에서 적은 쪽으로 옮겨 고르게 하면 모두 같은 높이', { size: 17, fill: '#b45309' }));
+        if (canMove) moves.forEach((m, idx) => { g += M(4, block(m.to[0], m.to[1], PALETTE[m.from[0] % 8]), { dx: bx(m.from[0]) - bx(m.to[0]), dy: (m.to[1] - m.from[1]) * u, delay: idx * (1.6 / moves.length), dur: 1.1 }); });
         g += S(5, big(W / 2, 434, `${sum} ÷ ${vals.length} = ${numText(avg)}`, '#1e3a8a', 28));
         return { body: g, caption: `(평균) = (자료의 값을 모두 더한 수) ÷ (자료의 수) = ${sum} ÷ ${vals.length} = ${numText(avg)}`, steps: ['자료를 막대로 쌓아 봤어요. 높이가 서로 달라요.', `자료의 값을 모두 더하면 ${sum}이에요.`, `높이를 고르게 맞추면 빨간 선, ${numText(avg)}이 돼요.`, '많은 쪽 것을 적은 쪽으로 옮겨 고르게 한 값이 평균이에요.', `평균 = ${sum} ÷ ${vals.length} = ${numText(avg)}`] };
     }

@@ -66,7 +66,9 @@
 @keyframes ms-wipe { 0% { clip-path: inset(-10% 100% -10% -10%); } 100% { clip-path: inset(-10% -10% -10% -10%); } }
 @keyframes ms-drop { 0% { opacity: 0; transform: translateY(-34px); } 100% { opacity: 1; transform: translateY(0); } }
 @keyframes ms-rise { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { .mathviz-stage [data-step].ms-in { animation: ms-fade 0.3s both !important; } }
+/* 조각이 실제로 자리를 옮겨 가는 애니메이션(출발 위치·회전·뒤집기는 조각마다 정해져 있어요) */
+.mathviz-stage [data-step][data-anim="move"].ms-in { animation: ms-move var(--fd, 1.3s) cubic-bezier(.45, .05, .25, 1) var(--fdl, 0s) both; }
+@keyframes ms-move { from { transform: translate(var(--fx, 0px), var(--fy, 0px)) rotate(var(--fr, 0deg)) scale(var(--fsx, 1), var(--fsy, 1)); } to { transform: translate(0px, 0px) rotate(0deg) scale(1, 1); } }
 @keyframes ms-fade { from { opacity: 0; } }
 
 /* 설명 문장과 재생 버튼 */

@@ -94,6 +94,17 @@ ${cap.lines.length > 1
  * 각 그리기 함수는 { body, caption, steps: [단계별 설명 문장] } 을 돌려줘요.
  */
 const S = (k, str, anim = '') => `<g data-step="${k}"${anim ? ` data-anim="${anim}"` : ''}>${str}</g>`;
+/**
+ * 움직이며 나타나는 조각: k 단계에서 (dx, dy)만큼 떨어진 곳(필요하면 rot 도 돌아가고 sx·sy 로 뒤집힌 모습)에서 출발해 제자리로 와요.
+ * ox, oy: 돌리거나 뒤집는 중심(그림 좌표). delay·dur: 초. 조각 안에는 <g> 를 넣지 않아요.
+ */
+const M = (k, str, { dx = 0, dy = 0, rot = 0, sx = 1, sy = 1, ox = null, oy = null, delay = 0, dur = 1.3, until = 0 } = {}) => `<g data-step="${k}"${until ? ` data-until="${until}"` : ''} data-anim="move" style="--fx:${r2(dx)}px;--fy:${r2(dy)}px;--fr:${r2(rot)}deg;--fsx:${sx};--fsy:${sy};--fdl:${r2(delay)}s;--fd:${r2(dur)}s;${ox == null ? '' : `transform-box:view-box;transform-origin:${r2(ox)}px ${r2(oy)}px;`}">${str}</g>`;
+/** k 단계에 나왔다가 until 단계가 되면 사라지는 조각(다른 곳으로 옮겨 가는 것의 '원래 자리'). 저장한 그림에는 들어가지 않아요. */
+const T = (k, until, str, anim = '') => `<g data-step="${k}" data-until="${until}"${anim ? ` data-anim="${anim}"` : ''}>${str}</g>`;
+/** 저장·복사용 그림: 옮겨 가기 전의 '원래 자리' 조각을 빼고 마지막 모습만 남겨요. */
+export function finalMathSvg(svg) {
+    return String(svg).replace(/<g data-step="\d+" data-until="\d+"[^>]*>(?:(?!<\/g>)[\s\S])*<\/g>/g, '');
+}
 
 /* ============ 6-1-1 분수의 나눗셈 ============ */
 
@@ -665,7 +676,10 @@ function drawCircumference({ d, pi }) {
     const y = 330;
     const dia = 2 * R;
     const full = Math.min(pi, 3.3);
-    g += S(3, text(x0, y - 70, '원을 한 바퀴 굴려 원주를 곧게 펴면', { size: 18, anchor: 'start', fill: C.sub }) + line(x0, y, x0 + dia * full, y, { stroke: C.blue, width: 6 }), 'wipe');
+    g += S(3, text(x0, y + 62, '원을 한 바퀴 굴려 원주를 곧게 펴면', { size: 18, anchor: 'start', fill: C.sub }));
+    g += S(3, line(x0, y, x0 + dia * full, y, { stroke: C.blue, width: 6 }), 'wipe');
+    // 원이 선 위를 한 바퀴 굴러가요(다음 단계에서 사라져요).
+    g += M(3, `<circle cx="${r2(x0 + dia * full)}" cy="${y - R - 3}" r="${R}" fill="${C.blueL}" fill-opacity="0.75" stroke="${C.blue}" stroke-width="4"/>` + line(x0 + dia * full, y - R - 3, x0 + dia * full, y - 3, { stroke: C.red, width: 3 }), { dx: -dia * full, rot: -360, dur: 2.4, until: 4 });
     for (let i = 0; i < 3; i += 1) g += S(4 + i, rect(x0 + i * dia, y - 44, dia, 30, { fill: '#fee2e2', stroke: C.red, width: 2 }) + text(x0 + i * dia + dia / 2, y - 23, dia >= 64 ? `지름 ${i + 1}` : `${i + 1}`, { size: 16, fill: C.red }), 'wipe');
     g += S(7, rect(x0 + 3 * dia, y - 44, dia * (full - 3), 30, { fill: '#fecaca', stroke: C.red, width: 2 }) + text(x0, y + 30, `원주 = 지름의 약 ${pi}배`, { size: 20, fill: C.blue, anchor: 'start' }));
     g += S(8, text(540, 130, '(원주율) = (원주) ÷ (지름)', { size: 21 }) + text(540, 166, `= 3.14159…  → ${pi} 로 계산`, { size: 19, fill: C.sub }) + text(540, 216, `${numText(d)} × ${pi} = ${numText(d * pi)}`, { size: 26, fill: '#1e3a8a' }));
@@ -687,21 +701,28 @@ function drawCircleArea({ r, n, pi }) {
     const cy = 200;
     const sector = (x, y, a0, a1, fill) => `<path d="M ${r2(x)} ${r2(y)} L ${r2(x + R * Math.cos(a0))} ${r2(y + R * Math.sin(a0))} A ${R} ${R} 0 0 1 ${r2(x + R * Math.cos(a1))} ${r2(y + R * Math.sin(a1))} Z" fill="${fill}" stroke="#1e293b" stroke-width="1"/>`;
     const step = (2 * Math.PI) / n;
-    let circ = '';
-    for (let i = 0; i < n; i += 1) circ += sector(cx, cy, i * step - Math.PI / 2, (i + 1) * step - Math.PI / 2, i < n / 2 ? C.blue : C.orange);
-    let g = S(1, circ + line(cx, cy, cx + R, cy, { stroke: '#fff', width: 3 }) + (R >= 60 ? text(cx + R / 2, cy - 8, '반지름', { size: 15, fill: '#fff' }) : '') + text(cx, cy + R + 30, `반지름 ${numText(r)} · ${n}조각으로 잘라요`, { size: 17, fill: C.sub }));
+    const deg = (rad) => (rad * 180) / Math.PI;
+    let blueHalf = '';
+    let orangeHalf = '';
+    for (let i = 0; i < n; i += 1) { const sc = sector(cx, cy, i * step - Math.PI / 2, (i + 1) * step - Math.PI / 2, i < n / 2 ? C.blue : C.orange); if (i < n / 2) blueHalf += sc; else orangeHalf += sc; }
+    // 원의 조각은 옮겨 가면 원래 자리에서 사라져요(파랑은 2단계, 주황은 3단계).
+    let g = T(1, 2, blueHalf) + T(1, 3, orangeHalf) + T(1, 2, line(cx, cy, cx + R, cy, { stroke: '#fff', width: 3 }) + (R >= 60 ? text(cx + R / 2, cy - 8, '반지름', { size: 15, fill: '#fff' }) : ''))
+        + S(1, `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 5"/>` + text(cx, cy + R + 30, `반지름 ${numText(r)} · ${n}조각으로 잘라요`, { size: 17, fill: C.sub }));
     const chord = 2 * R * Math.sin(step / 2);
     const total = (n / 2) * chord;
     const sx = 340 + (400 - total) / 2;
     const top = 200 - R / 2;
-    let down = '';
-    let up = '';
+    g += S(2, text(278, cy + 10, '➜', { size: 30, fill: C.sub }));
+    g += S(3, '');
     for (let i = 0; i < n / 2; i += 1) {
         const bx = sx + i * chord + chord / 2;
-        down += sector(bx, top + R, -Math.PI / 2 - step / 2, -Math.PI / 2 + step / 2, C.blue);
-        up += sector(bx + chord / 2, top + R * (1 - Math.cos(step / 2)), Math.PI / 2 - step / 2, Math.PI / 2 + step / 2, C.orange);
+        const turn = deg((i + 0.5) * step);
+        // 조각 하나하나가 원에서 떨어져 나와 돌면서 제자리로 가요.
+        g += M(2, sector(bx, top + R, -Math.PI / 2 - step / 2, -Math.PI / 2 + step / 2, C.blue), { rot: turn, dx: cx - bx, dy: cy - (top + R), ox: bx, oy: top + R, delay: i * (1.2 / n), dur: 1.4 });
+        const ux = bx + chord / 2;
+        const uy = top + R * (1 - Math.cos(step / 2));
+        g += M(3, sector(ux, uy, Math.PI / 2 - step / 2, Math.PI / 2 + step / 2, C.orange), { rot: turn, dx: cx - ux, dy: cy - uy, ox: ux, oy: uy, delay: i * (1.2 / n), dur: 1.4 });
     }
-    g += S(2, text(278, cy + 10, '➜', { size: 30, fill: C.sub }) + down, 'wipe') + S(3, up, 'drop');
     g += S(4, line(sx, top + R + 22, sx + total, top + R + 22, { stroke: C.red, width: 3 }) + text(sx + total / 2, top + R + 46, '(원주) × 1/2', { size: 18, fill: C.red }) + line(sx - 14, top, sx - 14, top + R, { stroke: C.purple, width: 3 }) + text(sx - 22, top + R / 2 + 6, '반지름', { size: 16, fill: C.purple, anchor: 'end' }) + text(540, 326, '잘게 자를수록 직사각형에 가까워져요', { size: 17, fill: C.sub }));
     g += S(5, text(MATH_W / 2, 386, `(원의 넓이) = (원주)×1/2 × (반지름) = (반지름)×(반지름)×(원주율)`, { size: 19 }) + text(MATH_W / 2, 424, `${numText(r)} × ${numText(r)} × ${pi} = ${numText(r * r * pi)}`, { size: 24, fill: '#1e3a8a' }));
     return { body: g, caption: `(원의 넓이) = (반지름) × (반지름) × (원주율) = ${numText(r)} × ${numText(r)} × ${pi} = ${numText(r * r * pi)}`, steps: [
@@ -802,7 +823,7 @@ function snapFracDivFrac(p) {
 const PI_OPT = [['3.14', '3.14'], ['3.1', '3.1'], ['3', '3']];
 const POLY_OPT = [3, 4, 5, 6, 7, 8].map((n) => [String(n), `${POLY_NAMES[n]}각형`]);
 
-const KIT = { C, PALETTE, MATH_W, MATH_H, text, line, rect, poly, frac, fracResult, simplifyFraction, S, P, numText, textWidth, r2, gcd, lcm, isoCube, drawLongDivision, parseGraphItems };
+const KIT = { C, PALETTE, MATH_W, MATH_H, text, line, rect, poly, frac, fracResult, simplifyFraction, S, M, T, P, numText, textWidth, r2, gcd, lcm, isoCube, drawLongDivision, parseGraphItems };
 
 export const MATH_UNITS = Object.freeze([
     ...buildLowerUnits(KIT),
@@ -891,5 +912,6 @@ export function renderMathConcept(unitId, conceptId, rawParams = {}) {
     const drawn = concept.draw(concept.fix ? concept.fix(params) : params);
     const title = `${unit.grade}-${unit.term} ${unit.no}단원 ${unit.name} · ${concept.name}`;
     const steps = Array.isArray(drawn.steps) && drawn.steps.length ? drawn.steps : [drawn.caption];
-    return { svg: frame(title, drawn.body, drawn.caption, steps.length), title, caption: drawn.caption, steps, params, unit, concept };
+    const svg = frame(title, drawn.body, drawn.caption, steps.length);
+    return { svg, finalSvg: finalMathSvg(svg), title, caption: drawn.caption, steps, params, unit, concept };
 }

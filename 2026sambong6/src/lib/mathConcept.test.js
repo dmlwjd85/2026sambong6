@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { MATH_UNITS, longDivisionSteps, normalizeMathParams, parseBlockGrid, parseGraphItems, renderMathConcept, simplifyFraction } from './mathConcept.js';
+import { MATH_UNITS, finalMathSvg, longDivisionSteps, normalizeMathParams, parseBlockGrid, parseGraphItems, renderMathConcept, simplifyFraction } from './mathConcept.js';
 
 describe('수학 개념 그림(1~6학년)', () => {
     it('모든 단원의 모든 개념이 기본값으로 그려져요', () => {
@@ -120,5 +120,21 @@ describe('그림으로 그릴 수 있는 값으로 맞추기', () => {
         assert.equal(rectW(renderMathConcept('3-1-2', 'rect', { w: 4, h: 3 }).svg) * 3, rectW(renderMathConcept('3-1-2', 'rect', { w: 12, h: 3 }).svg));
         assert.equal(normalizeMathParams(concept('6-2-6', 'cylinder'), { r: 30, h: 30, pi: '3.14' }).r, 6);
         assert.deepEqual(normalizeMathParams(concept('4-2-2', 'obtuse'), { a: 150, b: 60 }), { a: 150, b: 15 });
+    });
+    it('옮겨 가는 조각: 원래 자리는 저장 그림에서 빠지고, 움직이는 조각은 남아요', () => {
+        MATH_UNITS.forEach((u) => u.concepts.forEach((c) => {
+            const r = renderMathConcept(u.id, c.id, {});
+            // 사라지는 조각 안에는 다른 묶음(<g>)이 없어야 깔끔하게 빠져요.
+            [...r.svg.matchAll(/<g data-step="\d+" data-until="(\d+)"[^>]*>((?:(?!<\/g>)[\s\S])*)<\/g>/g)].forEach((m) => {
+                assert.ok(!m[2].includes('<g'), `${u.id}/${c.id} 사라지는 조각 안에 묶음이 있어요`);
+                assert.ok(Number(m[1]) <= r.steps.length, `${u.id}/${c.id} 사라지는 단계가 범위를 넘어요`);
+            });
+            assert.ok(!r.finalSvg.includes('data-until'), `${u.id}/${c.id}`);
+            assert.equal(finalMathSvg(r.finalSvg), r.finalSvg);
+        }));
+        const area = renderMathConcept('6-2-5', 'area', { r: 6, n: '16', pi: '3.14' });
+        assert.equal((area.svg.match(/data-anim="move"/g) || []).length, 16); // 조각 16개가 하나씩 옮겨 가요
+        assert.ok(area.svg.includes('data-until="2"') && area.finalSvg.includes('data-anim="move"'));
+        assert.ok(renderMathConcept('3-1-3', 'share', { a: 12, b: 3 }).svg.match(/data-anim="move"/g).length === 12);
     });
 });

@@ -101,7 +101,8 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
             stage.querySelectorAll('[data-step]').forEach((node) => {
                 const k = Number(node.getAttribute('data-step')) || 0;
                 node.classList.remove('ms-in');
-                node.style.visibility = k <= st.step ? 'visible' : 'hidden';
+                const until = Number(node.getAttribute('data-until')) || 0;
+                node.style.visibility = k <= st.step && (!until || st.step < until) ? 'visible' : 'hidden';
                 if (animate && k === st.step) { void node.getBoundingClientRect(); node.classList.add('ms-in'); }
             });
         }
@@ -275,7 +276,7 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         return new Promise((resolve, reject) => {
             if (!last) { reject(new Error('그림이 없어요')); return; }
             const img = new Image();
-            const url = URL.createObjectURL(new Blob([last.svg], { type: 'image/svg+xml;charset=utf-8' }));
+            const url = URL.createObjectURL(new Blob([last.finalSvg], { type: 'image/svg+xml;charset=utf-8' }));
             img.onload = () => {
                 try {
                     const canvas = document.createElement('canvas');
@@ -297,7 +298,7 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
     async function act(kind) {
         try {
             if (kind === 'screen') { await toggleScreen(); return; }
-            if (kind === 'svg') { download(new Blob([last.svg], { type: 'image/svg+xml;charset=utf-8' }), `${fileName()}.svg`); return; }
+            if (kind === 'svg') { download(new Blob([last.finalSvg], { type: 'image/svg+xml;charset=utf-8' }), `${fileName()}.svg`); return; }
             if (kind === 'png') { download(await toPng(), `${fileName()}.png`); toast('그림을 저장했어요.'); return; }
             if (kind === 'copy') {
                 if (!navigator.clipboard || typeof ClipboardItem === 'undefined') { toast('이 기기에서는 복사가 안 돼요. 저장을 눌러 주세요.'); return; }

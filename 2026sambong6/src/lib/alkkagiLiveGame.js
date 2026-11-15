@@ -4,7 +4,7 @@
  * 기존 알까기(턴제·한 화면 둘이서·AI)는 alkkagiGame.js를 그대로 쓰고, 이 모듈은 건드리지 않아요.
  * 물리는 alkkagiPhysics.js 함수를 읽기만 해서 다시 써요.
  *
- * - 차례가 없어요. 두 사람이 동시에 쏘고, 각자 5초에 한 번만 쏠 수 있어요.
+ * - 차례가 없어요. 두 사람이 동시에 쏘고, 각자 3초에 한 번만 쏠 수 있어요.
  * - 판 계산은 방장 기기(호스트) 한 곳에서만 해요. 상대는 샷(의도)만 보내요.
  * - 상대 알을 모두 떨어뜨리면 이겨요. 둘 다 0개가 되면 비겨요. 나가면(기권) 져요.
  * - 연결이 끊긴 채로 오래 지나면 비겨요(disconnect).
@@ -29,7 +29,7 @@ export const ALKKAGI_LIVE_ENABLED = true;
 /** 기권 방식: 기권 버튼(resign)인지 판에서 나가서(left)인지. 결과 문구만 달라요. */
 export const ALKKAGI_LIVE_FORFEIT_HOWS = Object.freeze(['resign', 'left']);
 /** 한 사람이 다시 쏘기까지 기다리는 시간 */
-export const ALKKAGI_LIVE_COOLDOWN_MS = 5000;
+export const ALKKAGI_LIVE_COOLDOWN_MS = 3000;
 
 /** 판 시작 전 카운트다운(ms). 이 시간 동안은 아무도 쏠 수 없어요(사람끼리·AI 대전 모두). */
 export const ALKKAGI_LIVE_COUNTDOWN_MS = 3000;
@@ -45,12 +45,12 @@ export function liveCountdownEndAt({ startedAt = 0, seenAt = 0, countdownMs = AL
     return left > 0 ? seen + left : 0;
 }
 /**
- * 화면은 5초 쿨다운을 보여 주지만, 샷이 서버·호스트에 도착하는 시각은 인터넷 상태에 따라 1~2초씩 흔들려요.
- * 앞 샷이 늦게 닿고 다음 샷이 제때 닿으면 실제로는 5초 간격인데 4초도 안 된 것처럼 보여 거절됐어요(#106).
- * 그래서 받는 쪽은 여유를 크게 둬요: 규칙(서버 시각) 3.5초, 호스트(받은 시각) 3초.
+ * 화면은 3초 쿨다운을 보여 주지만, 샷이 서버·호스트에 도착하는 시각은 인터넷 상태에 따라 1초 남짓 흔들려요.
+ * 앞 샷이 늦게 닿고 다음 샷이 제때 닿으면 실제로는 3초 간격인데 더 짧은 것처럼 보여 거절될 수 있어요(#106).
+ * 그래서 받는 쪽은 여유를 둬요: 규칙(서버 시각) 2초, 호스트(받은 시각) 1.8초. 거절돼도 한 번은 다시 보내요.
  */
-export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 3000;
-export const ALKKAGI_LIVE_RULE_GAP_MS = 3500;
+export const ALKKAGI_LIVE_HOST_MIN_GAP_MS = 1800;
+export const ALKKAGI_LIVE_RULE_GAP_MS = 2000;
 export const ALKKAGI_LIVE_END_REASONS = Object.freeze(['out', 'forfeit', 'draw', 'disconnect']);
 export const ALKKAGI_LIVE_SEATS = Object.freeze([ALKKAGI_BLACK, ALKKAGI_WHITE]);
 /**
@@ -282,7 +282,7 @@ export function alkkagiLiveGuide({ enabled = ALKKAGI_LIVE_ENABLED, over = false,
     if (over) return { line: '판이 끝났어요', tip: `내 알까기 전적 ${recordText}`.trim(), who: '', phase: 'over' };
     if (!enabled) return { line: '실시간 대전은 준비하고 있어요', tip: '지금은 쏠 수 없어요. 열리면 여기에서 바로 할 수 있어요.', who: '', phase: 'off' };
     if (!alkkagiLiveSeat(seat)) return { line: '구경하고 있어요', tip: '두 사람이 차례 없이 동시에 쏘는 판이에요.', who: '', phase: 'watch' };
-    if (!connected || !ready) return { line: '판에 연결하는 중이에요', tip: '연결되면 바로 쏠 수 있어요. 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요.', who: '', phase: 'connecting' };
+    if (!connected || !ready) return { line: '판에 연결하는 중이에요', tip: '연결되면 바로 쏠 수 있어요. 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 3초 쉬어요.', who: '', phase: 'connecting' };
     if (viewOnly) {
         return {
             line: '다른 창에서 두고 있어요',
@@ -293,7 +293,7 @@ export function alkkagiLiveGuide({ enabled = ALKKAGI_LIVE_ENABLED, over = false,
     }
     return {
         line: '지금 쏠 수 있어요',
-        tip: '알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 5초 쉬어요.',
+        tip: '알을 꾹 잡고 반대쪽으로 당겼다 놓아요. 한 번 쏘면 3초 쉬어요.',
         who: isHost ? '내가 방장이라 내 화면 판이 기준이에요.' : '방장 화면 판이 기준이에요.',
         phase: 'play',
     };

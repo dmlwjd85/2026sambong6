@@ -60,7 +60,7 @@ test('AI는 쿨다운이 끝나고 반응 시간만큼 기다렸다가 쏴요', 
     assert.equal(g.session.cooldownLeft(ALKKAGI_WHITE, t) > 0, true, '세션이 AI 샷을 받아들여 쿨다운이 걸려요');
 });
 
-test('AI 샷은 5초 쿨다운을 지켜요', async () => {
+test('AI 샷은 3초 쿨다운을 지켜요', async () => {
     const g = localGame({ level: 'hard', seed: 3 });
     const shotTimes = [];
     let t = 0;
@@ -73,7 +73,7 @@ test('AI 샷은 5초 쿨다운을 지켜요', async () => {
         if (g.submitted.length > before) shotTimes.push(t);
     }
     assert.ok(shotTimes.length >= 2, `여러 번 쏴요(${shotTimes.length})`);
-    for (let i = 1; i < shotTimes.length; i += 1) assert.ok(shotTimes[i] - shotTimes[i - 1] >= 5000, '5초 안에 다시 쏘지 않아요');
+    for (let i = 1; i < shotTimes.length; i += 1) assert.ok(shotTimes[i] - shotTimes[i - 1] >= 3000, '3초 안에 다시 쏘지 않아요');
 });
 
 test('사람이 가만히 있으면 AI가 결국 이겨요(판 끝은 방장 세션이 정해요)', async () => {

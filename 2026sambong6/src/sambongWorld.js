@@ -13371,7 +13371,7 @@ ${subjectLine}
             if (lead) {
                 lead.textContent = alk
                     ? (ALKKAGI_LIVE_ENABLED
-                        ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 「실시간 방 만들기」는 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 5초 쉬어요. 「실시간 AI」로 AI와도 동시에 쏠 수 있어요. 하다가 나가면 져요.'
+                        ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 「실시간 방 만들기」는 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 3초 쉬어요. 「실시간 AI」로 AI와도 동시에 쏠 수 있어요. 하다가 나가면 져요.'
                         : '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 하다가 나가면 져요.')
                     : chess
                     ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라지고, 기다리는 방은 만든 지 30분이 지나면 정리됩니다. 대국 중 나가면 패배입니다.'
@@ -14932,7 +14932,7 @@ ${subjectLine}
         window.closeAlkkagiLive = () => _alkLive.close();
         window.showAlkkagiLiveRules = () => _alkLive.showRules();
 
-        /** 실시간 알까기 AI와 하기: 나는 검은 알, AI는 흰 알. 둘 다 5초에 한 번씩 동시에 쏴요. level: easy | normal | hard */
+        /** 실시간 알까기 AI와 하기: 나는 검은 알, AI는 흰 알. 둘 다 3초에 한 번씩 동시에 쏴요. level: easy | normal | hard */
         window.startAlkkagiLiveAi = function (level) {
             if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
             if (!ALKKAGI_LIVE_ENABLED) return;

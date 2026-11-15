@@ -95,17 +95,17 @@ describe('실시간 알까기 동기화(가짜 네트워크)', () => {
         assert.equal(net.H.state().shots, 2);
     });
 
-    it('5초 쿨다운: 남은 시간 동안 막고, 지나면 다시 쏠 수 있어요', async () => {
+    it('3초 쿨다운: 남은 시간 동안 막고, 지나면 다시 쏠 수 있어요', async () => {
         const net = makeNet();
         await net.run(100);
         assert.equal(net.G.shoot(down('w1', 0.3), net.now()).ok, true);
         await net.run(1000);
         const left = net.G.cooldownLeft('white', net.now());
-        assert.ok(left > 3800 && left <= 4000, `left ${left}`);
+        assert.ok(left > 1800 && left <= 2000, `left ${left}`);
         assert.equal(net.G.shoot(down('w2', 0.3), net.now()).error, 'cooldown');
         // 호스트 화면에서도 상대 쿨다운이 보여요
-        assert.ok(net.H.cooldownLeft('white', net.now()) > 3000);
-        await net.run(4100);
+        assert.ok(net.H.cooldownLeft('white', net.now()) > 1000);
+        await net.run(2100);
         assert.equal(net.G.cooldownLeft('white', net.now()), 0);
         assert.equal(net.G.shoot(down('w2', 0.3), net.now()).ok, true);
         await net.run(3000);

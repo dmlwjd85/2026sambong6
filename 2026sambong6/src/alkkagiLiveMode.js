@@ -389,7 +389,7 @@ export function createAlkkagiLiveMode(deps) {
     function aiGuide(guide) {
         if (!ai) return guide;
         if (guide.phase === 'over') return { ...guide, tip: `${aiWith()} 한 판 더 할 수 있어요. 전적에는 들어가지 않아요.` };
-        if (guide.phase === 'play') return { ...guide, tip: `${aiName()}도 5초마다 쏴요. 알을 꾹 잡고 반대쪽으로 당겼다 놓아요.`, who: '' };
+        if (guide.phase === 'play') return { ...guide, tip: `${aiName()}도 3초마다 쏴요. 알을 꾹 잡고 반대쪽으로 당겼다 놓아요.`, who: '' };
         return { ...guide, who: '' };
     }
 
@@ -712,10 +712,10 @@ export function createAlkkagiLiveMode(deps) {
             return dialog('실시간 대전은 준비하고 있어요.<br>열리면 여기에서 규칙을 알려 드릴게요.', [{ label: '알겠어요', value: true, main: true }], '실시간 규칙');
         }
         return dialog(
-            '차례가 없어요. 두 사람이 동시에 쏴요. 시작할 때 3초를 센 뒤에 쏠 수 있어요.<br>한 번 쏘면 5초 동안 쉬어요. 카드 아래 막대와 알 둘레 고리가 다 차면 다시 쏠 수 있어요.<br>'
+            '차례가 없어요. 두 사람이 동시에 쏴요. 시작할 때 3초를 센 뒤에 쏠 수 있어요.<br>한 번 쏘면 3초 동안 쉬어요. 카드 아래 막대와 알 둘레 고리가 다 차면 다시 쏠 수 있어요.<br>'
             + '내 알을 꾹 잡고 반대쪽으로 당겼다가 놓으면 튕겨 나가요. 알이 움직이는 중에도 쏠 수 있어요.<br>'
             + '상대 알을 먼저 모두 떨어뜨리면 이겨요. 마지막 알이 함께 떨어지면 비겨요.<br>'
-            + (ai ? `${esc(aiSubject())} 흰 알이에요. AI도 5초에 한 번 쏴요. AI와 한 판은 전적에 들어가지 않아요.` : '방장 화면 판이 기준이에요. 한 기기에서는 창 하나로만 둘 수 있어요.'),
+            + (ai ? `${esc(aiSubject())} 흰 알이에요. AI도 3초에 한 번 쏴요. AI와 한 판은 전적에 들어가지 않아요.` : '방장 화면 판이 기준이에요. 한 기기에서는 창 하나로만 둘 수 있어요.'),
             [{ label: '알겠어요', value: true, main: true }],
             '실시간 규칙',
         );

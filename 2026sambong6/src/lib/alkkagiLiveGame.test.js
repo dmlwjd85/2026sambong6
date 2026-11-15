@@ -137,10 +137,11 @@ describe('실시간 알까기 판 요약', () => {
 });
 
 describe('실시간 알까기 쿨다운·샷 의도', () => {
-    it('5초 쿨다운 남은 시간과 표시', () => {
+    it('3초 쿨다운 남은 시간과 표시', () => {
+        assert.equal(L.ALKKAGI_LIVE_COOLDOWN_MS, 3000);
         assert.equal(L.liveCooldownLeft(0, 5000), 0);
-        assert.equal(L.liveCooldownLeft(1000, 3000), 3000);
-        assert.equal(L.liveCooldownLeft(1000, 7000), 0);
+        assert.equal(L.liveCooldownLeft(1000, 2000), 2000);
+        assert.equal(L.liveCooldownLeft(1000, 4000), 0);
         assert.equal(L.liveCooldownLabel(3000), '3.0초');
         assert.equal(L.liveCooldownLabel(2010), '2.1초');
         assert.equal(L.liveCooldownLabel(0), '');
@@ -164,7 +165,7 @@ describe('실시간 알까기 쿨다운·샷 의도', () => {
         assert.equal(L.decideLiveIntent(st, { seat: 'white', n: 3, gid: 100, shot, now: 15000 }).accept, true);
         assert.equal(L.decideLiveIntent(st, { seat: 'white', n: 2, gid: 100, shot, now: 15000 }).reason, 'seen');
         assert.equal(L.decideLiveIntent(st, { seat: 'white', n: 3, gid: 99, shot, now: 15000 }).reason, 'old_game');
-        const cd = L.decideLiveIntent(st, { seat: 'white', n: 3, gid: 100, shot, now: 12000 });
+        const cd = L.decideLiveIntent(st, { seat: 'white', n: 3, gid: 100, shot, now: 11000 });
         assert.equal(cd.reason, 'cooldown');
         assert.equal(cd.reject, true);
         const dead = { ...st, stones: st.stones.map((s) => (s.id === 'w1' ? { ...s, alive: false } : s)) };
@@ -208,7 +209,7 @@ describe('실시간 알까기 #100: 샷 범위·판 안내 문구', () => {
         // 스위치를 끈 배포: '동시에 쏘고' 같은 말을 하지 않아요
         const off = L.alkkagiLiveGuide({ enabled: false, seat: 'black' });
         assert.equal(off.phase, 'off');
-        assert.ok(!/동시에|5초/.test(all(off)));
+        assert.ok(!/동시에|3초/.test(all(off)));
         // 켠 경우: 연결 전에는 '연결하는 중'이고, 쏠 수 있다고 말하지 않아요
         const conn = L.alkkagiLiveGuide({ enabled: true, seat: 'black', connected: false });
         assert.equal(conn.phase, 'connecting');

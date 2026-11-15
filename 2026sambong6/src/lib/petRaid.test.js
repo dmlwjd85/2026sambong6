@@ -170,3 +170,17 @@ describe('탐험 보상', () => {
         assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), 10);
     });
 });
+
+describe('최소 인원 설정', () => {
+    it('마스터가 정한 인원부터 출발해요(기본 2명)', () => {
+        const pet = { phase: 'pet', species: 'emberkit', stage: 1, level: 5, exp: 0, enhance: 0, full: 90, fedAt: 1000 };
+        const m = (id) => R.raidMemberFromPet(pet, { id, name: `학생${id}`, now: 1000, today: '2026-11-16' });
+        let party = R.createRaidParty({ member: m('1'), stage: 1, unlocked: 1, now: 1000 }).party;
+        assert.equal(R.sanitizeRaidSettings(null).minParty, 2);
+        assert.equal(R.startRaid(party, { id: '1', seed: 5, now: 1000 }).error, 'need_party');
+        assert.equal(R.startRaid(party, { id: '1', settings: { minParty: 1 }, seed: 5, now: 1000 }).ok, true);
+        party = R.joinRaidParty(party, { member: m('2'), max: 13, now: 1000 }).party;
+        assert.equal(R.startRaid(party, { id: '1', settings: { minParty: 3 }, seed: 5, now: 1000 }).error, 'need_party');
+        assert.equal(R.raidMaxParty({ minParty: 5, maxParty: 3 }, 13), 5);
+    });
+});

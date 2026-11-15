@@ -63,7 +63,15 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
     const cfg = () => sanitizeOxbSettings(boss.settings());
     const open = () => api.isAdmin() || isOxbOpen(boss.today(), cfg());
     const live = () => st.rooms.filter((r) => !isOxbRoomStale(r, Date.now()));
-    const myRoom = () => live().find((r) => r.members.some((m) => m.id === me())) || null;
+    // 내가 들어 있는 방은 오래돼도 내 방이에요(안 그러면 '방 없애기'가 먹통이 돼요). 다른 사람에게만 안 보여요.
+    const myRoom = () => st.rooms.find((r) => r.members.some((m) => m.id === me())) || null;
+    /** 방장이 기다리는 동안 방이 '오래된 방'이 되지 않게 가끔 시간을 새로 적어요. */
+    function keepAlive() {
+        const r = myRoom();
+        if (!st.active || !r || r.leaderId !== me() || r.status !== 'open' || st.busy) return;
+        if (Date.now() - Math.max(r.updatedAt, r.createdAt) < 5 * 60000) return;
+        void boss.tx(r.id, (cur) => setOxbBoss(cur, { id: me(), bossIdx: r.bossIdx, now: Date.now() })).catch(() => {});
+    }
     const myMember = () => { const x = boss.me(); return x ? oxbMember(x) : null; };
     const reduce = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -107,6 +115,7 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
     /* ---------- 구독·저장 ---------- */
     function subscribe() {
         if (st.unsub || !boss.watch) return;
+        st.alive = setInterval(keepAlive, 60000);
         st.unsub = boss.watch((list) => {
             st.rooms = (Array.isArray(list) ? list : []).map(sanitizeOxbRoom).filter(Boolean);
             if (st.active) sync();
@@ -114,6 +123,8 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
     }
     function unsubscribe() {
         if (st.unsub) { try { st.unsub(); } catch (_) { /* 무시 */ } }
+        if (st.alive) clearInterval(st.alive);
+        st.alive = 0;
         st.unsub = null;
     }
     function stopTimers() {

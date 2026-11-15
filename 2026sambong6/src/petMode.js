@@ -646,7 +646,7 @@ export function createPetMode(deps) {
                 if (!el || el.classList.contains('hidden') || !el.offsetParent) return;
                 // 마스터가 설정 칸에 적는 중이면 다시 그리지 않아요.
                 if (!busy && !fx && !(el.querySelector('.pet-admin[open]'))) render();
-                if (tab === 'raid') void raid.maybePlay();
+                if (tab === 'raid') { void raid.maybePlay(); raid.keepAlive(); }
             }, 60000);
         }
     }

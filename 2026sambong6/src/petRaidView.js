@@ -57,7 +57,15 @@ export function createPetRaidView(ctx) {
     const myMember = () => raidMemberFromPet(petBoxMain(box()), { id: me(), name: deps.selfName ? deps.selfName() : me(), now: ctx.now(), today: ctx.today() });
     const unlocked = () => (ctx.free() ? RAID_STAGE_COUNT : raidUnlockedStage(box().raid));
     const liveParties = () => parties.filter((p) => !isRaidPartyStale(p, ctx.now()));
-    const myParty = () => liveParties().find((p) => p.members.some((m) => m.id === me())) || null;
+    // 내가 들어 있는 방은 오래돼도 내 방이에요(오래됐다고 안 보이면 '방 없애기'가 먹통이 돼요). 다른 사람에게만 안 보여요.
+    const myParty = () => parties.find((p) => p.members.some((m) => m.id === me())) || null;
+    /** 방장이 방을 열어 두고 기다리는 동안 방이 '오래된 방'이 되지 않게 가끔 시간을 새로 적어요. */
+    function keepAlive() {
+        const p = myParty();
+        if (!p || p.leaderId !== me() || p.status !== 'open' || busy || playing) return;
+        if (ctx.now() - Math.max(p.updatedAt, p.createdAt) < 5 * 60000) return;
+        void deps.raidTx(p.id, (cur) => setRaidStage(cur, { id: me(), stage: p.stage, unlocked: RAID_STAGE_COUNT, now: ctx.now() })).catch(() => {});
+    }
     /** 아직 보상을 안 받은 내 전투(방에서 나왔거나 방이 다시 열렸어도 남아 있어요) */
     const pendingRun = () => {
         const claimed = box().raid.claimed;
@@ -512,7 +520,7 @@ export function createPetRaidView(ctx) {
             <p class="pet-note">사람이 많을수록 유리해요. 한 명 늘 때마다 팀 공격력이 ${cfg.teamBonus}%씩 세져요. 전투는 자동이에요.</p>
             ${waiting ? '<p class="pet-lead">전투가 끝났어요. 방장이 다시 모으면 또 갈 수 있어요.</p>'
                 : leader
-                    ? `<button type="button" class="pet-btn is-main" data-p="raid-go"${p.members.length >= RAID_MIN_PARTY ? '' : ' disabled'}>⚔️ 출발! ${p.members.length >= RAID_MIN_PARTY ? '' : '(2명부터)'}</button>`
+                    ? `<button type="button" class="pet-btn is-main" data-p="raid-go"${p.members.length >= cfg.minParty ? '' : ' disabled'}>⚔️ 출발! ${p.members.length >= cfg.minParty ? '' : `(${cfg.minParty}명부터)`}</button>`
                     : '<p class="pet-lead">방장이 출발하면 전투가 시작돼요. 기다려 주세요!</p>'}
             ${leader && waiting ? '<button type="button" class="pet-btn is-main" data-p="raid-again">같은 팀으로 다시 모으기</button>' : ''}
             <button type="button" class="pet-link" data-p="raid-leave">${leader ? '방 없애기' : '팀에서 나가기'}</button>
@@ -536,7 +544,7 @@ export function createPetRaidView(ctx) {
         const day = box().raid.day === ctx.today() ? box().raid.dayRewards : 0;
         return `<div class="pet-card raid-lobby">
             <h3 class="pet-title">⚔️ 보스 탐험</h3>
-            <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${RAID_MIN_PARTY}명부터 ${maxParty()}명까지, 도전은 몇 번이든 할 수 있어요.</p>
+            <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${cfg.minParty}명부터 ${maxParty()}명까지, 도전은 몇 번이든 할 수 있어요.</p>
             <div class="raid-stages">${stages}</div>
             ${bossCard(sel, cfg)}
             <p class="pet-note">오늘 반복 보상 ${Math.min(day, cfg.dailyRewards)} / ${cfg.dailyRewards}번 받음 · 첫 클리어 보상은 따로 받아요. 방은 내가 깬 다음 스테이지까지 만들 수 있고, 친구 방에는 어느 스테이지든 참가할 수 있어요.</p>
@@ -589,6 +597,7 @@ export function createPetRaidView(ctx) {
             <summary>⚙️ 탐험 마스터 설정 (선생님만 보여요)</summary>
             <div class="pet-admin-body">
                 <label class="pet-set-row"><span>하루 보상 횟수</span>${n('dailyRewards', cfg.dailyRewards, 0, 99)} 번 (도전은 무제한)</label>
+                <label class="pet-set-row"><span>출발 최소</span>${n('minParty', cfg.minParty, 1, RAID_MAX_PARTY)} 명</label>
                 <label class="pet-set-row"><span>한 팀 최대</span>${n('maxParty', cfg.maxParty, 0, RAID_MAX_PARTY)} 명 (0 = 학급 인원, 최대 13)</label>
                 <label class="pet-set-row"><span>인원 보너스</span>한 명 늘 때마다 공격력 +${n('teamBonus', cfg.teamBonus, 0, 50)} %</label>
                 <div class="raid-admin-table"><table>
@@ -618,6 +627,7 @@ export function createPetRaidView(ctx) {
         const val = (name) => { const i = el.querySelector(`[data-raid-set="${name}"]`); return i ? i.value : ''; };
         const raid = reset ? sanitizeRaidSettings(null) : sanitizeRaidSettings({
             dailyRewards: val('dailyRewards'),
+            minParty: val('minParty'),
             maxParty: val('maxParty'),
             teamBonus: val('teamBonus'),
             stages: Array.from({ length: RAID_STAGE_COUNT }, (_, i) => ({ name: val(`name-${i}`), type: val(`type-${i}`), hp: val(`hp-${i}`), atk: val(`atk-${i}`), hits: val(`hits-${i}`), first: val(`first-${i}`), repeat: val(`repeat-${i}`) })),
@@ -650,5 +660,5 @@ export function createPetRaidView(ctx) {
         if (sel) void changeStage(Number(sel.value) || 1);
     }
 
-    return { start, stop, html, handle, onChange, maybePlay, join, isPlaying: () => !!playing, _playBattle: playBattle };
+    return { start, stop, html, handle, onChange, maybePlay, keepAlive, join, isPlaying: () => !!playing, _playBattle: playBattle };
 }

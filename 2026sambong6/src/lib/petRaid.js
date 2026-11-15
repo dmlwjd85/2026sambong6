@@ -56,6 +56,8 @@ export const RAID_DEFAULT_STAGES = Object.freeze([
 export const RAID_DEFAULT_SETTINGS = Object.freeze({
     /** 하루에 보상을 받을 수 있는 횟수(도전 자체는 무제한) */
     dailyRewards: 3,
+    /** 출발할 수 있는 가장 적은 인원 */
+    minParty: 2,
     /** 한 팀 최대 인원(0이면 학급 인원에 맞춰요, 최대 13) */
     maxParty: 0,
     /** 한 명 늘 때마다 팀 공격력이 이만큼(%) 세져요 */
@@ -93,6 +95,7 @@ export function sanitizeRaidSettings(raw) {
     return {
         stages,
         dailyRewards: num(src.dailyRewards, d.dailyRewards, 0, 99),
+        minParty: num(src.minParty, d.minParty, 1, RAID_MAX_PARTY),
         maxParty: num(src.maxParty, d.maxParty, 0, RAID_MAX_PARTY),
         teamBonus: num(src.teamBonus, d.teamBonus, 0, 50),
     };
@@ -102,7 +105,8 @@ export function sanitizeRaidSettings(raw) {
 export function raidMaxParty(settings, classSize = RAID_MAX_PARTY) {
     const s = sanitizeRaidSettings(settings);
     const byClass = Math.max(RAID_MIN_PARTY, Math.min(RAID_MAX_PARTY, int(classSize) || RAID_MAX_PARTY));
-    return s.maxParty >= RAID_MIN_PARTY ? Math.min(s.maxParty, RAID_MAX_PARTY) : byClass;
+    const max = s.maxParty >= RAID_MIN_PARTY ? Math.min(s.maxParty, RAID_MAX_PARTY) : byClass;
+    return Math.max(max, s.minParty);
 }
 
 /** 내가 도전할 수 있는 가장 높은 스테이지(앞 스테이지를 깨야 다음이 열려요). 1부터예요. */
@@ -319,8 +323,8 @@ export function startRaid(partyRaw, { id, settings = null, seed = 1, now = 0 } =
     if (!party) return bad('no_party');
     if (party.leaderId !== cleanId(id)) return bad('leader_only', party);
     if (party.status !== 'open') return bad('fighting', party);
-    if (party.members.length < RAID_MIN_PARTY) return bad('need_party', party);
     const cfg = sanitizeRaidSettings(settings);
+    if (party.members.length < cfg.minParty) return bad('need_party', party);
     const boss = { ...cfg.stages[party.stage - 1] };
     const s = int(seed) || 1;
     const sim = simulateRaid(party.members, boss, s, { teamBonus: cfg.teamBonus });
@@ -386,7 +390,7 @@ export const RAID_ERROR_TEXT = Object.freeze({
     stale: '오래된 방이에요. 새로 만들어요.',
     full: '팀이 가득 찼어요.',
     leader_only: '방장만 할 수 있어요.',
-    need_party: '두 명 이상 모여야 출발할 수 있어요.',
+    need_party: '사람이 더 모여야 출발할 수 있어요.',
 });
 
 export function raidErrorText(code) {

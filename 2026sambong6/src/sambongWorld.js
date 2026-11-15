@@ -1376,7 +1376,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.58';
+        const APP_VERSION = 'v1.59';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -25511,12 +25511,21 @@ ${subjectLine}
                         </div>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center mt-2">
-                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
+                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="팔 원금 (비우면 전액 ${pos.principal})" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
                         <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
                     </div>
                 </div>`;
             });
+            // 다시 그려도 적어 둔 매도 금액(과 커서)은 그대로 둬요.
+            const typed = {};
+            let focusId = '';
+            box.querySelectorAll('input[id^="bankInvestSell_"]').forEach((el) => {
+                if (el.value !== '') typed[el.id] = el.value;
+                if (document.activeElement === el) focusId = el.id;
+            });
             box.innerHTML = rows.join('');
+            Object.keys(typed).forEach((id) => { const el = document.getElementById(id); if (el) el.value = typed[id]; });
+            if (focusId) { const el = document.getElementById(focusId); if (el) el.focus(); }
         }
 
         /** 지수 매수·매도가 겹치면 같은 원금을 여러 번 정산할 수 있어 한 건씩만 처리합니다. */
@@ -25628,6 +25637,9 @@ ${subjectLine}
         window.sellStockIndex = async function(marketId) {
             if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            // 팔 금액은 맨 먼저 읽어요. 시세를 새로 받는 동안 화면이 다시 그려지면 칸이 비워져 전액 매도가 되던 문제가 있었어요.
+            const sellInpFirst = document.getElementById(`bankInvestSell_${marketId}`);
+            const sellRawFirst = sellInpFirst ? String(sellInpFirst.value || '').trim() : '';
             _stockTradeBusy = true;
             setStockTradeButtonsDisabled(true);
             try {
@@ -25641,7 +25653,8 @@ ${subjectLine}
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
                 const held = window.playerState.stockInvestments[market.id];
                 const sellInp = document.getElementById(`bankInvestSell_${market.id}`);
-                const sellRaw = sellInp && String(sellInp.value || '').trim() !== '' ? sellInp.value : '';
+                const sellRaw = sellRawFirst;
+                if (sellInp && sellRaw !== '' && String(sellInp.value || '').trim() === '') sellInp.value = sellRaw;
                 const gate = canSellStock({ existing: held, amount: sellRaw === '' ? null : sellRaw });
                 if (!gate.ok) {
                     await window.customAlert(stockSellFailMessage(gate.reason, gate.max));
@@ -25707,6 +25720,7 @@ ${subjectLine}
                 });
                 if (!saved) return;
                 if (sellInp) sellInp.value = '';
+                { const curInp = document.getElementById(`bankInvestSell_${market.id}`); if (curInp) curInp.value = ''; }
                 updateUI();
                 const applied = trade.applied || sold;
                 await window.customAlert(

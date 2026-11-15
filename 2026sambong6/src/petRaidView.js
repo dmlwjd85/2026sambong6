@@ -271,8 +271,12 @@ export function createPetRaidView(ctx) {
             <p class="raid-fx-phase"></p>
             <div class="raid-fx-feed" aria-hidden="true"></div>
             <p class="raid-fx-banner" aria-live="polite"></p>`;
-        host.appendChild(el);
-        try { if (el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (_) { /* 전체 화면이 안 되는 기기 */ }
+        // 흔들림·번쩍임 때 뒤 화면이 비치지 않게, 움직이지 않는 어두운 바탕(wrap) 안에서만 전투 화면을 흔들어요.
+        const wrap = document.createElement('div');
+        wrap.className = 'raid-fx-wrap';
+        wrap.appendChild(el);
+        host.appendChild(wrap);
+        try { if (wrap.requestFullscreen) wrap.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (_) { /* 전체 화면이 안 되는 기기 */ }
         // 참가자 체력: 화면 가장자리에 한 줄씩 보여 줘요.
         const maxHpOf = {};
         const hpOf = {};
@@ -518,8 +522,8 @@ export function createPetRaidView(ctx) {
                 await say(sim.alive.length ? '시간 초과…' : '모두 쓰러졌어요…', 'is-lose', reduce ? 600 : 1500);
             }
         } finally {
-            try { if (document.fullscreenElement === el && document.exitFullscreen) await document.exitFullscreen(); } catch (_) { /* 무시 */ }
-            el.remove();
+            try { if (document.fullscreenElement === wrap && document.exitFullscreen) await document.exitFullscreen(); } catch (_) { /* 무시 */ }
+            wrap.remove();
         }
     }
 

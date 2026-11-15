@@ -136,7 +136,8 @@
 .raid-fx-confetti { position: absolute; top: -12px; width: 9px; height: 15px; background: hsl(calc(var(--h) * 1deg) 90% 60%); animation: raid-confetti 1.6s var(--d) ease-in forwards; }
 @keyframes raid-confetti { to { transform: translateY(105vh) rotate(720deg); } }
 @media (prefers-reduced-motion: reduce) {
-    .raid-fx, .raid-fx *, .raid-boss-art { animation: none !important; }
+    /* 움직임 줄이기: 전투는 그대로 보여 주고 화면 전체 흔들림만 꺼요. */
+    .raid-fx.is-shake { animation: none !important; }
 }
 #challengePane-pet .raid-admin-table .pet-set-input { padding: 0.25rem 0.3rem; font-size: 12px; min-height: 0; }
 

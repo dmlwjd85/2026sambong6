@@ -201,7 +201,8 @@
     .oxb-banner.is-win { font-size: 5rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .oxb-scene *, .oxb-room-boss span { animation: none !important; transition: none !important; }
+    /* 움직임 줄이기: 전투는 그대로 보여 주고 화면 흔들림만 꺼요. */
+    .oxb-scene.is-shake .oxb-field { animation: none !important; }
 }
 
 /* 보스가 누구를 때릴지 고르는 순간 */

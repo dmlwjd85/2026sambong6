@@ -74,7 +74,8 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
         void boss.tx(r.id, (cur) => setOxbBoss(cur, { id: me(), bossIdx: r.bossIdx, now: Date.now() })).catch(() => {});
     }
     const myMember = () => { const x = boss.me(); return x ? oxbMember(x) : null; };
-    const reduce = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // 기기에서 '움직임 줄이기'를 켜 두어도 전투는 같은 속도로 보여 줘요(화면 흔들림만 CSS에서 꺼요).
+    const reduce = () => false;
 
     /* ---------- 소리(짧은 효과음을 직접 만들어요) ---------- */
     function tone(notes, { type = 'square', vol = 0.12 } = {}) {

@@ -245,7 +245,8 @@ export function createPetRaidView(ctx) {
     async function playBattle(run, sim) {
         // 전투는 화면 전체를 덮어요(되는 기기에서는 진짜 전체 화면으로 바꿔요).
         const host = document.body;
-        const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        // 기기에서 '움직임 줄이기'를 켜 두어도 전투는 같은 속도로 보여 줘요(화면 흔들림만 CSS에서 꺼요).
+        const reduce = false;
         const color = TYPE_COLOR[run.boss.type] || '#fff';
         const el = document.createElement('div');
         el.className = `raid-fx type-${run.boss.type}`;

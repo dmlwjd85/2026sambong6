@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import * as P from './petGame.js';
 
 const H = 3600000;
-const T0 = new Date(2026, 10, 16, 9).getTime();
+// 한국 시간 2026-11-16(월) 오전 9시. 배고픔은 한국 시간 낮(8~19시)에만 줄어요.
+const T0 = Date.UTC(2026, 10, 16, 0);
 const DAY = '2026-11-16';
 const seq = (...vals) => { let i = 0; return () => vals[Math.min(i++, vals.length - 1)]; };
 const pet = (extra = {}) => P.sanitizePet({ phase: 'pet', species: 'emberkit', stage: 1, level: 1, exp: 0, enhance: 0, full: 60, fedAt: T0, ...extra });
@@ -67,12 +68,13 @@ describe('펫: 먹이·배고픔·가출', () => {
         assert.equal(P.petView(pet({ full: 100 }), T0, DAY).mood, 'happy');
         assert.equal(P.petView(pet({ full: 40 }), T0, DAY).mood, 'ok');
         assert.equal(P.petView(pet({ full: 10 }), T0, DAY).mood, 'hungry');
-        assert.equal(P.petView(pet({ full: 100 }), T0 + 30 * H, DAY).mood, 'starving');
+        assert.equal(P.petView(pet({ full: 100 }), T0 + 30 * H, DAY).mood, 'ok'); // 낮 17시간만 지났어요(100 − 68)
+        assert.equal(P.petView(pet({ full: 100 }), T0 + 54 * H, DAY).mood, 'starving');
     });
 
     it('배가 빈 채로 3일이 지나면 가출하고, 10봉으로 데려와요', () => {
         const p = pet({ full: 100, level: 12, enhance: 3 });
-        const emptyAt = T0 + 25 * H;
+        const emptyAt = T0 + 51 * H; // 낮 25시간이 지난 때(셋째 날 낮 12시)
         assert.equal(P.petView(p, emptyAt + 71 * H, DAY).away, false);
         const late = emptyAt + 73 * H;
         assert.equal(P.petView(p, late, DAY).away, true);
@@ -88,8 +90,8 @@ describe('펫: 먹이·배고픔·가출', () => {
     });
 
     it('금요일 오후에 배불리 먹이면 월요일 아침에는 아직 집에 있어요', () => {
-        const fri = new Date(2026, 10, 13, 15).getTime();
-        const mon = new Date(2026, 10, 16, 9).getTime();
+        const fri = Date.UTC(2026, 10, 13, 6); // 금요일 오후 3시(한국 시간)
+        const mon = Date.UTC(2026, 10, 16, 0); // 월요일 오전 9시
         const v = P.petView(pet({ full: 100, fedAt: fri }), mon, DAY);
         assert.equal(v.away, false);
         assert.equal(v.mood, 'starving');
@@ -326,4 +328,111 @@ it('기술: 레벨 1·10·20에 하나씩 배워요', async () => {
     assert.deepEqual(list.map((k) => k.learned), [true, true, false]);
     assert.equal(list[2].level, 20);
     assert.equal(list[1].name, '물대포');
+});
+
+describe('펫: 밤에는 배고프지 않아요', () => {
+    it('저녁 7시부터 다음 날 아침 8시까지는 배부름이 그대로예요', () => {
+        const evening = Date.UTC(2026, 10, 16, 10); // 저녁 7시
+        const p = pet({ full: 80, fedAt: evening });
+        assert.equal(P.petView(p, evening + 13 * H, DAY).fullNow, 80); // 다음 날 아침 8시
+        assert.equal(P.petView(p, evening + 15 * H, DAY).fullNow, 72); // 아침 10시: 낮 2시간
+        assert.equal(P.petAwakeHoursBetween(T0, T0 + 24 * H), 11);
+        assert.equal(P.petAwakeHoursBetween(T0, T0 + 10 * 24 * H), 110);
+        assert.equal(P.petAddAwakeHours(T0 - 9 * H, 12), T0 - 9 * H + 33 * H); // 자정부터 낮 12시간 → 다음 날 오전 9시
+    });
+    it('마스터가 시간을 바꾸면 그 시간에만 배고파져요', () => {
+        assert.deepEqual(P.setPetAwakeHours(9, 15), { start: 9, end: 15 });
+        assert.equal(P.petAwakeHoursBetween(T0, T0 + 24 * H), 6);
+        assert.deepEqual(P.setPetAwakeHours(20, 3), P.PET_AWAKE_DEFAULT); // 말이 안 되는 값은 기본으로
+        assert.deepEqual(P.sanitizePetSettings({ awake: { start: 7, end: 30 }, cageSize: 9 }).awake, { start: 7, end: 24 });
+        assert.equal(P.sanitizePetSettings({ cageSize: 9 }).cageSize, P.PET_MAX_CAGE_SIZE);
+        assert.equal(P.sanitizePetSettings(null).cageSize, 3);
+        P.setPetAwakeHours(8, 19);
+    });
+});
+
+describe('펫: 케이지·알 보관함·강화 재료', () => {
+    const boxOf = (list, extra = {}) => P.sanitizePetBox({ v: 2, slots: list.length, main: 0, list, dex: {}, ...extra });
+    const raw = (species, extra = {}) => ({ phase: 'pet', species, stage: 1, level: 5, exp: 0, enhance: 1, full: 60, fedAt: T0, ...extra });
+
+    it('케이지에 넣으면 배고프지 않고, 꺼내면 그때부터 다시 배고파져요', () => {
+        const box = boxOf([raw('emberkit'), { phase: 'none' }]);
+        const r = P.cagePet(box, 0, { now: T0 + 5 * H, today: DAY });
+        assert.equal(r.ok, true);
+        assert.equal(r.box.list[0].phase, 'none');
+        assert.equal(r.box.cage.length, 1);
+        assert.equal(r.box.cage[0].full, 40); // 넣을 때 배부름(60 − 20)
+        assert.equal(P.cagePetView(r.box.cage[0], DAY).fullNow, 40); // 며칠이 지나도 그대로
+        const out = P.uncagePet(r.box, 0, 1, { now: T0 + 100 * H, today: DAY });
+        assert.equal(out.ok, true);
+        assert.equal(out.box.cage.length, 0);
+        assert.equal(P.petView(out.box.list[1], T0 + 100 * H, DAY).fullNow, 40);
+        assert.equal(P.petView(out.box.list[1], T0 + 100 * H, DAY).away, false);
+    });
+    it('케이지 하나에 3마리, 한 종류는 한 마리씩만', () => {
+        let box = boxOf([raw('emberkit')], { cage: [raw('dropotter'), raw('sproutdeer')] });
+        assert.equal(P.petCageCapacity(box), 3);
+        box = P.cagePet(box, 0, { now: T0, today: DAY }).box;
+        assert.equal(box.cage.length, 3);
+        const full = P.sanitizePetBox({ ...box, list: [raw('zapowl')] });
+        assert.equal(P.cagePet(full, 0, { now: T0, today: DAY }).error, 'cage_full');
+        assert.equal(P.petCageCapacity(full, { cageSize: 5 }), 5);
+        const dup = boxOf([raw('emberkit')], { cage: [raw('emberkit')] });
+        assert.equal(P.cagePet(dup, 0, { now: T0, today: DAY }).error, 'cage_dup');
+        assert.equal(P.cagePet(boxOf([{ phase: 'egg', taps: 1 }]), 0, { now: T0 }).error, 'no_pet');
+    });
+    it('칸에 펫이 있으면 자리를 바꾸고, 알이 있는 칸으로는 못 꺼내요', () => {
+        const box = boxOf([raw('emberkit'), { phase: 'egg', taps: 2 }], { cage: [raw('dropotter', { level: 9 })] });
+        const sw = P.uncagePet(box, 0, 0, { now: T0 + 2 * H, today: DAY });
+        assert.equal(sw.box.list[0].species, 'dropotter');
+        assert.equal(sw.box.cage[0].species, 'emberkit');
+        assert.equal(sw.box.cage[0].full, 52);
+        assert.equal(P.uncagePet(box, 0, 1, { now: T0 }).error, 'slot_busy');
+        assert.equal(P.uncagePet(box, 3, 0, { now: T0 }).error, 'cage_empty');
+    });
+    it('알은 보관함에 넣어 두었다가 빈 칸에 꺼내요', () => {
+        let box = boxOf([{ phase: 'egg', taps: 4 }]);
+        box = P.storePetEgg(box, 0).box;
+        assert.equal(box.eggs, 1);
+        assert.equal(box.list[0].phase, 'none');
+        box = P.addStoredEggs(box, 2).box; // 선생님 선물
+        assert.equal(box.eggs, 3);
+        const used = P.useStoredEgg(box, 0, { now: T0 });
+        assert.equal(used.box.eggs, 2);
+        assert.deepEqual([used.box.list[0].phase, used.box.list[0].taps], ['egg', 0]);
+        assert.equal(P.useStoredEgg(used.box, 0).error, 'slot_used');
+        assert.equal(P.useStoredEgg(boxOf([{ phase: 'none' }]), 0).error, 'no_stored_egg');
+        assert.equal(P.addStoredEggs(box, 999).box.eggs, P.PET_MAX_STORED_EGGS);
+    });
+    it('이미 가진 종이 태어나면 강화 재료가 되고, 재료로는 반드시 강화돼요', () => {
+        const born = P.sanitizePet(raw('emberkit', { level: 1, enhance: 0, shiny: true }));
+        const box = boxOf([{ phase: 'egg', taps: 9 }, raw('dropotter')], { cage: [raw('emberkit')] });
+        const r = P.settleHatchedPet(box, 0, born);
+        assert.equal(r.duplicate, true);
+        assert.equal(r.box.list[0].phase, 'none');
+        assert.equal(r.box.mats.emberkit, 1);
+        assert.equal(r.box.cage[0].shiny, true); // 색다른 중복은 가진 펫을 색다르게
+        // 처음 보는 종이면 그대로 펫이 돼요.
+        const fresh = P.settleHatchedPet(box, 0, P.sanitizePet(raw('zapowl')));
+        assert.equal(fresh.duplicate, false);
+        assert.equal(fresh.box.list[0].species, 'zapowl');
+        // 재료로 강화
+        const withMat = P.uncagePet(r.box, 0, 0, { now: T0 }).box;
+        const enh = P.enhancePetWithMat(withMat, 0, { now: T0, today: DAY });
+        assert.equal(enh.ok, true);
+        assert.equal(enh.cost, 0);
+        assert.equal(enh.box.list[0].enhance, 2);
+        assert.equal(enh.box.mats.emberkit, 0);
+        assert.equal(P.enhancePetWithMat(enh.box, 0, { now: T0 }).error, 'no_mat');
+        assert.equal(P.enhancePetWithMat(withMat, 1, { now: T0 }).error, 'no_mat'); // 다른 종의 재료는 못 써요
+    });
+    it('저장 모양에 케이지·알·재료가 들어가고, 예전 저장값도 읽어요', () => {
+        const doc = P.petBoxToDoc(boxOf([raw('emberkit')], { cage: [raw('dropotter')], eggs: 2, mats: { emberkit: 3, nope: 9 } }));
+        assert.equal(doc.cage.length, 1);
+        assert.equal(doc.eggs, 2);
+        assert.equal(doc.mats.emberkit, 3);
+        assert.equal(doc.mats.nope, undefined);
+        const old = P.sanitizePetBox({ v: 2, slots: 1, main: 0, list: [raw('emberkit')], dex: {} });
+        assert.deepEqual([old.cage.length, old.eggs, old.mats.emberkit], [0, 0, 0]);
+    });
 });

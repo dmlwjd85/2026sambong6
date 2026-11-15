@@ -1380,7 +1380,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.76';
+        const APP_VERSION = 'v1.77';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10601,6 +10601,37 @@ ${subjectLine}
                 if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 고칠 수 있어요');
                 await setDoc(getGlobalSettingsDocRef(), { petSettings }, { merge: true });
                 window.globalSettings = { ...(window.globalSettings || {}), petSettings };
+            },
+            // 알 선물: 학생마다 선물함 문서가 하나 있어요(petGifts/{학번}.eggs). 학생 저장과 따로 둬서 서로 덮어쓰지 않아요.
+            giftEggs: async (ids, count) => {
+                if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 선물할 수 있어요');
+                const n = Math.max(1, Math.min(10, Math.floor(Number(count)) || 1));
+                await Promise.all((ids || []).map((id) => setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', String(id)), { eggs: increment(n), updatedAt: Date.now() }, { merge: true })));
+            },
+            giftWatch: (cb) => {
+                const id = String(localStorage.getItem('sambong_student_id') || '');
+                if (!id || !db) return null;
+                return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', id), (snap) => {
+                    cb(snap.exists() ? Math.max(0, Math.floor(Number(snap.data().eggs) || 0)) : 0);
+                }, (err) => { console.warn('petGifts', err); });
+            },
+            // 선물함을 비우고 몇 개였는지 돌려줘요.
+            takeGifts: () => {
+                const id = String(localStorage.getItem('sambong_student_id') || '');
+                if (!id) return Promise.resolve(0);
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', id);
+                return runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const n = snap.exists() ? Math.max(0, Math.floor(Number(snap.data().eggs) || 0)) : 0;
+                    if (n > 0) tx.set(ref, { eggs: 0, takenAt: Date.now() }, { merge: true });
+                    return n;
+                });
+            },
+            returnGifts: (count) => {
+                const id = String(localStorage.getItem('sambong_student_id') || '');
+                const n = Math.max(0, Math.floor(Number(count)) || 0);
+                if (!id || !n) return Promise.resolve();
+                return setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', id), { eggs: increment(n) }, { merge: true });
             },
         });
 

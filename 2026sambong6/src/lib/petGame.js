@@ -21,7 +21,7 @@ export const PET_PLAY_PER_DAY = 5;
 /** 놀아 주기는 한 번 하면 이만큼 기다려야 다시 할 수 있어요(4시간). */
 export const PET_PLAY_COOLDOWN_MS = 4 * 3600000;
 export const PET_PLAY_EXP = 8;
-/** 포만감은 한 시간에 이만큼 줄어요(가득 찬 뒤 약 하루면 비어요). */
+/** 포만감은 깨어 있는 시간(기본 오전 8시~저녁 7시) 한 시간에 이만큼 줄어요. 밤에는 줄지 않아요. */
 export const PET_HUNGER_PER_HOUR = 4;
 /** 포만감이 이보다 많으면 더 못 먹여요. */
 export const PET_FEED_BLOCK_AT = 90;
@@ -32,6 +32,64 @@ export const PET_RETURN_PRICE = 10;
 export const PET_WALK_MIN_FULL = 30;
 export const PET_NAME_MAX = 8;
 const HOUR = 3600000;
+const DAY_MS = 24 * HOUR;
+/** 한국 시간(UTC+9) 기준으로 낮·밤을 나눠요. 기기 시간대가 달라도 같은 결과가 나와요. */
+const KST_MS = 9 * HOUR;
+
+/* ---------- 배고픔 시계: 낮(깨어 있는 시간)에만 배가 고파져요 ---------- */
+
+export const PET_AWAKE_DEFAULT = Object.freeze({ start: 8, end: 19 });
+let awake = { ...PET_AWAKE_DEFAULT };
+/** 배가 고파지는 시간대를 정해요(마스터 설정). start시부터 end시까지. */
+export function setPetAwakeHours(start, end) {
+    const s = Math.max(0, Math.min(23, Math.floor(Number(start))));
+    const e = Math.max(1, Math.min(24, Math.floor(Number(end))));
+    awake = Number.isFinite(s) && Number.isFinite(e) && e > s ? { start: s, end: e } : { ...PET_AWAKE_DEFAULT };
+    return { ...awake };
+}
+export function petAwakeHours() { return { ...awake }; }
+
+/** from~to 사이에 깨어 있던 시간(시간 단위). 밤은 세지 않아요. */
+export function petAwakeHoursBetween(from, to) {
+    const a = Number(from) || 0;
+    const b = Number(to) || 0;
+    if (!(b > a)) return 0;
+    const perDay = (awake.end - awake.start) * HOUR;
+    let day = Math.floor((a + KST_MS) / DAY_MS);
+    const lastDay = Math.floor((b + KST_MS) / DAY_MS);
+    let total = 0;
+    // 아주 오래 지났으면 가운데 날들은 한꺼번에 세요.
+    if (lastDay - day > 3) {
+        const firstEnd = (day + 1) * DAY_MS - KST_MS;
+        return petAwakeHoursBetween(a, firstEnd) + ((lastDay - day - 1) * perDay) / HOUR + petAwakeHoursBetween(lastDay * DAY_MS - KST_MS, b);
+    }
+    for (; day <= lastDay; day += 1) {
+        const dayStart = day * DAY_MS - KST_MS;
+        const lo = Math.max(a, dayStart + awake.start * HOUR);
+        const hi = Math.min(b, dayStart + awake.end * HOUR);
+        if (hi > lo) total += hi - lo;
+    }
+    return total / HOUR;
+}
+
+/** from 부터 깨어 있는 시간으로 hours 만큼 지난 때(시각) */
+export function petAddAwakeHours(from, hours) {
+    let t = Number(from) || 0;
+    let left = Math.max(0, Number(hours) || 0) * HOUR;
+    const perDay = (awake.end - awake.start) * HOUR;
+    for (let guard = 0; guard < 4000; guard += 1) {
+        const dayStart = Math.floor((t + KST_MS) / DAY_MS) * DAY_MS - KST_MS;
+        const lo = Math.max(t, dayStart + awake.start * HOUR);
+        const hi = dayStart + awake.end * HOUR;
+        if (hi > lo) {
+            if (left <= hi - lo) return lo + left;
+            left -= hi - lo;
+        }
+        t = dayStart + DAY_MS;
+        if (left > perDay * 3) { const skip = Math.floor(left / perDay) - 1; left -= skip * perDay; t += skip * DAY_MS; }
+    }
+    return t;
+}
 
 export const PET_FOODS = Object.freeze({
     kibble: Object.freeze({ id: 'kibble', name: '사료', emoji: '🍚', price: 1, full: 20, exp: 5 }),
@@ -97,6 +155,8 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
 /* ---------- 마스터가 고칠 수 있는 설정(settings/global 의 petSettings) ---------- */
 
 export const PET_MAX_SLOTS = 3;
+/** 케이지 하나에 넣을 수 있는 펫 수(마스터 설정)의 가장 큰 값 */
+export const PET_MAX_CAGE_SIZE = 5;
 export const PET_DEFAULT_SETTINGS = Object.freeze({
     /** 칸 늘리기: [두 번째 칸, 세 번째 칸] — 필요한 내 레벨과 값(봉) */
     slotRules: Object.freeze([Object.freeze({ level: 35, price: 50 }), Object.freeze({ level: 60, price: 100 })]),
@@ -104,6 +164,10 @@ export const PET_DEFAULT_SETTINGS = Object.freeze({
     walk: Object.freeze({ min: 1, max: 3, step: 150, cap: 15 }),
     /** 경험치 팩: 봉으로 사서 바로 경험치를 줘요(비쌀수록 조금 이득) */
     expPacks: Object.freeze([Object.freeze({ price: 50, exp: 50 }), Object.freeze({ price: 100, exp: 110 }), Object.freeze({ price: 500, exp: 600 })]),
+    /** 케이지 하나에 쉬게 할 수 있는 펫 수(펫 칸 하나마다 케이지가 하나씩 있어요) */
+    cageSize: 3,
+    /** 배가 고파지는 시간: start시부터 end시까지(밤에는 배고프지 않아요) */
+    awake: PET_AWAKE_DEFAULT,
 });
 
 export function sanitizePetSettings(raw) {
@@ -129,7 +193,10 @@ export function sanitizePetSettings(raw) {
         const r = packs[i] && typeof packs[i] === 'object' ? packs[i] : {};
         return { price: num(r.price, def.price, 1, 5000), exp: num(r.exp, def.exp, 1, 100000) };
     });
-    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, expPacks, ...(raid ? { raid } : {}) };
+    const aw = src.awake && typeof src.awake === 'object' ? src.awake : {};
+    const start = num(aw.start, d.awake.start, 0, 23);
+    const end = Math.max(start + 1, num(aw.end, d.awake.end, 1, 24));
+    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, expPacks, cageSize: num(src.cageSize, d.cageSize, 1, PET_MAX_CAGE_SIZE), awake: { start, end }, ...(raid ? { raid } : {}) };
 }
 
 export function emptyPet() {
@@ -218,9 +285,10 @@ export function petView(pet, now = Date.now(), today = '', settings = null) {
     const p = sanitizePet(pet);
     if (p.phase !== 'pet') return { ...p, away: false, mood: '', fullNow: 0 };
     const t = int(now);
-    const hours = Math.max(0, (t - p.fedAt) / HOUR);
+    // 낮(깨어 있는 시간)에만 배가 고파져요.
+    const hours = petAwakeHoursBetween(p.fedAt, t);
     const fullNow = Math.max(0, Math.round(p.full - hours * PET_HUNGER_PER_HOUR));
-    const emptyAt = p.fedAt + (p.full / PET_HUNGER_PER_HOUR) * HOUR;
+    const emptyAt = petAddAwakeHours(p.fedAt, p.full / PET_HUNGER_PER_HOUR);
     const hungryHours = Math.max(0, (t - emptyAt) / HOUR);
     const away = hungryHours >= PET_RUNAWAY_HOURS;
     const mood = away ? 'away' : fullNow >= 60 ? 'happy' : fullNow >= 30 ? 'ok' : fullNow > 0 ? 'hungry' : 'starving';
@@ -484,6 +552,14 @@ export const PET_ERROR_TEXT = Object.freeze({
     too_hungry: '배가 고파서 산책을 못 가요. 먼저 먹이를 줘요.',
     not_away: '펫이 집에 있어요.',
     bad_name: '이름을 다시 적어 줘요.',
+    cage_full: '케이지가 꽉 찼어요.',
+    cage_dup: '케이지에 같은 종류가 이미 있어요. 한 종류씩만 넣을 수 있어요.',
+    cage_empty: '케이지의 그 자리에는 펫이 없어요.',
+    slot_busy: '그 칸에는 알이 있어요. 빈 칸이나 펫이 있는 칸을 골라 줘요.',
+    slot_used: '빈 칸이 아니에요.',
+    no_stored_egg: '보관한 알이 없어요.',
+    egg_store_full: '알 보관함이 꽉 찼어요.',
+    no_mat: '이 펫에게 쓸 강화 재료가 없어요.',
 });
 
 export function petErrorText(code) {
@@ -508,6 +584,10 @@ export function rankClassPets(students, now = Date.now(), today = '') {
  */
 
 const stripDex = (p) => { const { dex, ...rest } = p; return rest; };
+/** 보관할 수 있는 알 수 */
+export const PET_MAX_STORED_EGGS = 30;
+/** 종마다 모아 둘 수 있는 강화 재료 수 */
+export const PET_MAX_MATS = 99;
 
 /**
  * 탐험(보스 레이드) 진행 기록: 깬 스테이지(firsts: 첫 보상을 받은 스테이지 번호),
@@ -534,16 +614,29 @@ export function sanitizePetBox(raw) {
         const slots = int(src.slots, 1, PET_MAX_SLOTS);
         const list = [];
         for (let i = 0; i < slots; i += 1) list.push(stripDex(sanitizePet(src.list[i])));
-        return { v: 2, slots, main: int(src.main, 0, slots - 1), list, dex: sanitizeDex(src.dex), raid: sanitizeRaidProgress(src.raid) };
+        return { v: 2, slots, main: int(src.main, 0, slots - 1), list, dex: sanitizeDex(src.dex), raid: sanitizeRaidProgress(src.raid), ...sanitizeKeep(src, slots) };
     }
     const one = sanitizePet(src);
-    return { v: 2, slots: 1, main: 0, list: [stripDex(one)], dex: one.dex, raid: sanitizeRaidProgress(src.raid) };
+    return { v: 2, slots: 1, main: 0, list: [stripDex(one)], dex: one.dex, raid: sanitizeRaidProgress(src.raid), ...sanitizeKeep(src, 1) };
+}
+
+/** 케이지(쉬는 펫)·보관한 알·강화 재료 */
+function sanitizeKeep(src, slots) {
+    const cage = [];
+    (Array.isArray(src.cage) ? src.cage : []).forEach((raw) => {
+        const p = sanitizePet(raw);
+        if (p.phase === 'pet' && cage.length < slots * PET_MAX_CAGE_SIZE) cage.push(stripDex(p));
+    });
+    const mats = {};
+    const rawMats = src.mats && typeof src.mats === 'object' && !Array.isArray(src.mats) ? src.mats : {};
+    Object.keys(PET_SPECIES).forEach((id) => { mats[id] = int(rawMats[id], 0, PET_MAX_MATS); });
+    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats };
 }
 
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() } };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats } };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
@@ -602,4 +695,143 @@ export function setPetBoxMain(box, i) {
     if (!(idx >= 0 && idx < b.slots)) return { ok: false, error: 'bad_slot', box: b };
     if (b.list[idx].phase !== 'pet') return { ok: false, error: 'not_pet', box: b };
     return { ok: true, error: '', box: { ...b, main: idx } };
+}
+
+/* ---------- 케이지(쉬는 곳)·알 보관함·강화 재료 ---------- */
+/*
+ * 펫 칸(list)에 있는 펫은 밖에서 활동해요(배고파지고, 산책·놀이·탐험을 해요).
+ * 케이지(cage)에 넣은 펫은 쉬어요: 배고프지 않고, 꺼내기 전까지 아무것도 하지 않아요.
+ * - 펫 칸 하나마다 케이지가 하나씩 있고, 케이지 하나에 cageSize(기본 3)마리까지 들어가요.
+ * - 케이지에는 한 종류(종)를 한 마리씩만 넣을 수 있어요.
+ * 알에서 이미 가진 종이 나오면 펫 대신 그 종의 '강화 재료'가 돼요(mats).
+ * 안 쓴 알은 알 보관함(eggs)에 넣어 둘 수 있어요. 선생님이 선물한 알도 여기로 와요.
+ */
+
+const boxFail = (box, error) => ({ ok: false, error, box, cost: 0 });
+const boxDone = (box, extra = {}) => ({ ok: true, error: '', box, cost: 0, ...extra });
+const slotIndex = (b, i) => { const idx = Math.floor(Number(i)); return idx >= 0 && idx < b.slots ? idx : -1; };
+
+/** 케이지에 넣을 수 있는 펫 수 */
+export function petCageCapacity(box, settings = null) {
+    return sanitizePetBox(box).slots * sanitizePetSettings(settings).cageSize;
+}
+
+/** 내가 가진 종(칸에 있는 펫 + 케이지). exceptSlot 칸은 빼고 봐요. */
+export function petBoxOwnedSpecies(box, exceptSlot = -1) {
+    const b = sanitizePetBox(box);
+    const out = new Set();
+    b.list.forEach((p, i) => { if (i !== exceptSlot && p.phase === 'pet') out.add(p.species); });
+    b.cage.forEach((p) => out.add(p.species));
+    return out;
+}
+
+/** 칸의 펫을 케이지에 넣어요. 지금 배부름 그대로 멈춰요. */
+export function cagePet(box, i, { now = 0, today = '', settings = null } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const p = b.list[idx];
+    if (p.phase !== 'pet') return boxFail(b, 'no_pet');
+    const v = petView(p, now, today);
+    if (v.away) return boxFail(b, 'away');
+    if (b.cage.length >= petCageCapacity(b, settings)) return boxFail(b, 'cage_full');
+    if (b.cage.some((c) => c.species === p.species)) return boxFail(b, 'cage_dup');
+    const resting = { ...p, full: v.fullNow, fedAt: int(now) };
+    const list = b.list.map((cur, k) => (k === idx ? { v: 1, phase: 'none' } : cur));
+    return boxDone({ ...b, list, cage: b.cage.concat(resting) }, { pet: resting });
+}
+
+/** 케이지의 펫을 칸으로 꺼내요. 칸에 펫이 있으면 서로 자리를 바꿔요. 배부름은 넣을 때 그대로예요. */
+export function uncagePet(box, cageIdx, i, { now = 0, today = '' } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const c = Math.floor(Number(cageIdx));
+    const out = b.cage[c];
+    if (!out) return boxFail(b, 'cage_empty');
+    const cur = b.list[idx];
+    if (cur.phase === 'egg') return boxFail(b, 'slot_busy');
+    let cage = b.cage.filter((_, k) => k !== c);
+    let swapped = null;
+    if (cur.phase === 'pet') {
+        const v = petView(cur, now, today);
+        if (v.away) return boxFail(b, 'away');
+        if (cage.some((x) => x.species === cur.species)) return boxFail(b, 'cage_dup');
+        swapped = { ...cur, full: v.fullNow, fedAt: int(now) };
+        cage = cage.slice(0, c).concat(swapped, cage.slice(c));
+    }
+    const woke = { ...out, fedAt: int(now) };
+    const list = b.list.map((x, k) => (k === idx ? woke : x));
+    return boxDone({ ...b, list, cage }, { pet: woke, swapped });
+}
+
+/** 케이지에서 쉬는 펫의 모습(배부름이 멈춰 있어요) */
+export function cagePetView(pet, today = '', settings = null) {
+    const p = sanitizePet(pet);
+    return petView(p, p.fedAt, today, settings);
+}
+
+/** 보관함에 알을 더해요(선물 받기 등). 넘치는 알은 버려져요. */
+export function addStoredEggs(box, count) {
+    const b = sanitizePetBox(box);
+    const n = int(count, 0, PET_MAX_STORED_EGGS);
+    if (n <= 0) return boxFail(b, 'no_stored_egg');
+    const eggs = Math.min(PET_MAX_STORED_EGGS, b.eggs + n);
+    return boxDone({ ...b, eggs }, { added: eggs - b.eggs });
+}
+
+/** 칸의 알(아직 안 깐 알)을 보관함에 넣어요. 품은 횟수는 처음으로 돌아가요. */
+export function storePetEgg(box, i) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    if (b.list[idx].phase !== 'egg') return boxFail(b, 'no_egg');
+    if (b.eggs >= PET_MAX_STORED_EGGS) return boxFail(b, 'egg_store_full');
+    const list = b.list.map((cur, k) => (k === idx ? { v: 1, phase: 'none' } : cur));
+    return boxDone({ ...b, list, eggs: b.eggs + 1 });
+}
+
+/** 보관한 알을 빈 칸에 꺼내요. */
+export function useStoredEgg(box, i, { now = 0 } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    if (b.eggs <= 0) return boxFail(b, 'no_stored_egg');
+    if (b.list[idx].phase !== 'none') return boxFail(b, 'slot_used');
+    const list = b.list.map((cur, k) => (k === idx ? { v: 1, phase: 'egg', taps: 0, boughtAt: int(now) } : cur));
+    return boxDone({ ...b, list, eggs: b.eggs - 1 });
+}
+
+/**
+ * 방금 태어난 펫(born)을 칸에 넣어요. 이미 가진 종이면 펫 대신 그 종의 강화 재료 1개가 되고 칸은 비어요.
+ * (색이 다른 펫이 중복으로 나오면, 가지고 있던 같은 종 펫이 색다른 펫이 돼요.)
+ */
+export function settleHatchedPet(box, i, born) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const p = sanitizePet(born);
+    if (p.phase !== 'pet') return boxFail(b, 'no_pet');
+    if (!petBoxOwnedSpecies(b, idx).has(p.species)) return boxDone(petBoxWith(b, idx, p), { duplicate: false, pet: p });
+    const shine = (x) => (p.shiny && x.phase === 'pet' && x.species === p.species ? { ...x, shiny: true } : x);
+    let shared = false;
+    const list = b.list.map((cur, k) => { if (k === idx) return { v: 1, phase: 'none' }; if (!shared && shine(cur) !== cur) { shared = true; return shine(cur); } return cur; });
+    const cage = b.cage.map((cur) => { if (!shared && shine(cur) !== cur) { shared = true; return shine(cur); } return cur; });
+    const mats = { ...b.mats, [p.species]: Math.min(PET_MAX_MATS, (b.mats[p.species] || 0) + 1) };
+    return boxDone({ ...b, list, cage, mats, dex: { ...b.dex, ...p.dex } }, { duplicate: true, species: p.species, shiny: p.shiny, shinyShared: shared });
+}
+
+/** 강화 재료로 강화: 같은 종의 재료 1개를 쓰면 봉 없이 반드시 +1 */
+export function enhancePetWithMat(box, i, { now = 0, today = '' } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const p = b.list[idx];
+    if (p.phase !== 'pet') return boxFail(b, 'no_pet');
+    if (petView(p, now, today).away) return boxFail(b, 'away');
+    if (p.enhance >= PET_MAX_ENHANCE) return boxFail(b, 'max_enhance');
+    if (!(b.mats[p.species] > 0)) return boxFail(b, 'no_mat');
+    const pet = { ...p, enhance: p.enhance + 1 };
+    const list = b.list.map((cur, k) => (k === idx ? pet : cur));
+    return boxDone({ ...b, list, mats: { ...b.mats, [p.species]: b.mats[p.species] - 1 } }, { pet, success: true });
 }

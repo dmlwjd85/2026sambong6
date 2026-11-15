@@ -19,7 +19,17 @@ import {
     PET_RETURN_PRICE,
     PET_SPECIES,
     PET_TYPES,
+    addStoredEggs,
     bringPetBack,
+    cagePet,
+    cagePetView,
+    enhancePetWithMat,
+    petCageCapacity,
+    setPetAwakeHours,
+    settleHatchedPet,
+    storePetEgg,
+    uncagePet,
+    useStoredEgg,
     buyPetExpPack,
     buyPetEgg,
     enhancePet,
@@ -99,7 +109,8 @@ export function createPetMode(deps) {
     /** 선생님(마스터)은 봉·레벨 조건 없이 키워요. 봉을 쓰지도 벌지도 않아요. */
     const free = () => !!(deps.isAdmin && deps.isAdmin());
     const myBong = () => (free() ? 1e9 : Number(deps.state() && deps.state().bong) || 0);
-    const settings = () => sanitizePetSettings(deps.settings ? deps.settings() : null);
+    /** 마스터 설정. 배고파지는 시간대(낮)도 여기서 규칙에 알려 줘요. */
+    const settings = () => { const cfg = sanitizePetSettings(deps.settings ? deps.settings() : null); setPetAwakeHours(cfg.awake.start, cfg.awake.end); return cfg; };
     const myLevel = () => (free() ? 100 : Math.floor(Number(deps.level ? deps.level() : 0)) || 0);
 
     /** 탐험(보스 레이드) 탭. 방 목록은 탐험 탭을 볼 때만 받아요. */
@@ -170,6 +181,12 @@ export function createPetMode(deps) {
             else if (act === 'rename') void rename();
             else if (act === 'pet-tap') { const v = petView(myPet(), now(), today(), settings()); react(v.mood === 'hungry' || v.mood === 'starving' ? 'hungry' : 'tap'); try { if (navigator.vibrate) navigator.vibrate(10); } catch (_) { /* 진동 없는 기기 */ } render(); }
             else if (act === 'release') void release();
+            else if (act === 'cage') void cage();
+            else if (act === 'uncage') void uncage(Number(t.getAttribute('data-cage')) || 0);
+            else if (act === 'egg-store') void runBox('알 보관하기', (b) => storePetEgg(b, slot), () => show('알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.', ''));
+            else if (act === 'egg-use') void runBox('보관한 알 꺼내기', (b) => useStoredEgg(b, slot, { now: now() }), () => show('알을 꺼냈어요! 쓰다듬어서 품어 줘요.', 'good'));
+            else if (act === 'enhance-mat') void enhanceMat();
+            else if (act === 'gift') void gift();
         });
         el.addEventListener('change', (e) => raid.onChange(e));
     }
@@ -286,6 +303,8 @@ export function createPetMode(deps) {
             slotRules: [{ level: val('s2-level'), price: val('s2-price') }, { level: val('s3-level'), price: val('s3-price') }],
             walk: { min: val('walk-min'), max: val('walk-max'), step: val('walk-step'), cap: val('walk-cap') },
             expPacks: [0, 1, 2].map((i) => ({ price: val(`pack${i}-price`), exp: val(`pack${i}-exp`) })),
+            cageSize: val('cage-size'),
+            awake: { start: val('awake-start'), end: val('awake-end') },
         });
         try {
             await deps.saveSettings(next);
@@ -313,16 +332,99 @@ export function createPetMode(deps) {
             if (egg) { egg.classList.remove('is-tap'); void egg.offsetWidth; egg.classList.add('is-tap'); }
             return;
         }
-        await run('펫 부화', () => r, {
-            after: (res) => {
-                const sp = PET_SPECIES[res.pet.species];
-                show(`${res.pet.shiny ? '✨ 색이 다른 ' : ''}${sp.names[0]}${sp.rare ? ' (희귀!)' : ''}이(가) 태어났어요!`, 'good');
-                if (feedback) feedback.play('ok');
+        // 이미 가진 종이 나오면 펫 대신 강화 재료가 돼요.
+        await runBox('펫 부화', (b) => settleHatchedPet(b, slot, r.pet), (res) => {
+            const sp = PET_SPECIES[r.pet.species];
+            if (res.duplicate) {
+                show(`${sp.names[0]}은(는) 이미 있어요! 💎 ${sp.names[0]} 강화 재료 1개로 바뀌었어요.${res.shinyShared ? ' ✨ 색다른 빛은 가진 펫에게 옮겨 갔어요!' : ''}`, 'good');
+            } else {
+                show(`${r.pet.shiny ? '✨ 색이 다른 ' : ''}${sp.names[0]}${sp.rare ? ' (희귀!)' : ''}이(가) 태어났어요!`, 'good');
                 const stage = root() && root().querySelector('.pet-stage');
                 if (stage) stage.classList.add('is-hatch');
-            },
+            }
+            if (feedback) feedback.play('ok');
         });
     }
+
+    /** 보고 있는 칸의 펫을 케이지에 넣어요. */
+    async function cage() {
+        const p = myPet();
+        if (p.phase !== 'pet') return;
+        const ok = await deps.confirm(`${p.name}을(를) 케이지에서 쉬게 할까요?\n쉬는 동안에는 배고프지 않아요. 대신 꺼내기 전까지 산책·놀이·탐험은 못 해요.`);
+        if (!ok) return;
+        await runBox('펫 케이지에 넣기', (b) => cagePet(b, slot, { now: now(), today: today(), settings: settings() }), () => show(`${p.name} 케이지에서 쉬어요. 💤`, ''));
+    }
+
+    /** 케이지의 펫을 보고 있는 칸으로 꺼내요(칸에 펫이 있으면 자리를 바꿔요). */
+    async function uncage(cageIdx) {
+        const box = myBox();
+        const out = box.cage[cageIdx];
+        if (!out) return;
+        if (slot >= box.slots) { deps.toast('먼저 위에서 열려 있는 펫 칸을 골라 줘요.'); return; }
+        const cur = box.list[slot];
+        if (cur.phase === 'egg') { deps.toast(petErrorText('slot_busy')); return; }
+        const ok = await deps.confirm(cur.phase === 'pet'
+            ? `${out.name}을(를) 꺼내고, 지금 칸의 ${cur.name}을(를) 대신 케이지에 넣을까요?`
+            : `${out.name}을(를) ${slot + 1}번 칸으로 꺼낼까요?\n꺼내면 다시 배가 고파지기 시작해요.`);
+        if (!ok) return;
+        await runBox('펫 케이지에서 꺼내기', (b) => uncagePet(b, cageIdx, slot, { now: now(), today: today() }), () => { react('back'); show(`${out.name} 나왔어요!`, 'good'); });
+    }
+
+    /** 강화 재료로 강화(봉 없이 반드시 성공) */
+    async function enhanceMat() {
+        const p = myPet();
+        if (p.phase !== 'pet') return;
+        const have = myBox().mats[p.species] || 0;
+        const ok = await deps.confirm(`💎 ${PET_SPECIES[p.species].names[0]} 강화 재료 1개를 써서 +${p.enhance} → +${p.enhance + 1}로 강화할까요?\n봉이 들지 않고 반드시 성공해요. (재료 ${have}개 있음)`);
+        if (!ok) return;
+        await runBox('펫 재료 강화', (b) => enhancePetWithMat(b, slot, { now: now(), today: today() }), (r) => { react('enhanceOk'); show(`강화 성공! +${r.pet.enhance}`, 'good'); if (feedback) feedback.play('ok'); });
+    }
+
+    /* ---------- 선생님의 알 선물 ---------- */
+
+    let giftUnsub = null;
+    let pendingGifts = 0;
+    let giftBusy = false;
+    /** 선물이 와 있으면 알 보관함으로 옮겨요. */
+    async function takeGifts(count) {
+        if (giftBusy || busy || !(count > 0) || !deps.canPlay() || !deps.takeGifts) return;
+        giftBusy = true;
+        try {
+            const n = Math.floor(Number(await deps.takeGifts())) || 0;
+            if (n <= 0) return;
+            const r = await runBox('알 선물 받기', (b) => addStoredEggs(b, n), (res) => {
+                show(`🎁 선생님이 알 ${n}개를 선물했어요! 알 보관함에 넣었어요.${res.added < n ? ` (보관함이 꽉 차서 ${res.added}개만 들어갔어요)` : ''}`, 'good');
+                if (feedback) feedback.play('ok');
+            });
+            // 저장하지 못했으면 선물을 되돌려 놓아요(다음에 다시 받아요).
+            if (!r && deps.returnGifts) { try { await deps.returnGifts(n); } catch (_) { /* 다음에 다시 시도 */ } }
+        } catch (e) {
+            console.warn('pet gifts', e);
+        } finally {
+            giftBusy = false;
+        }
+    }
+
+    /** 마스터: 알 선물하기 */
+    async function gift() {
+        const el = root();
+        if (!el || !deps.isAdmin || !deps.isAdmin() || !deps.giftEggs) return;
+        const who = (el.querySelector('[data-pet-gift="who"]') || {}).value || 'all';
+        const count = Math.max(1, Math.min(10, Math.floor(Number((el.querySelector('[data-pet-gift="count"]') || {}).value) || 1)));
+        const targets = giftTargets();
+        const ids = who === 'all' ? targets.map((x) => x.id) : targets.filter((x) => x.id === who).map((x) => x.id);
+        if (!ids.length) { deps.toast('선물할 학생이 없어요.'); return; }
+        const name = who === 'all' ? `우리 반 모두(${ids.length}명)` : (targets.find((x) => x.id === who) || {}).name;
+        const ok = await deps.confirm(`${name}에게 알 ${count}개씩 선물할까요?\n받은 알은 알 보관함에 들어가요.`);
+        if (!ok) return;
+        try {
+            await deps.giftEggs(ids, count);
+            deps.toast(`🎁 ${name}에게 알 ${count}개씩 선물했어요.`);
+        } catch (e) {
+            deps.toast(`선물하지 못했어요: ${e && e.message ? e.message : e}`);
+        }
+    }
+    const giftTargets = () => (deps.students ? deps.students() : []).filter((x) => !/^gm/.test(String(x.id))).map((x) => ({ id: String(x.id), name: String(x.name || x.id) }));
 
     async function feed(foodId) {
         const f = PET_FOODS[foodId];
@@ -432,7 +534,34 @@ export function createPetMode(deps) {
                 </button>`);
             }
         }
-        return `<div class="pet-slots" role="group" aria-label="펫 칸">${cells.join('')}</div>`;
+        return `<div class="pet-slots" role="group" aria-label="펫 칸">${cells.join('')}</div>${keepHtml(box)}`;
+    }
+
+    /** 케이지(쉬는 펫)·알 보관함·강화 재료 */
+    function keepHtml(box) {
+        const cap = petCageCapacity(box, settings());
+        const size = settings().cageSize;
+        const cells = [];
+        for (let i = 0; i < cap; i += 1) {
+            const p = box.cage[i];
+            // 케이지 하나(칸 하나)마다 size 마리씩 묶어 보여요.
+            const first = i % size === 0 ? ' is-first' : '';
+            if (p) {
+                const v = cagePetView(p, today(), settings());
+                cells.push(`<button type="button" class="pet-cage-cell type-${PET_SPECIES[p.species].type}${first}" data-p="uncage" data-cage="${i}" aria-label="${esc(p.name)} 꺼내기">
+                    <span class="pet-cage-art">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })}</span>
+                    <span class="pet-cage-label">${esc(p.name)} <em>Lv.${p.level}</em></span><i class="pet-cage-zz" aria-hidden="true">💤 ${v.fullNow}</i>
+                </button>`);
+            } else {
+                cells.push(`<span class="pet-cage-cell is-empty${first}" aria-hidden="true"><span class="pet-cage-art">·</span><span class="pet-cage-label">빈 자리</span></span>`);
+            }
+        }
+        const mats = Object.keys(box.mats).filter((id) => box.mats[id] > 0).map((id) => `<span class="pet-chip type-${PET_SPECIES[id].type}">💎 ${esc(PET_SPECIES[id].names[0])} ×${box.mats[id]}</span>`).join('');
+        return `<div class="pet-keep">
+            <p class="pet-keep-head"><b>🏠 케이지</b><span>${box.cage.length} / ${cap}마리 · 쉬는 동안은 배고프지 않아요 · 누르면 꺼내요</span></p>
+            <div class="pet-cage" style="--n:${Math.min(cap, size * 2)}">${cells.join('')}</div>
+            <p class="pet-keep-items"><span class="pet-chip${box.eggs > 0 ? ' is-ok' : ''}">🥚 보관한 알 ${box.eggs}개</span>${mats || '<span class="pet-chip">💎 강화 재료 없음</span>'}</p>
+        </div>`;
     }
 
     /** 아직 안 열린 칸을 골랐을 때 */
@@ -478,8 +607,16 @@ export function createPetMode(deps) {
                 <label class="pet-set-row"><span>하루 상한</span>${num('walk-cap', w.cap, 0, 500)} 봉</label>
                 <p class="pet-sub">경험치 팩</p>
                 ${cfg.expPacks.map((pk, i) => `<label class="pet-set-row"><span>${i + 1}번 팩</span>${num(`pack${i}-price`, pk.price, 1, 5000)} 봉 → 경험치 ${num(`pack${i}-exp`, pk.exp, 1, 100000)}</label>`).join('')}
+                <p class="pet-sub">케이지와 배고픔</p>
+                <label class="pet-set-row"><span>케이지 크기</span>케이지 하나에 ${num('cage-size', cfg.cageSize, 1, 5)} 마리 (펫 칸마다 케이지 하나)</label>
+                <label class="pet-set-row"><span>배고픈 시간</span>${num('awake-start', cfg.awake.start, 0, 23)} 시부터 ${num('awake-end', cfg.awake.end, 1, 24)} 시까지 (그 밖의 시간에는 배고프지 않아요)</label>
                 <p class="pet-note">지금 설정: 갓 태어난 펫 ${baby.min}~${baby.max}봉 · 다 키운 펫(전투력 ${PET_MAX_POWER}) ${grown.min}~${grown.max}봉. 최소는 전투력 ${w.step * 2}마다 +1이에요.</p>
                 <button type="button" class="pet-btn is-main" data-p="settings-save">설정 저장</button>
+                ${deps.giftEggs ? `<p class="pet-sub">🎁 알 선물하기</p>
+                <label class="pet-set-row"><span>받는 사람</span><select class="pet-set-input pet-gift-who" data-pet-gift="who"><option value="all">우리 반 모두</option>${giftTargets().map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>
+                <label class="pet-set-row"><span>알 개수</span><input type="number" inputmode="numeric" class="pet-set-input" data-pet-gift="count" value="1" min="1" max="10"> 개씩</label>
+                <p class="pet-note">선물한 알은 학생의 알 보관함에 들어가요. 학생이 펫 화면을 열면 받아요.</p>
+                <button type="button" class="pet-btn" data-p="gift">🎁 알 선물하기</button>` : ''}
             </div>
         </details>`;
     }
@@ -496,6 +633,8 @@ export function createPetMode(deps) {
             <div class="pet-lineup">${lineup}</div>
             <button type="button" class="pet-btn is-main" data-p="buy"${can ? '' : ' disabled'}>🥚 알 사기 · ${esc(deps.bong(PET_EGG_PRICE))}</button>
             ${can ? '' : `<p class="pet-note">봉이 ${esc(deps.bong(PET_EGG_PRICE - myBong()))} 모자라요. 퀘스트로 모아 봐요.</p>`}
+            ${myBox().eggs > 0 ? `<button type="button" class="pet-btn is-evolve" data-p="egg-use">🥚 보관한 알 꺼내기 (${myBox().eggs}개 있어요)</button>` : ''}
+            <p class="pet-note">이미 가진 종이 태어나면 그 종의 💎 강화 재료가 돼요.</p>
         </div>`;
     }
 
@@ -506,6 +645,7 @@ export function createPetMode(deps) {
             <p class="pet-lead">알을 톡톡 쓰다듬어요. ${PET_HATCH_TAPS}번이면 태어나요!</p>
             ${bar('품기', p.taps, PET_HATCH_TAPS, 'is-exp', `${p.taps} / ${PET_HATCH_TAPS}`)}
             <button type="button" class="pet-btn is-main" data-p="warm">🤲 쓰다듬기</button>
+            <button type="button" class="pet-link" data-p="egg-store">알 보관함에 넣어 두기${p.taps > 0 ? ' (품은 횟수는 처음부터)' : ''}</button>
         </div>`;
     }
 
@@ -578,8 +718,10 @@ export function createPetMode(deps) {
                 <button type="button" class="pet-btn" data-p="play"${v.canPlay ? '' : ' disabled'}><b>🎾 놀아 주기</b><i>${v.playsLeft <= 0 ? `오늘 ${PET_PLAY_PER_DAY}번 다 놀았어요` : v.playWaitMs > 0 ? `${waitText(v.playWaitMs)} 뒤에 또 놀 수 있어요 · 오늘 ${v.playsLeft}번 남음` : `공짜 · 경험치 +${PET_PLAY_EXP} · 4시간에 한 번 · 오늘 ${v.playsLeft}/${PET_PLAY_PER_DAY}번 남음`}</i></button>
                 <button type="button" class="pet-btn" data-p="walk"${v.walked || v.fullNow < 30 ? ' disabled' : ''}><b>🐾 산책 보내기</b><i>${v.walked ? '오늘은 다녀왔어요' : v.fullNow < 30 ? '배고파서 못 가요' : `하루 한 번 · ${v.walkRange.min === v.walkRange.max ? esc(deps.bong(v.walkRange.max)) : `${v.walkRange.min}~${esc(deps.bong(v.walkRange.max))}`} 벌어 와요`}</i></button>
                 <button type="button" class="pet-btn" data-p="enhance"${maxEnh || myBong() < v.enhanceCost ? ' disabled' : ''}><b>🔨 강화 ${maxEnh ? '끝!' : `+${v.enhance} → +${v.enhance + 1}`}</b><i>${maxEnh ? '끝까지 강화했어요' : `${esc(deps.bong(v.enhanceCost))} · 성공 ${Math.round(v.enhanceChance * 100)}%`}</i></button>
+                ${(myBox().mats[v.species] || 0) > 0 && !maxEnh ? `<button type="button" class="pet-btn is-mat" data-p="enhance-mat"><b>💎 재료로 강화 +${v.enhance} → +${v.enhance + 1}</b><i>재료 ${myBox().mats[v.species]}개 · 봉 없이 반드시 성공</i></button>` : ''}
+                <button type="button" class="pet-btn" data-p="cage"><b>🏠 케이지에서 쉬게 하기</b><i>쉬는 동안은 배고프지 않아요</i></button>
             </div>
-            <p class="pet-note">지금까지 벌어 온 봉 ${esc(deps.bong(v.earned))} · 배가 텅 빈 채 3일이 지나면 가출해요.</p>
+            <p class="pet-note">지금까지 벌어 온 봉 ${esc(deps.bong(v.earned))} · 배는 ${settings().awake.start}시~${settings().awake.end}시에만 고파져요(밤에는 그대로) · 텅 빈 채 3일이 지나면 가출해요.</p>
             <button type="button" class="pet-link" data-p="release">놓아주기</button>
         </div>`;
     }
@@ -648,6 +790,9 @@ export function createPetMode(deps) {
     function open() {
         render();
         if (tab === 'raid') { raid.start(); void raid.maybePlay(); }
+        // 선생님이 선물한 알이 있으면 받아요.
+        if (!giftUnsub && deps.giftWatch && deps.canPlay()) giftUnsub = deps.giftWatch((count) => { if (isOpen()) void takeGifts(count); else pendingGifts = count; });
+        if (pendingGifts > 0) { const n = pendingGifts; pendingGifts = 0; void takeGifts(n); }
         if (!timer) {
             timer = setInterval(() => {
                 const el = root();

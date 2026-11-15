@@ -2518,6 +2518,7 @@
                                 <button type="button" id="boardgameAiColorWhite" class="boardgame-mini-btn is-on hidden" onclick="window.setBoardGameAiColor('w')">내가 백</button>
                                 <button type="button" id="boardgameAiColorBlack" class="boardgame-mini-btn hidden" onclick="window.setBoardGameAiColor('b')">내가 흑</button>
                             </div>
+                            <button type="button" id="boardgameChessLearnBtn" class="boardgame-primary-btn hidden" onclick="window.openChessTutorial()">📖 체스 배우기</button>
                             <button type="button" id="boardgameLocalBtn" class="boardgame-primary-btn hidden" onclick="void window.startAlkkagiLocal()">한 화면 둘이서</button>
                             <button type="button" id="boardgameAlkLiveBtn" class="boardgame-primary-btn boardgame-alk-live-btn hidden" onclick="void window.createBoardGameRoom('alkkagiLive')">실시간 방 만들기</button>
                             <div id="boardgameAlkAiRow" class="boardgame-ai-row boardgame-alk-ai hidden" role="group" aria-labelledby="boardgameAlkAiLabel">
@@ -2620,6 +2621,7 @@
                             </div>
                         </div>
                     </div>
+                    <div id="boardgameChessLearnView" class="boardgame-view hidden"></div>
                     <div id="boardgameAlkkagiPlayView" class="boardgame-view boardgame-play alk-view hidden">
                         <div class="alk-paper">
                             <header class="alk-head">

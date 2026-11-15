@@ -320,6 +320,7 @@ import {
 import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
 import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey, isAlkkagiLiveOver } from './lib/alkkagiLiveGame.js';
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
+import { createChessTutorial } from './chessTutorial.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
 import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
@@ -10097,7 +10098,7 @@ ${subjectLine}
         function isBoardGameTabReloadSafe() {
             try {
                 if (classtoolSub !== 'boardgames') return false;
-                if (_boardGameView === 'home' || _boardGameView === 'lobby') return true;
+                if (_boardGameView === 'home' || _boardGameView === 'lobby' || _boardGameView === 'learn') return true;
                 if (_boardGameView !== 'play') return false;
                 if (_alkLocal || _chessAiSession) return false;
                 if (_gomokuAiSession) {
@@ -12540,6 +12541,30 @@ ${subjectLine}
             },
         });
 
+        // 체스 배우기: 방·Firestore 없이 이 기기에서만 도는 단원별 연습 화면이에요(chessTutorial.js).
+        const _chessLearn = createChessTutorial({
+            toLobby: () => {
+                _boardGameType = 'chess';
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+            },
+            startAi: () => {
+                _boardGameType = 'chess';
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                void window.startBoardGameAi('gosu');
+            },
+        });
+        window.openChessTutorial = function () {
+            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            clearGomokuAiSession();
+            clearChessAiSession();
+            _boardGameActiveId = '';
+            _boardGameType = 'chess';
+            showBoardGameView('learn');
+            _chessLearn.open();
+        };
+
         // 쨈 글꼴 CSS(제목 약 443KB 포함)는 알까기 판이나 광장을 처음 열 때 한 번만 불러와요.
         // 앱을 켤 때 바로 받지 않게 해서 첫 화면이 가벼워요. (함수 선언이라 위쪽 switchTab에서 불러도 안전해요)
         // { idle: true } 이면 첫 화면을 다 그린 뒤 한가할 때(최대 2초 안에) 불러와요. 알까기 판은 바로 불러요.
@@ -13063,6 +13088,9 @@ ${subjectLine}
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
+            const chessLearn = document.getElementById('boardgameChessLearnView');
+            if (chessLearn) chessLearn.classList.toggle('hidden', _boardGameView !== 'learn');
+            if (_boardGameView !== 'learn') _chessLearn.close();
             syncBoardRoomSubscriptions();
             if (_boardGameView === 'lobby') {
                 ensureBoardIdleSweepTimer();
@@ -13389,6 +13417,8 @@ ${subjectLine}
             if (lobby) lobby.classList.toggle('is-chess-theme', chess);
             const localBtn = document.getElementById('boardgameLocalBtn');
             if (localBtn) localBtn.classList.toggle('hidden', !alk);
+            const learnBtn = document.getElementById('boardgameChessLearnBtn');
+            if (learnBtn) learnBtn.classList.toggle('hidden', !chess);
             const liveBtn = document.getElementById('boardgameAlkLiveBtn');
             // 실시간 입구는 스위치(ALKKAGI_LIVE_ENABLED)가 켜졌을 때만 보여요(1단계에서는 꺼 둠).
             if (liveBtn) liveBtn.classList.toggle('hidden', !alk || !ALKKAGI_LIVE_ENABLED);

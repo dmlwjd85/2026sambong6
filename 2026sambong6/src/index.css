@@ -6224,6 +6224,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         #chessBoardWrap { container-type: size; }
         @supports (width: 1cqw) {
             #chessBoardWrap .chess-frame {
+                box-sizing: border-box;
                 width: min(100cqw, 100cqh);
                 height: min(100cqw, 100cqh);
                 min-width: 0;

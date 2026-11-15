@@ -16,6 +16,7 @@ import {
 } from './oxQuiz.js';
 import { createOxClassRound } from './oxQuizClassView.js';
 import { createOxChallenge } from './oxQuizChallengeView.js';
+import { createOxBossRaid } from './oxBossRaidView.js';
 import { createOxFeedback } from './oxQuizFeedback.js';
 
 function esc(value) {
@@ -62,6 +63,7 @@ export function bindOxQuiz(stage, api) {
     // 화면 위 탭: 혼자 연습 · 무제한 도전 · (선생님만) 함께 풀기
     function modeTabs(current) {
         const tabs = [['practice', '혼자 연습'], ['challenge', '무제한 도전']];
+        if (api.boss) tabs.push(['boss', '⚔️ 보스레이드']);
         if (api.isAdmin() && api.watchLive) tabs.push(['class', '함께 풀기']);
         return `<div class="ox-row oxc-tabs">${tabs.map(([key, label]) => (
             `<button type="button" class="ox-choice${current === key ? ' is-on' : ''}" data-oxm-mode="${key}">${label}</button>`
@@ -108,7 +110,26 @@ export function bindOxQuiz(stage, api) {
         feedback,
     }) : null;
 
+    // 주말 보스레이드(최대 5명이 릴레이로 OX를 풀어 보스를 잡아요)
+    const bossUi = api.boss ? createOxBossRaid({
+        stage,
+        body,
+        api,
+        getBank: () => state.bank,
+        setMeta: (text) => { if (meta) meta.textContent = text; },
+        modeTabs,
+        feedback,
+    }) : null;
+
     function switchMode(mode) {
+        if (bossUi && bossUi.isActive() && mode !== 'boss') bossUi.leave();
+        if (mode === 'boss' && bossUi) {
+            if (classUi && classUi.isActive()) classUi.leave();
+            if (challengeUi && challengeUi.isActive()) challengeUi.leave();
+            stopTimer();
+            bossUi.enter();
+            return;
+        }
         if (classUi && classUi.isActive() && mode !== 'class') classUi.leave();
         if (challengeUi && challengeUi.isActive() && mode !== 'challenge') challengeUi.leave();
         if (mode === 'class' && classUi) {
@@ -142,6 +163,10 @@ export function bindOxQuiz(stage, api) {
             meta.textContent = record
                 ? `최고 ${record.correct}문제 · ${Math.round((record.elapsedMs || 0) / 1000)}초`
                 : '최고 기록 없음';
+        }
+        if (bossUi && bossUi.isActive()) {
+            bossUi.render();
+            return;
         }
         if (challengeUi && challengeUi.isActive()) {
             challengeUi.render();
@@ -389,6 +414,7 @@ export function bindOxQuiz(stage, api) {
             switchMode(modeBtn0.getAttribute('data-oxm-mode'));
             return;
         }
+        if (bossUi && bossUi.isActive()) { bossUi.handleClick(event); return; }
         if (challengeUi && challengeUi.isActive() && challengeUi.handleClick(event)) return;
         if (classUi && classUi.handleClick(event)) return;
         const subjectBtn = event.target.closest('[data-ox-subject]');
@@ -451,6 +477,7 @@ export function bindOxQuiz(stage, api) {
         stopTimer();
         if (classUi) classUi.close();
         if (challengeUi) challengeUi.close();
+        if (bossUi) bossUi.close();
         stage.classList.remove('is-play');
         stage.classList.add('hidden');
     });
@@ -474,6 +501,7 @@ export function bindOxQuiz(stage, api) {
             state.lives = clampOxChoice(Number(settings.lives), OX_LIVES_CHOICES, 3);
             if (!state.subjectsOn.length) state.subjectsOn = listOxSubjects(state.bank.questions);
             state.mode = 'setup';
+            if (bossUi && bossUi.isActive()) bossUi.leave();
             render();
             if (classUi) classUi.open();
             if (challengeUi) challengeUi.open();
@@ -482,6 +510,7 @@ export function bindOxQuiz(stage, api) {
             stopTimer();
             if (classUi) classUi.close();
             if (challengeUi) challengeUi.close();
+            if (bossUi) bossUi.close();
             stage.classList.remove('is-play');
             stage.classList.add('hidden');
         },

@@ -1376,7 +1376,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.57';
+        const APP_VERSION = 'v1.58';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10470,6 +10470,57 @@ ${subjectLine}
             studentName: () => {
                 const id = localStorage.getItem('sambong_student_id') || '';
                 return String((STUDENT_NAMES && STUDENT_NAMES[String(id)]) || id);
+            },
+            // 주말 보스레이드: 방 하나가 문서 하나예요(oxBossRaids/{방장 학번}).
+            boss: {
+                watch: (cb) => {
+                    if (!db) return () => {};
+                    return onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'oxBossRaids'), (snap) => {
+                        cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+                    }, (err) => { console.warn('oxBossRaids', err); cb([]); });
+                },
+                tx: (roomId, mutator) => runTransaction(db, async (tx) => {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxBossRaids', String(roomId));
+                    const snap = await tx.get(ref);
+                    const r = mutator(snap.exists() ? { ...snap.data(), id: snap.id } : null);
+                    if (!r || !r.ok) return r || { ok: false, error: 'unknown' };
+                    if (r.room === null) { if (snap.exists()) tx.delete(ref); } else tx.set(ref, r.room);
+                    return r;
+                }),
+                // 내가 낀 무기·방패·신발(강화 반영)이 전투 능력치가 돼요.
+                me: () => {
+                    const id = String(localStorage.getItem('sambong_student_id') || '');
+                    const ps = window.playerState;
+                    if (!id || !ps || ps.isGuest) return null;
+                    const g = (gid) => { const base = gid ? getGear(gid) : null; return base ? gearWithEnhance(base, gearEnhanceOf(ps, gid)) : null; };
+                    const shield = g(ps.equippedShield);
+                    const name = id === 'gm' ? '선생님' : id === 'gm_a' ? '선생님(A)' : displayStudentName(id, id);
+                    return { id, name, gear: { weapon: g(ps.equippedWeapon), shield: shield ? { ...shield, block: Math.min(SHIELD_BLOCK_CAP, Number(shield.block) || 0) } : null, shoes: g(ps.equippedShoes) } };
+                },
+                avatar: (id) => {
+                    const sid = String(id || '');
+                    const mine = sid === String(localStorage.getItem('sambong_student_id') || '');
+                    const staff = sid === 'gm' || sid === 'gm_a';
+                    const row = mine && window.playerState ? window.playerState
+                        : staff ? (sid === 'gm' ? window.gmData : window.gmaData)
+                            : (window.allStudentsData || []).find((x) => String(x.id) === sid);
+                    try { return buildCharacterAvatarHtml({ studentId: sid, data: row || {}, isStaff: staff, showWeapon: true }); } catch (_) { return '🧑'; }
+                },
+                today: () => getLocalDateStr(),
+                settings: () => (window.globalSettings && window.globalSettings.oxBossSettings) || null,
+                saveSettings: async (oxBossSettings) => {
+                    if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 고칠 수 있어요');
+                    await setDoc(getGlobalSettingsDocRef(), { oxBossSettings }, { merge: true });
+                    window.globalSettings = { ...(window.globalSettings || {}), oxBossSettings };
+                },
+                progress: () => (window.playerState && window.playerState.oxBoss) || null,
+                saveProgress: async (progress, bong, label) => {
+                    if (!window.playerState || window.playerState.isGuest) return false;
+                    window.playerState.oxBoss = progress;
+                    if (bong > 0) { window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(bong)); updateUI(); }
+                    return saveDataToCloud({ ...(bong > 0 ? { maxBongIncrease: bong } : {}), operationLabel: label });
+                },
+                bong: (v) => formatBongAmount(v),
             },
             isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
             studentId: () => localStorage.getItem('sambong_student_id') || '',
@@ -31721,7 +31772,7 @@ ${subjectLine}
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'questCancels', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
-            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords', 'pet',
+            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords', 'pet', 'oxBoss',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',

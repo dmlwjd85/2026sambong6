@@ -48,6 +48,23 @@ import { createPetRaidView } from './petRaidView.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/** 펫이 하는 말: 돌봐 줄 때마다 고마워하거나 애교를 부려요. */
+const PET_TALK = Object.freeze({
+    feed: ['냠냠! 고마워요 💕', '배불러서 행복해요~', '역시 주인님이 최고!', '맛있어요! 또 주세요 🥰', '잘 먹었습니다아~'],
+    play: ['꺄르르! 더 놀아요!', '놀아 줘서 고마워요 ♪', '주인님이랑 노는 게 제일 좋아!', '한 번 더! 한 번 더!', '신난다아~ 💫'],
+    walk: ['다녀왔어요! 칭찬해 줘요 🐾', '주인님 주려고 모아 왔어요!', '산책 최고! 고마워요~', '헤헤, 나 잘했죠?'],
+    pack: ['우와, 힘이 솟아요! 💪', '선물 고마워요! 쑥쑥 클게요', '몸이 반짝반짝해요 ✨', '더 강해진 것 같아요!'],
+    enhanceOk: ['반짝반짝! 고마워요 ✨', '나 더 멋있어졌죠?', '주인님 덕분에 세졌어요!'],
+    enhanceNo: ['괜찮아요, 다음엔 될 거예요!', '힝… 그래도 고마워요', '주인님 잘못 아니에요 🥺'],
+    evolve: ['짜잔! 나 어때요? 🌟', '주인님 덕분에 컸어요!', '이제 내가 지켜 줄게요!'],
+    rename: ['이름 마음에 들어요! 💕', '헤헤, 불러 줘요 불러 줘요', '예쁜 이름 고마워요~'],
+    main: ['내가 대표라니! 열심히 할게요 ⭐', '주인님 옆에 꼭 붙어 있을게요!', '광장에서 만나요~'],
+    back: ['보고 싶었어요… 🥺', '다시는 안 나갈게요!', '찾아 줘서 고마워요 💕'],
+    tap: ['헤헤, 간지러워요~', '쓰담쓰담 좋아요 💕', '주인님 좋아!', '더 만져 줘요~ 🥰', '뀨?', '오늘도 같이 있어 줘서 고마워요'],
+    hungry: ['배고파요… 밥 주세요 🍚', '꼬르륵… 주인님~', '쓰다듬는 것도 좋지만 밥이 더…'],
+});
+const pickTalk = (kind) => { const list = PET_TALK[kind] || PET_TALK.tap; return list[Math.floor(Math.random() * list.length)]; };
+
 const MOOD_TEXT = Object.freeze({
     happy: '기분이 아주 좋아요!',
     ok: '잘 지내고 있어요.',
@@ -69,6 +86,7 @@ export function createPetMode(deps) {
     let feedback = null;
     let fx = null; // { text, kind, at } 잠깐 띄우는 글자
     let timer = 0;
+    let talk = null; // { text, at, kind } 펫이 방금 한 말
     let slot = 0; // 보고 있는 칸(0~2). 아직 안 열린 칸이면 '칸 늘리기' 화면이에요.
 
     const now = () => Date.now();
@@ -134,23 +152,31 @@ export function createPetMode(deps) {
             const act = t.getAttribute('data-p');
             if (raid.handle(act, t)) return;
             if (act === 'tab') { tab = t.getAttribute('data-tab') || 'mine'; if (tab === 'raid') raid.start(); else raid.stop(); render(); if (tab === 'raid') void raid.maybePlay(); }
-            else if (act === 'slot') { slot = Math.max(0, Math.min(PET_MAX_SLOTS - 1, Number(t.getAttribute('data-slot')) || 0)); fx = null; render(); }
+            else if (act === 'slot') { talk = null; slot = Math.max(0, Math.min(PET_MAX_SLOTS - 1, Number(t.getAttribute('data-slot')) || 0)); fx = null; render(); }
             else if (act === 'expand') void expand();
-            else if (act === 'main') void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, slot), () => show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'));
+            else if (act === 'main') void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, slot), () => { react('main'); show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'); });
             else if (act === 'settings-save') void saveSettings();
             else if (act === 'buy') void run('펫 알 사기', (p, o) => buyPetEgg(p, o));
             else if (act === 'warm') void warm();
             else if (act === 'feed') void feed(t.getAttribute('data-food'));
-            else if (act === 'play') void run('펫과 놀기', (p, o) => playWithPet(p, o), { after: (r) => grew(r, '신나게 놀았어요!') });
-            else if (act === 'walk') void run('펫 산책 보상', (p, o) => walkPet(p, o), { after: (r) => { show(free() ? '산책을 다녀왔어요! (선생님은 봉을 받지 않아요)' : `산책에서 ${deps.bong(r.gain)}을 벌어 왔어요!`, r.gain > 0 ? 'good' : ''); if (feedback && r.gain > 0) feedback.play('ok'); } });
+            else if (act === 'play') void run('펫과 놀기', (p, o) => playWithPet(p, o), { after: (r) => { react('play'); grew(r, '신나게 놀았어요!'); } });
+            else if (act === 'walk') void run('펫 산책 보상', (p, o) => walkPet(p, o), { after: (r) => { react('walk'); show(free() ? '산책을 다녀왔어요! (선생님은 봉을 받지 않아요)' : `산책에서 ${deps.bong(r.gain)}을 벌어 왔어요!`, r.gain > 0 ? 'good' : ''); if (feedback && r.gain > 0) feedback.play('ok'); } });
             else if (act === 'pack') void pack(Number(t.getAttribute('data-pack')) || 0);
             else if (act === 'enhance') void enhance();
             else if (act === 'evolve') void evolve();
-            else if (act === 'back') void run('펫 데려오기', (p, o) => bringPetBack(p, o), { after: () => show('집으로 돌아왔어요! 이제 잘 챙겨 줘요.', 'good') });
+            else if (act === 'back') void run('펫 데려오기', (p, o) => bringPetBack(p, o), { after: () => { react('back'); show('집으로 돌아왔어요! 이제 잘 챙겨 줘요.', 'good'); } });
             else if (act === 'rename') void rename();
+            else if (act === 'pet-tap') { const v = petView(myPet(), now(), today(), settings()); react(v.mood === 'hungry' || v.mood === 'starving' ? 'hungry' : 'tap'); try { if (navigator.vibrate) navigator.vibrate(10); } catch (_) { /* 진동 없는 기기 */ } render(); }
             else if (act === 'release') void release();
         });
         el.addEventListener('change', (e) => raid.onChange(e));
+    }
+
+    /** 펫이 고마워하거나 애교를 부려요(말풍선 + 폴짝 + 하트). */
+    function react(kind) {
+        const at = now();
+        talk = { text: pickTalk(kind), at, kind };
+        setTimeout(() => { if (talk && talk.at === at) { talk = null; if (!busy && tab === 'mine') render(); } }, 2600);
     }
 
     function show(text, kind = '') {
@@ -295,7 +321,7 @@ export function createPetMode(deps) {
     async function feed(foodId) {
         const f = PET_FOODS[foodId];
         if (!f) return;
-        await run(`펫 먹이: ${f.name}`, (p, o) => feedPet(p, { ...o, food: foodId }), { after: (r) => grew(r, `${f.emoji} 냠냠!`) });
+        await run(`펫 먹이: ${f.name}`, (p, o) => feedPet(p, { ...o, food: foodId }), { after: (r) => { react('feed'); grew(r, `${f.emoji} 냠냠!`); } });
     }
 
     /** 경험치 팩 사기 */
@@ -306,7 +332,7 @@ export function createPetMode(deps) {
             const ok = await deps.confirm(`경험치 팩을 살까요?\n${deps.bong(pk.price)}을 내고 경험치 ${pk.exp}을 받아요.`);
             if (!ok) return;
         }
-        await run('펫 경험치 팩', (p, o) => buyPetExpPack(p, { ...o, index, packs: settings().expPacks }), { after: (r) => grew(r, '📦 경험치 팩!') });
+        await run('펫 경험치 팩', (p, o) => buyPetExpPack(p, { ...o, index, packs: settings().expPacks }), { after: (r) => { react('pack'); grew(r, '📦 경험치 팩!'); } });
     }
 
     async function enhance() {
@@ -316,8 +342,8 @@ export function createPetMode(deps) {
         if (!ok) return;
         await run('펫 강화', (p, o) => enhancePet(p, o), {
             after: (r) => {
-                if (r.success) { show(`강화 성공! +${r.pet.enhance}`, 'good'); if (feedback) feedback.play('ok'); }
-                else { show('강화 실패… 다음에 다시 해 봐요.', 'bad'); if (feedback) feedback.play('no'); }
+                if (r.success) { react('enhanceOk'); show(`강화 성공! +${r.pet.enhance}`, 'good'); if (feedback) feedback.play('ok'); }
+                else { react('enhanceNo'); show('강화 실패… 다음에 다시 해 봐요.', 'bad'); if (feedback) feedback.play('no'); }
             },
         });
     }
@@ -325,6 +351,7 @@ export function createPetMode(deps) {
     async function evolve() {
         await run('펫 진화', (p, o) => evolvePet(p, o), {
             after: (r) => {
+                react('evolve');
                 show(`진화했어요! ${PET_SPECIES[r.pet.species].names[r.pet.stage - 1]}`, 'good');
                 if (feedback) feedback.play('ok');
                 const stage = root() && root().querySelector('.pet-stage');
@@ -336,7 +363,7 @@ export function createPetMode(deps) {
     async function rename() {
         const name = await deps.prompt(`펫 이름을 지어 줘요. (${PET_NAME_MAX}글자까지)\n친구들에게도 보이니 고운 이름으로 지어요.`);
         if (name == null) return;
-        await run('펫 이름 짓기', (p) => renamePet(p, { name }));
+        await run('펫 이름 짓기', (p) => renamePet(p, { name }), { after: () => { react('rename'); render(); } });
     }
 
     async function release() {
@@ -516,11 +543,12 @@ export function createPetMode(deps) {
         const bubble = v.mood === 'starving' ? '<span class="pet-bubble is-bad" aria-hidden="true">💦</span>'
             : v.mood === 'hungry' ? '<span class="pet-bubble" aria-hidden="true">🍚?</span>'
                 : v.mood === 'happy' ? '<span class="pet-bubble is-good" aria-hidden="true">♪</span>' : '';
+        const talking = !!(talk && now() - talk.at < 2600);
         return `<div class="pet-card type-${sp.type}">
             <div class="pet-stage type-${sp.type} mood-${v.mood}${v.shiny ? ' is-shiny' : ''}">
                 ${ground}
-                <span class="pet-sprite stage-${v.stage}">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny, mood: v.mood, eager: true, alt: sp.names[v.stage - 1] })}</span>
-                ${bubble}
+                <button type="button" class="pet-sprite pet-sprite-btn stage-${v.stage}${talking ? ' is-react' : ''}" data-p="pet-tap" aria-label="${esc(v.name)} 쓰다듬기">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny, mood: v.mood, eager: true, alt: sp.names[v.stage - 1] })}</button>
+                ${talking ? `<span class="pet-talk" role="status">${esc(talk.text)}</span><span class="pet-hearts" aria-hidden="true"><i>💕</i><i>💗</i><i>✨</i></span>` : bubble}
                 ${fxHtml()}
             </div>
             ${head}

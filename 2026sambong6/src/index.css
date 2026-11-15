@@ -2570,8 +2570,9 @@
             gap: 0.45rem;
         }
         #challengeSubtabs.app-sub-dock {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(5, minmax(0, 1fr));
         }
+        .app-sub-icon-emoji { display: grid; place-items: center; font-size: 1.5rem; background: linear-gradient(160deg, #fef3c7, #f59e0b); }
         #shopSubtabs.app-sub-dock,
         .app-sub-dock.cols-5 {
             grid-template-columns: repeat(5, minmax(0, 1fr));

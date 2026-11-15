@@ -1718,9 +1718,9 @@
             <div class="max-w-7xl mx-auto space-y-4">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-yellow-300"><i class="fa-solid fa-trophy"></i> 도전</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드 · OX퀴즈에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드 · OX퀴즈에 참가하고, 메이트 펫을 키웁니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
                 </div>
-                <div id="challengeSubtabs" class="app-sub-dock cols-4">
+                <div id="challengeSubtabs" class="app-sub-dock cols-5">
                     <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="app-sub-item is-active">
                         <span class="app-sub-icon"><img src="nav/nav-goldenbell.webp" alt="" width="192" height="192"></span>
                         <span>골든벨</span>
@@ -1737,7 +1737,13 @@
                         <span class="app-sub-icon"><img src="nav/nav-oxquiz.jpg" alt="" width="192" height="192"></span>
                         <span>OX퀴즈</span>
                     </button>
+                    <button type="button" id="challengeSub-pet" onclick="window.switchChallengeSub('pet')" class="app-sub-item">
+                        <span class="app-sub-icon app-sub-icon-emoji" aria-hidden="true">🥚</span>
+                        <span>메이트 펫</span>
+                    </button>
                 </div>
+
+                <div id="challengePane-pet" class="hidden"></div>
 
                 <div id="challengePane-ox" class="hidden space-y-3">
                     <button type="button" onclick="window.openOxQuiz()" class="ox-go">OX 퀴즈 열기</button>

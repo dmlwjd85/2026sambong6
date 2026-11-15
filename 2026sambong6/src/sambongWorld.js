@@ -325,6 +325,7 @@ import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey, is
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { createChessTutorial } from './chessTutorial.js';
 import { createMindMode } from './mindMode.js';
+import { createPetMode } from './petMode.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
 import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
@@ -10481,10 +10482,32 @@ ${subjectLine}
             if (oxQuizUi) oxQuizUi.close();
         };
 
+        // 메이트 펫: 봉으로 알을 사서 키우는 게임. 학생 문서의 pet 칸에 저장해요(petMode.js).
+        const _petMode = createPetMode({
+            state: () => window.playerState,
+            canPlay: () => !!(window.playerState && !window.playerState.isGuest && currentStudentDocRef),
+            today: () => getLocalDateStr(),
+            applyBong: (delta) => { window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(delta)); updateUI(); },
+            save: (opts) => saveDataToCloud(opts),
+            students: () => getActiveStudentIds().map((sid) => {
+                const id = String(sid);
+                const mine = id === String(localStorage.getItem('sambong_student_id') || '');
+                const row = (window.allStudentsData || []).find((s) => String(s.id) === id);
+                return { id, name: displayStudentName(id, id), pet: mine && window.playerState ? window.playerState.pet : (row && row.pet) };
+            }),
+            selfId: () => String(localStorage.getItem('sambong_student_id') || ''),
+            bong: (v) => formatBongAmount(v),
+            confirm: (text) => window.customConfirm(text),
+            prompt: (text) => window.customPrompt(text, 'text'),
+            toast: (text) => { if (typeof window.showToast === 'function') window.showToast(text); },
+        });
+
+        window.refreshPetModeIfOpen = () => { if (challengeSub === 'pet' && _petMode.isOpen() && _petMode.showsClass()) _petMode.render(); };
+
         window.switchChallengeSub = function(sub) {
             // 냥코 원정은 삭제됨 — 옛 딥링크는 골든벨로 보냄
             challengeSub = (sub === 'catbattle' || !sub) ? 'goldenbell' : sub;
-            ['goldenbell', 'speedquiz', 'raid', 'ox'].forEach(s => {
+            ['goldenbell', 'speedquiz', 'raid', 'ox', 'pet'].forEach(s => {
                 const btn = document.getElementById('challengeSub-' + s);
                 if (btn) btn.classList.toggle('is-active', s === challengeSub);
                 const pane = document.getElementById('challengePane-' + s);
@@ -10495,6 +10518,7 @@ ${subjectLine}
             });
             if (challengeSub === 'ox') window.openOxQuiz();
             else window.closeOxQuiz();
+            if (challengeSub === 'pet') _petMode.open();
             if (challengeSub === 'goldenbell') {
                 if (window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                     window.renderGoldenBellMasterLive();
@@ -22237,6 +22261,8 @@ ${subjectLine}
                             window.gmaData = gmaD;
                             // 로비 방 카드의 '방장 전적'이 새 값으로 바뀌게 다시 그려요.
                             if (classtoolSub === 'boardgames' && _boardGameView === 'lobby') renderBoardGameLobby();
+                            // 반 펫 구경 화면을 보고 있으면 친구 펫이 바뀐 걸 바로 보여 줘요.
+                            if (typeof window.refreshPetModeIfOpen === 'function') window.refreshPetModeIfOpen();
                             
                             const myId = localStorage.getItem('sambong_student_id');
                             if (myId && !window.playerState.isGuest && studentSnapshotBelongsToThisTab(myId)) {
@@ -31650,7 +31676,7 @@ ${subjectLine}
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'questCancels', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
-            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
+            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords', 'pet',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',

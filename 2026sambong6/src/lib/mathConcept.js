@@ -469,7 +469,7 @@ function isoCube(ox, oy, s, gx, gy, gz, colors) {
 }
 
 function drawCuboidVolume({ w, d, h }) {
-    const s = Math.min(46, 300 / Math.max(w + d, h + (w + d) / 2));
+    const s = 26; // 쌓기나무 한 개의 크기는 늘 같아요. 수가 커지면 그림도 커져요.
     const ox = 250 + ((d - w) * s * 0.866) / 2;
     const oy = 150 + h * s * 0.5 + 20;
     let g = '';
@@ -488,7 +488,7 @@ function drawCuboidVolume({ w, d, h }) {
 function drawCuboidNet({ w, d, h }) {
     const totalW = 2 * d + 2 * w;
     const totalH = 2 * d + h;
-    const s = Math.min(460 / totalW, 320 / totalH);
+    const s = 18; // 길이 1 = 18칸(픽셀). 값을 바꾸면 전개도 크기도 그대로 바뀌어요.
     const x0 = 50;
     const y0 = 90 + (320 - totalH * s) / 2;
     const face = (x, y, fw, fh, fill, label) => rect(x0 + x * s, y0 + y * s, fw * s, fh * s, { fill, stroke: C.line, width: 2 }) + text(x0 + (x + fw / 2) * s, y0 + (y + fh / 2) * s + 6, label, { size: Math.min(17, fw * s * 0.3, fh * s * 0.5 + 6), fill: C.ink });
@@ -656,18 +656,18 @@ function drawShare({ total, a, b }) {
 /* ============ 6-2-5 원의 넓이 ============ */
 
 function drawCircumference({ d, pi }) {
-    const R = 70;
+    const R = 7 * d; // 지름 1마다 14칸(픽셀)씩 커져요
     const cx = 130;
     const cy = 170;
     let g = S(1, `<circle cx="${cx}" cy="${cy}" r="${R}" fill="${C.blueL}" stroke="${C.blue}" stroke-width="4"/>` + text(cx, cy + R + 30, '원주 (원의 둘레)', { size: 17, fill: C.blue }));
-    g += S(2, line(cx - R, cy, cx + R, cy, { stroke: C.red, width: 3 }) + text(cx, cy - 10, `지름 ${numText(d)}`, { size: 17, fill: C.red }), 'wipe');
+    g += S(2, line(cx - R, cy, cx + R, cy, { stroke: C.red, width: 3 }) + text(cx, cy - R - 10, `지름 ${numText(d)}`, { size: 17, fill: C.red }), 'wipe');
     const x0 = 250;
     const y = 330;
     const dia = 2 * R;
     const full = Math.min(pi, 3.3);
     g += S(3, text(x0, y - 70, '원을 한 바퀴 굴려 원주를 곧게 펴면', { size: 18, anchor: 'start', fill: C.sub }) + line(x0, y, x0 + dia * full, y, { stroke: C.blue, width: 6 }), 'wipe');
-    for (let i = 0; i < 3; i += 1) g += S(4 + i, rect(x0 + i * dia, y - 44, dia, 30, { fill: '#fee2e2', stroke: C.red, width: 2 }) + text(x0 + i * dia + dia / 2, y - 23, `지름 ${i + 1}`, { size: 16, fill: C.red }), 'wipe');
-    g += S(7, rect(x0 + 3 * dia, y - 44, dia * (full - 3), 30, { fill: '#fecaca', stroke: C.red, width: 2 }) + text(x0 + (dia * full) / 2, y + 30, `원주 = 지름의 약 ${pi}배`, { size: 20, fill: C.blue }));
+    for (let i = 0; i < 3; i += 1) g += S(4 + i, rect(x0 + i * dia, y - 44, dia, 30, { fill: '#fee2e2', stroke: C.red, width: 2 }) + text(x0 + i * dia + dia / 2, y - 23, dia >= 64 ? `지름 ${i + 1}` : `${i + 1}`, { size: 16, fill: C.red }), 'wipe');
+    g += S(7, rect(x0 + 3 * dia, y - 44, dia * (full - 3), 30, { fill: '#fecaca', stroke: C.red, width: 2 }) + text(x0, y + 30, `원주 = 지름의 약 ${pi}배`, { size: 20, fill: C.blue, anchor: 'start' }));
     g += S(8, text(540, 130, '(원주율) = (원주) ÷ (지름)', { size: 21 }) + text(540, 166, `= 3.14159…  → ${pi} 로 계산`, { size: 19, fill: C.sub }) + text(540, 216, `${numText(d)} × ${pi} = ${numText(d * pi)}`, { size: 26, fill: '#1e3a8a' }));
     return { body: g, caption: `(원주) = (지름) × (원주율) = ${numText(d)} × ${pi} = ${numText(d * pi)}`, steps: [
         `원의 둘레를 원주라고 해요.`,
@@ -682,18 +682,18 @@ function drawCircumference({ d, pi }) {
 }
 
 function drawCircleArea({ r, n, pi }) {
-    const R = 100;
+    const R = 10 * r; // 반지름 1마다 10칸(픽셀)씩 커져요
     const cx = 150;
     const cy = 200;
     const sector = (x, y, a0, a1, fill) => `<path d="M ${r2(x)} ${r2(y)} L ${r2(x + R * Math.cos(a0))} ${r2(y + R * Math.sin(a0))} A ${R} ${R} 0 0 1 ${r2(x + R * Math.cos(a1))} ${r2(y + R * Math.sin(a1))} Z" fill="${fill}" stroke="#1e293b" stroke-width="1"/>`;
     const step = (2 * Math.PI) / n;
     let circ = '';
     for (let i = 0; i < n; i += 1) circ += sector(cx, cy, i * step - Math.PI / 2, (i + 1) * step - Math.PI / 2, i < n / 2 ? C.blue : C.orange);
-    let g = S(1, circ + line(cx, cy, cx + R, cy, { stroke: '#fff', width: 3 }) + text(cx + R / 2, cy - 8, '반지름', { size: 15, fill: '#fff' }) + text(cx, cy + R + 30, `원을 ${n}조각으로 잘라요`, { size: 17, fill: C.sub }));
+    let g = S(1, circ + line(cx, cy, cx + R, cy, { stroke: '#fff', width: 3 }) + (R >= 60 ? text(cx + R / 2, cy - 8, '반지름', { size: 15, fill: '#fff' }) : '') + text(cx, cy + R + 30, `반지름 ${numText(r)} · ${n}조각으로 잘라요`, { size: 17, fill: C.sub }));
     const chord = 2 * R * Math.sin(step / 2);
     const total = (n / 2) * chord;
     const sx = 340 + (400 - total) / 2;
-    const top = 150;
+    const top = 200 - R / 2;
     let down = '';
     let up = '';
     for (let i = 0; i < n / 2; i += 1) {
@@ -702,7 +702,7 @@ function drawCircleArea({ r, n, pi }) {
         up += sector(bx + chord / 2, top + R * (1 - Math.cos(step / 2)), Math.PI / 2 - step / 2, Math.PI / 2 + step / 2, C.orange);
     }
     g += S(2, text(278, cy + 10, '➜', { size: 30, fill: C.sub }) + down, 'wipe') + S(3, up, 'drop');
-    g += S(4, line(sx, top + R + 22, sx + total, top + R + 22, { stroke: C.red, width: 3 }) + text(sx + total / 2, top + R + 46, '(원주) × 1/2', { size: 18, fill: C.red }) + line(sx - 14, top, sx - 14, top + R, { stroke: C.purple, width: 3 }) + text(sx - 22, top + R / 2 + 6, '반지름', { size: 16, fill: C.purple, anchor: 'end' }) + text(540, 320, '잘게 자를수록 직사각형에 가까워져요', { size: 17, fill: C.sub }));
+    g += S(4, line(sx, top + R + 22, sx + total, top + R + 22, { stroke: C.red, width: 3 }) + text(sx + total / 2, top + R + 46, '(원주) × 1/2', { size: 18, fill: C.red }) + line(sx - 14, top, sx - 14, top + R, { stroke: C.purple, width: 3 }) + text(sx - 22, top + R / 2 + 6, '반지름', { size: 16, fill: C.purple, anchor: 'end' }) + text(540, 326, '잘게 자를수록 직사각형에 가까워져요', { size: 17, fill: C.sub }));
     g += S(5, text(MATH_W / 2, 386, `(원의 넓이) = (원주)×1/2 × (반지름) = (반지름)×(반지름)×(원주율)`, { size: 19 }) + text(MATH_W / 2, 424, `${numText(r)} × ${numText(r)} × ${pi} = ${numText(r * r * pi)}`, { size: 24, fill: '#1e3a8a' }));
     return { body: g, caption: `(원의 넓이) = (반지름) × (반지름) × (원주율) = ${numText(r)} × ${numText(r)} × ${pi} = ${numText(r * r * pi)}`, steps: [
         `원을 피자처럼 ${n}조각으로 똑같이 잘라요.`,
@@ -718,36 +718,37 @@ function drawCircleArea({ r, n, pi }) {
 function drawRound({ shape, r, h, pi }) {
     let g = '';
     const cx = 200;
-    const rx = 110;
-    const ry = 34;
+    const U = 20; // 길이 1 = 20칸(픽셀). 반지름·높이를 바꾸면 그림도 그만큼 커지거나 작아져요.
+    const rx = U * r;
+    const ry = rx * 0.3;
     if (shape === 'cone') {
         const by = 380;
-        const ay = 120;
-        g += S(1, `<path d="M ${cx - rx} ${by} L ${cx} ${ay} L ${cx + rx} ${by} A ${rx} ${ry} 0 0 1 ${cx - rx} ${by} Z" fill="${C.orangeL}" stroke="${C.line}" stroke-width="3"/><path d="M ${cx - rx} ${by} A ${rx} ${ry} 0 0 1 ${cx + rx} ${by}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="7 6"/>`);
+        const ay = by - U * h;
+        g += S(1, `<path d="M ${cx - rx} ${by} L ${cx} ${ay} L ${cx + rx} ${by} A ${rx} ${r2(ry)} 0 0 1 ${cx - rx} ${by} Z" fill="${C.orangeL}" stroke="${C.line}" stroke-width="3"/><path d="M ${cx - rx} ${by} A ${rx} ${r2(ry)} 0 0 1 ${cx + rx} ${by}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="7 6"/>`);
         const tx = 580;
         const row = (i, name, desc) => text(tx - 170, 130 + i * 52, name, { size: 20, anchor: 'start', fill: '#1e3a8a' }) + text(tx - 170, 154 + i * 52, desc, { size: 15, anchor: 'start', fill: C.sub });
-        g += S(2, `<ellipse cx="${cx}" cy="${by}" rx="${rx}" ry="${ry}" fill="#f59e0b" fill-opacity="0.35" stroke="#b45309" stroke-width="2.5"/>` + text(cx - rx - 8, by + 34, '밑면', { size: 17, fill: '#b45309', anchor: 'end' }) + row(0, '밑면', '원 1개'));
-        g += S(3, text(cx - 70, (ay + by) / 2 + 30, '옆면', { size: 17, fill: '#1d4ed8', anchor: 'end' }) + row(1, '옆면', '굽은 면'));
+        g += S(2, `<ellipse cx="${cx}" cy="${by}" rx="${rx}" ry="${r2(ry)}" fill="#f59e0b" fill-opacity="0.35" stroke="#b45309" stroke-width="2.5"/>` + text(cx - rx - 8, by + 6, '밑면', { size: 17, fill: '#b45309', anchor: 'end' }) + row(0, '밑면', '원 1개'));
+        g += S(3, text(cx - rx * 0.55 - 10, (ay + by) / 2 + 6, '옆면', { size: 17, fill: '#1d4ed8', anchor: 'end' }) + row(1, '옆면', '굽은 면'));
         g += S(4, `<circle cx="${cx}" cy="${ay}" r="6" fill="${C.red}"/>` + text(cx, ay - 12, '원뿔의 꼭짓점', { size: 17, fill: C.red }) + row(2, '꼭짓점', '1개'));
-        g += S(5, line(cx, ay, cx + rx, by, { stroke: '#15803d', width: 4 }) + text(cx + rx / 2 + 34, (ay + by) / 2 - 40, '모선', { size: 18, fill: '#15803d', anchor: 'start' }) + row(3, '모선', '꼭짓점과 밑면 둘레의 한 점을 이은 선분'), 'wipe');
-        g += S(6, line(cx, ay, cx, by, { stroke: C.purple, width: 2.5, dash: '6 5' }) + text(cx + 8, (ay + by) / 2, `높이 ${numText(h)}`, { size: 17, fill: C.purple, anchor: 'start' }) + line(cx, by, cx + rx, by, { stroke: C.red, width: 2.5 }) + text(cx + rx / 2, by + 22, `반지름 ${numText(r)}`, { size: 16, fill: C.red }) + row(4, '높이', '꼭짓점에서 밑면에 수직인 선분의 길이'), 'drop');
-        return { body: g, caption: '원뿔: 평평한 면이 원이고 옆을 둘러싼 면이 굽은 면인 뿔 모양의 입체도형', steps: [
+        g += S(5, line(cx, ay, cx + rx, by, { stroke: '#15803d', width: 4 }) + text(cx + rx / 2 + 12, (ay + by) / 2 - 6, '모선', { size: 18, fill: '#15803d', anchor: 'start' }) + row(3, '모선', '꼭짓점과 밑면 둘레의 한 점을 이은 선분'), 'wipe');
+        g += S(6, line(cx, ay, cx, by, { stroke: C.purple, width: 2.5, dash: '6 5' }) + text(cx - 6, (ay + by) / 2 + 20, `높이 ${numText(h)}`, { size: 16, fill: C.purple, anchor: 'end' }) + line(cx, by, cx + rx, by, { stroke: C.red, width: 2.5 }) + text(cx, by + ry + 22, `반지름 ${numText(r)}`, { size: 16, fill: C.red }) + row(4, '높이', '꼭짓점에서 밑면에 수직인 선분의 길이'), 'drop');
+        return { body: g, caption: `원뿔: 평평한 면이 원이고 옆을 둘러싼 면이 굽은 면인 뿔 모양의 입체도형 (밑면의 반지름 ${numText(r)}, 높이 ${numText(h)})`, steps: [
             '고깔모자처럼 생긴 이 입체도형이 원뿔이에요.',
             '바닥의 평평한 원이 밑면이에요. 1개뿐이에요.',
             '옆을 둘러싼 굽은 면이 옆면이에요.',
             '뾰족한 점이 원뿔의 꼭짓점이에요.',
             '꼭짓점에서 밑면 둘레의 한 점까지 이은 선분이 모선이에요.',
-            '꼭짓점에서 밑면까지 똑바로 내린 길이가 높이예요.',
+            `꼭짓점에서 밑면까지 똑바로 내린 길이가 높이예요. 높이 ${numText(h)}, 밑면의 반지름 ${numText(r)}`,
         ] };
     }
     if (shape === 'sphere') {
-        const R = 130;
+        const R = 13 * r;
         const cy = 250;
         const tx = 580;
-        g += S(1, `<circle cx="${cx + 30}" cy="${cy}" r="${R}" fill="${C.greenL}" stroke="${C.line}" stroke-width="3"/><ellipse cx="${cx + 30}" cy="${cy}" rx="${R}" ry="${R * 0.3}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="7 6"/>` + text(tx, 170, '구', { size: 34, fill: '#1e3a8a' }));
+        g += S(1, `<circle cx="${cx + 30}" cy="${cy}" r="${R}" fill="${C.greenL}" stroke="${C.line}" stroke-width="3"/><ellipse cx="${cx + 30}" cy="${cy}" rx="${R}" ry="${r2(R * 0.3)}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="7 6"/>` + text(tx, 170, '구', { size: 34, fill: '#1e3a8a' }));
         g += S(2, text(tx, 220, '어느 방향에서 보아도 원 모양', { size: 18, fill: C.sub }));
-        g += S(3, `<circle cx="${cx + 30}" cy="${cy}" r="6" fill="${C.red}"/>` + text(cx + 30, cy - 12, '구의 중심', { size: 17, fill: C.red }) + text(tx, 256, '구의 중심: 가장 안쪽에 있는 점', { size: 18, fill: C.sub }));
-        g += S(4, line(cx + 30, cy, cx + 30 + R, cy, { stroke: C.purple, width: 3 }) + text(cx + 30 + R / 2, cy + 24, `반지름 ${numText(r)}`, { size: 17, fill: C.purple }) + text(tx, 292, '구의 반지름: 중심에서 겉면의', { size: 18, fill: C.sub }) + text(tx, 316, '한 점을 이은 선분 (모두 같아요)', { size: 18, fill: C.sub }), 'wipe');
+        g += S(3, `<circle cx="${cx + 30}" cy="${cy}" r="6" fill="${C.red}"/>` + text(cx + 30, cy - R - 12, '구의 중심 ●', { size: 17, fill: C.red }) + text(tx, 256, '구의 중심: 가장 안쪽에 있는 점', { size: 18, fill: C.sub }));
+        g += S(4, line(cx + 30, cy, cx + 30 + R, cy, { stroke: C.purple, width: 3 }) + text(cx + 30, cy + R + 28, `반지름 ${numText(r)}`, { size: 17, fill: C.purple }) + text(tx, 292, '구의 반지름: 중심에서 겉면의', { size: 18, fill: C.sub }) + text(tx, 316, '한 점을 이은 선분 (모두 같아요)', { size: 18, fill: C.sub }), 'wipe');
         return { body: g, caption: `구: 공 모양의 입체도형. 반지름 ${numText(r)}, 지름 ${numText(r * 2)}`, steps: [
             '공처럼 생긴 이 입체도형이 구예요.',
             '구는 위·앞·옆 어디에서 보아도 원 모양이에요.',
@@ -756,19 +757,21 @@ function drawRound({ shape, r, h, pi }) {
         ] };
     }
     // 원기둥 + 전개도
-    const ty = 130;
-    const by = 360;
-    g += S(1, `<path d="M ${cx - rx} ${ty} L ${cx - rx} ${by} A ${rx} ${ry} 0 0 0 ${cx + rx} ${by} L ${cx + rx} ${ty}" fill="${C.blueL}" stroke="${C.line}" stroke-width="3"/><ellipse cx="${cx}" cy="${ty}" rx="${rx}" ry="${ry}" fill="${C.yellowL}" stroke="${C.line}" stroke-width="3"/><path d="M ${cx - rx} ${by} A ${rx} ${ry} 0 0 1 ${cx + rx} ${by}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="7 6"/>`);
-    g += S(2, text(cx - 50, ty + 12, '밑면', { size: 16, fill: '#b45309' }) + text(cx, by + ry + 22, '밑면', { size: 16, fill: '#b45309' }) + text(cx, (ty + by) / 2 + 20, '옆면', { size: 17, fill: '#1d4ed8' }));
-    g += S(3, line(cx, ty, cx + rx, ty, { stroke: C.red, width: 2.5 }) + text(cx + rx / 2, ty - 6, `반지름 ${numText(r)}`, { size: 15, fill: C.red }) + line(cx + rx + 16, ty, cx + rx + 16, by, { stroke: C.purple, width: 2.5 }) + text(cx + rx + 24, (ty + by) / 2, `높이 ${numText(h)}`, { size: 16, fill: C.purple, anchor: 'start' }), 'drop');
-    const nx = 440;
-    const rw = 300;
-    const rh = 120;
-    const cr = 42;
-    const ny = 200;
-    g += S(4, text(nx + rw / 2, 96, '원기둥의 전개도', { size: 19, fill: '#1e3a8a' }) + `<circle cx="${nx + 70}" cy="${ny - cr}" r="${cr}" fill="${C.yellowL}" stroke="${C.line}" stroke-width="2.5"/><circle cx="${nx + 70}" cy="${ny + rh + cr}" r="${cr}" fill="${C.yellowL}" stroke="${C.line}" stroke-width="2.5"/>`);
-    g += S(5, rect(nx, ny, rw, rh, { fill: C.blueL, width: 2.5 }) + text(nx + rw / 2, ny + rh / 2 - 4, '옆면 (직사각형)', { size: 17, fill: '#1d4ed8' }), 'wipe');
-    g += S(6, text(nx + rw / 2, ny + rh / 2 + 22, `가로 = 밑면의 둘레 = ${numText(r * 2)}×${pi} = ${numText(r * 2 * pi)}`, { size: 15, fill: C.red }) + text(nx + rw / 2, ny + rh / 2 + 44, `세로 = 높이 = ${numText(h)}`, { size: 15, fill: C.purple }));
+    const by = 380;
+    const ty = by - U * h;
+    g += S(1, `<path d="M ${cx - rx} ${ty} L ${cx - rx} ${by} A ${rx} ${r2(ry)} 0 0 0 ${cx + rx} ${by} L ${cx + rx} ${ty}" fill="${C.blueL}" stroke="${C.line}" stroke-width="3"/><ellipse cx="${cx}" cy="${ty}" rx="${rx}" ry="${r2(ry)}" fill="${C.yellowL}" stroke="${C.line}" stroke-width="3"/><path d="M ${cx - rx} ${by} A ${rx} ${r2(ry)} 0 0 1 ${cx + rx} ${by}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="7 6"/>`);
+    g += S(2, text(cx - rx - 8, ty + 6, '밑면', { size: 16, fill: '#b45309', anchor: 'end' }) + text(cx - rx - 8, by + 12, '밑면', { size: 16, fill: '#b45309', anchor: 'end' }) + (h >= 3 ? text(cx - rx - 8, (ty + by) / 2 + 8, '옆면', { size: 17, fill: '#1d4ed8', anchor: 'end' }) : ''));
+    g += S(3, line(cx, ty, cx + rx, ty, { stroke: C.red, width: 2.5 }) + text(cx, ty - ry - 8, `반지름 ${numText(r)}`, { size: 15, fill: C.red }) + line(cx + rx + 16, ty, cx + rx + 16, by, { stroke: C.purple, width: 2.5 }) + text(cx + rx + 24, (ty + by) / 2 + 6, `높이 ${numText(h)}`, { size: 16, fill: C.purple, anchor: 'start' }), 'drop');
+    // 전개도도 같은 비율(길이 1 = 8칸)로 그려요. 옆면의 가로가 밑면 둘레만큼 길어져요.
+    const NU = 8;
+    const ncx = 590;
+    const rw = 2 * pi * r * NU;
+    const rh = h * NU;
+    const cr = r * NU;
+    const ny = 240 - rh / 2;
+    g += S(4, text(ncx, 92, '원기둥의 전개도', { size: 19, fill: '#1e3a8a' }) + `<circle cx="${ncx}" cy="${r2(ny - cr)}" r="${cr}" fill="${C.yellowL}" stroke="${C.line}" stroke-width="2.5"/><circle cx="${ncx}" cy="${r2(ny + rh + cr)}" r="${cr}" fill="${C.yellowL}" stroke="${C.line}" stroke-width="2.5"/>`);
+    g += S(5, rect(ncx - rw / 2, ny, rw, rh, { fill: C.blueL, width: 2.5 }) + (rw >= 130 && rh >= 30 ? text(ncx, ny + rh / 2 + 6, '옆면 (직사각형)', { size: 16, fill: '#1d4ed8' }) : ''), 'wipe');
+    g += S(6, text(ncx, 410, `가로 = 밑면의 둘레 = ${numText(r * 2)}×${pi} = ${numText(r * 2 * pi)}`, { size: 15, fill: C.red }) + text(ncx, 432, `세로 = 높이 = ${numText(h)}`, { size: 15, fill: C.purple }));
     return { body: g, caption: `원기둥: 서로 평행하고 합동인 원 2개가 밑면. 전개도에서 옆면의 가로 = 밑면의 둘레 = ${numText(r * 2 * pi)}, 세로 = 높이 = ${numText(h)}`, steps: [
         '음료수 캔처럼 생긴 이 입체도형이 원기둥이에요.',
         '위와 아래의 원 2개가 밑면, 옆을 둘러싼 굽은 면이 옆면이에요.',
@@ -823,7 +826,7 @@ export const MATH_UNITS = Object.freeze([
     ] },
     { id: '6-1-6', grade: 6, term: 1, no: 6, name: '직육면체의 부피와 겉넓이', concepts: [
         { id: 'volume', name: '부피 (쌓기나무)', params: [P.int('w', '가로', 1, 6, 4), P.int('d', '세로', 1, 6, 3), P.int('h', '높이', 1, 6, 2)], draw: drawCuboidVolume },
-        { id: 'net', name: '겉넓이 (전개도)', params: [P.int('w', '가로', 1, 12, 4), P.int('d', '세로', 1, 12, 3), P.int('h', '높이', 1, 12, 2)], draw: drawCuboidNet },
+        { id: 'net', name: '겉넓이 (전개도)', params: [P.int('w', '가로', 2, 6, 4), P.int('d', '세로', 2, 6, 3), P.int('h', '높이', 2, 6, 2)], draw: drawCuboidNet },
     ] },
     { id: '6-2-1', grade: 6, term: 2, no: 1, name: '분수의 나눗셈', concepts: [
         { id: 'fracdivfrac', name: '(분수) ÷ (분수)', params: [P.int('a', '나누어지는 수 분자', 1, 12, 3), P.int('b', '나누어지는 수 분모', 2, 8, 4), P.int('c', '나누는 수 분자', 1, 7, 1), P.int('d', '나누는 수 분모', 2, 8, 8)], snap: snapFracDivFrac, draw: drawFracDivFrac },
@@ -839,13 +842,13 @@ export const MATH_UNITS = Object.freeze([
         { id: 'share', name: '비례배분', params: [P.int('total', '전체', 2, 10000, 20), P.int('a', '비 (앞)', 1, 9, 2), P.int('b', '비 (뒤)', 1, 9, 3)], snap: (p) => ({ total: Math.max(p.a + p.b, Math.round(p.total / (p.a + p.b)) * (p.a + p.b)) }), draw: drawShare },
     ] },
     { id: '6-2-5', grade: 6, term: 2, no: 5, name: '원의 넓이', concepts: [
-        { id: 'circum', name: '원주와 원주율', params: [P.int('d', '지름', 1, 100, 10), P.sel('pi', '원주율', PI_OPT, '3.14')], fix: (p) => ({ ...p, pi: Number(p.pi) }), draw: drawCircumference },
-        { id: 'area', name: '원의 넓이 (잘라 붙이기)', params: [P.int('r', '반지름', 1, 100, 5), P.sel('n', '조각 수', [['8', '8조각'], ['16', '16조각'], ['32', '32조각']], '16'), P.sel('pi', '원주율', PI_OPT, '3.14')], fix: (p) => ({ ...p, n: Number(p.n), pi: Number(p.pi) }), draw: drawCircleArea },
+        { id: 'circum', name: '원주와 원주율', params: [P.int('d', '지름', 3, 10, 8), P.sel('pi', '원주율', PI_OPT, '3.14')], fix: (p) => ({ ...p, pi: Number(p.pi) }), draw: drawCircumference },
+        { id: 'area', name: '원의 넓이 (잘라 붙이기)', params: [P.int('r', '반지름', 3, 10, 6), P.sel('n', '조각 수', [['8', '8조각'], ['16', '16조각'], ['32', '32조각']], '16'), P.sel('pi', '원주율', PI_OPT, '3.14')], fix: (p) => ({ ...p, n: Number(p.n), pi: Number(p.pi) }), draw: drawCircleArea },
     ] },
     { id: '6-2-6', grade: 6, term: 2, no: 6, name: '원기둥, 원뿔, 구', concepts: [
-        { id: 'cylinder', name: '원기둥과 전개도', params: [P.int('r', '밑면의 반지름', 1, 50, 3), P.int('h', '높이', 1, 50, 8), P.sel('pi', '원주율', PI_OPT, '3.14')], fix: (p) => ({ ...p, shape: 'cylinder', pi: Number(p.pi) }), draw: drawRound },
-        { id: 'cone', name: '원뿔', params: [P.int('r', '밑면의 반지름', 1, 50, 3), P.int('h', '높이', 1, 50, 4)], fix: (p) => ({ ...p, shape: 'cone', pi: 3.14 }), draw: drawRound },
-        { id: 'sphere', name: '구', params: [P.int('r', '반지름', 1, 50, 5)], fix: (p) => ({ ...p, shape: 'sphere', h: 0, pi: 3.14 }), draw: drawRound },
+        { id: 'cylinder', name: '원기둥과 전개도', params: [P.int('r', '밑면의 반지름', 2, 6, 3), P.int('h', '높이', 2, 10, 8), P.sel('pi', '원주율', PI_OPT, '3.14')], fix: (p) => ({ ...p, shape: 'cylinder', pi: Number(p.pi) }), draw: drawRound },
+        { id: 'cone', name: '원뿔', params: [P.int('r', '밑면의 반지름', 2, 6, 3), P.int('h', '높이', 3, 10, 6)], fix: (p) => ({ ...p, shape: 'cone', pi: 3.14 }), draw: drawRound },
+        { id: 'sphere', name: '구', params: [P.int('r', '반지름', 3, 10, 6)], fix: (p) => ({ ...p, shape: 'sphere', h: 0, pi: 3.14 }), draw: drawRound },
     ] },
 ]);
 

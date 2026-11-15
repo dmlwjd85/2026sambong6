@@ -112,4 +112,13 @@ describe('그림으로 그릴 수 있는 값으로 맞추기', () => {
         assert.match(renderMathConcept('4-1-1', 'big', { n: 25480000 }).caption, /이천오백사십팔만/);
         assert.match(renderMathConcept('5-2-1', 'round', { n: 2463, place: '100', kind: 'round' }).caption, /2463 → 2500$/);
     });
+    it('도형은 입력한 수만큼 크기가 바뀌어요(정해 둔 범위 안에서)', () => {
+        const radius = (svg) => Number(svg.match(/<circle cx="[\d.]+" cy="[\d.]+" r="([\d.]+)" fill="#bfdbfe"/)[1]);
+        assert.equal(radius(renderMathConcept('3-2-3', 'parts', { r: 4 }).svg) * 2, radius(renderMathConcept('3-2-3', 'parts', { r: 8 }).svg));
+        assert.equal(normalizeMathParams(concept('3-2-3', 'parts'), { r: 40 }).r, 9);
+        const rectW = (svg) => Number(svg.match(/<rect x="110" y="[\d.]+" width="([\d.]+)"/)[1]);
+        assert.equal(rectW(renderMathConcept('3-1-2', 'rect', { w: 4, h: 3 }).svg) * 3, rectW(renderMathConcept('3-1-2', 'rect', { w: 12, h: 3 }).svg));
+        assert.equal(normalizeMathParams(concept('6-2-6', 'cylinder'), { r: 30, h: 30, pi: '3.14' }).r, 6);
+        assert.deepEqual(normalizeMathParams(concept('4-2-2', 'obtuse'), { a: 150, b: 60 }), { a: 150, b: 15 });
+    });
 });

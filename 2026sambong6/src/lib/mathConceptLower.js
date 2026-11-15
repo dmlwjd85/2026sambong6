@@ -587,36 +587,51 @@ export function buildLowerUnits(kit) {
         return { body: g, caption: '선분: 두 점을 곧게 이은 선 · 반직선: 한쪽으로 끝없이 · 직선: 양쪽으로 끝없이 늘인 곧은 선', steps: ['두 점을 곧게 이은 선을 선분이라고 해요.', '한 점에서 시작해 한쪽으로 끝없이 늘인 곧은 선은 반직선이에요.', '양쪽으로 끝없이 늘인 곧은 선은 직선이에요.', '끝이 몇 개인지로 구분할 수 있어요.'] };
     }
 
-    function drawRightShapes({ kind }) {
-        const sqr = (x, y, dx, dy) => path(`M ${x + dx} ${y} L ${x + dx} ${y + dy} L ${x} ${y + dy}`, { stroke: C.red, width: 3 });
+    /** 직각 표시(꼭짓점 p 에서 두 방향 단위벡터 d1, d2) */
+    const rightMark = (p, d1, d2, k = 20) => path(`M ${r2(p[0] + d1[0] * k)} ${r2(p[1] + d1[1] * k)} L ${r2(p[0] + (d1[0] + d2[0]) * k)} ${r2(p[1] + (d1[1] + d2[1]) * k)} L ${r2(p[0] + d2[0] * k)} ${r2(p[1] + d2[1] * k)}`, { stroke: C.red, width: 3 });
+
+    /** 3학년 평면도형: 값(각도·가로·세로)을 바꾸면 도형도 그만큼 바뀌어요. 길이 1 = 30칸(픽셀) */
+    function drawRightShapes({ kind, w = 6, h = 4, deg = 45 }) {
+        const U3 = 30;
+        const x0 = 110;
+        const yb = 400;
         let g = '';
-        let name = '';
         let steps = [];
+        let cap = '';
         if (kind === 'angle') {
-            name = '각과 직각';
-            g += S(1, arrow(180, 360, 480, 360, C.blue, 5) + arrow(180, 360, 380, 160, C.blue, 5) + circle(180, 360, 8, { fill: C.red }) + text(150, 384, '꼭짓점', { size: 20, fill: C.red }) + text(420, 392, '변', { size: 20, fill: C.blue }) + text(300, 220, '변', { size: 20, fill: C.blue }) + big(620, 150, '각', '#1e3a8a', 40));
-            g += S(2, text(620, 200, '한 점에서 그은', { size: 20, fill: C.sub }) + text(620, 228, '두 반직선으로 이루어진 도형', { size: 20, fill: C.sub }));
-            g += S(3, arrow(560, 400, 740, 400, C.orange, 4) + arrow(560, 400, 560, 270, C.orange, 4) + sqr(560, 380, 20, 20) + text(650, 330, '직각', { size: 26, fill: '#c2410c' }));
-            g += S(4, text(650, 440, '종이를 반듯하게 두 번 접은 모양', { size: 16, fill: C.sub }));
-            steps = ['한 점에서 그은 두 반직선으로 이루어진 도형이 각이에요.', '만나는 점은 꼭짓점, 두 반직선은 변이라고 해요.', '종이를 반듯하게 두 번 접었을 때 생기는 각이 직각이에요.', '직각에는 작은 네모 표시를 해요.'];
+            const V = [250, 390];
+            const L = 210;
+            const a = (deg * Math.PI) / 180;
+            const tip = [V[0] + L * Math.cos(a), V[1] - L * Math.sin(a)];
+            const rel = deg < 90 ? '직각보다 작은 각' : deg === 90 ? '직각' : '직각보다 큰 각';
+            g += S(1, arrow(V[0], V[1], V[0] + L, V[1], C.blue, 5) + arrow(V[0], V[1], tip[0], tip[1], C.blue, 5) + circle(V[0], V[1], 8, { fill: C.red }) + text(V[0] - 10, V[1] + 30, '꼭짓점', { size: 19, fill: C.red }) + text(V[0] + L * 0.6, V[1] + 28, '변', { size: 19, fill: C.blue }) + text(V[0] + (L * 0.6) * Math.cos(a) - 22 * Math.sin(a), V[1] - (L * 0.6) * Math.sin(a) - 22 * Math.cos(a) + 6, '변', { size: 19, fill: C.blue }) + big(630, 140, '각', '#1e3a8a', 40));
+            g += S(2, text(630, 190, '한 점에서 그은', { size: 19, fill: C.sub }) + text(630, 216, '두 반직선으로 이루어진 도형', { size: 19, fill: C.sub }));
+            g += S(3, line(V[0], V[1], V[0], V[1] - L, { stroke: C.orange, width: 3, dash: '8 6' }) + rightMark(V, [1, 0], [0, -1]) + text(V[0] - 12, V[1] - L + 10, '직각', { size: 19, fill: '#c2410c', anchor: 'end' }) + text(630, 270, '직각: 종이를 반듯하게', { size: 18, fill: '#c2410c' }) + text(630, 296, '두 번 접었을 때 생기는 각', { size: 18, fill: '#c2410c' }), 'drop');
+            g += S(4, path(`M ${V[0] + 56} ${V[1]} A 56 56 0 0 0 ${r2(V[0] + 56 * Math.cos(a))} ${r2(V[1] - 56 * Math.sin(a))}`, { stroke: C.green, width: 5 }) + big(630, 370, rel, '#15803d', 28));
+            steps = ['한 점에서 그은 두 반직선으로 이루어진 도형이 각이에요.', '만나는 점은 꼭짓점, 두 반직선은 변이라고 해요.', '점선은 직각이에요. 종이를 반듯하게 두 번 접으면 생겨요.', deg === 90 ? '두 변이 직각과 꼭 맞아요. 이 각은 직각이에요.' : `두 변이 벌어진 정도를 직각과 비교하면, 이 각은 ${rel}이에요.`];
+            cap = `각: 한 점에서 그은 두 반직선으로 이루어진 도형. 변이 벌어진 정도가 클수록 큰 각이에요. 이 각은 ${rel}.`;
         } else if (kind === 'tri') {
-            name = '직각삼각형';
-            g += S(1, poly([[200, 380], [520, 380], [200, 150]], { fill: C.blueL, width: 4 }) + big(640, 180, name, '#1e3a8a', 34));
-            g += S(2, sqr(200, 356, 24, 24) + text(640, 240, '한 각이 직각', { size: 24, fill: C.red }));
+            const A = [x0, yb];
+            const B = [x0 + w * U3, yb];
+            const Cc = [x0, yb - h * U3];
+            g += S(1, poly([A, B, Cc], { fill: C.blueL, width: 4 }) + text((A[0] + B[0]) / 2, yb + 26, `${w}`, { size: 20, fill: C.sub }) + text(x0 - 14, (A[1] + Cc[1]) / 2 + 7, `${h}`, { size: 20, fill: C.sub, anchor: 'end' }) + big(640, 180, '직각삼각형', '#1e3a8a', 34));
+            g += S(2, rightMark(A, [1, 0], [0, -1]) + text(640, 240, '한 각이 직각', { size: 24, fill: C.red }));
             g += S(3, text(640, 290, '각 3개 중 1개가 직각인', { size: 20, fill: C.sub }) + text(640, 318, '삼각형이에요', { size: 20, fill: C.sub }));
-            steps = ['삼각형이에요.', '한 각이 직각이에요.', '한 각이 직각인 삼각형을 직각삼각형이라고 해요.'];
+            steps = [`삼각형이에요. 직각을 낀 두 변의 길이가 ${w}와 ${h}예요.`, '한 각이 직각이에요.', '한 각이 직각인 삼각형을 직각삼각형이라고 해요. 변의 길이가 달라져도 직각이 있으면 직각삼각형이에요.'];
+            cap = '직각삼각형: 한 각이 직각인 삼각형';
         } else {
             const sq = kind === 'square';
-            name = sq ? '정사각형' : '직사각형';
-            const w = sq ? 240 : 360;
-            const x = 120;
-            const y = 150;
-            g += S(1, rect(x, y, w, 240, { fill: C.blueL, width: 4 }) + big(650, 170, name, '#1e3a8a', 34));
-            g += S(2, sqr(x, y + 216, 24, 24) + path(`M ${x + w - 24} ${y + 240} L ${x + w - 24} ${y + 216} L ${x + w} ${y + 216}`, { stroke: C.red, width: 3 }) + path(`M ${x} ${y + 24} L ${x + 24} ${y + 24} L ${x + 24} ${y}`, { stroke: C.red, width: 3 }) + path(`M ${x + w - 24} ${y} L ${x + w - 24} ${y + 24} L ${x + w} ${y + 24}`, { stroke: C.red, width: 3 }) + text(650, 230, '네 각이 모두 직각', { size: 22, fill: C.red }));
-            g += S(3, sq ? line(x, y - 14, x + w, y - 14, { stroke: C.orange, width: 5 }) + line(x - 14, y, x - 14, y + 240, { stroke: C.orange, width: 5 }) + text(650, 280, '네 변의 길이가 모두 같아요', { size: 20, fill: '#c2410c' }) : line(x, y - 14, x + w, y - 14, { stroke: C.orange, width: 5 }) + line(x, y + 254, x + w, y + 254, { stroke: C.orange, width: 5 }) + text(650, 280, '마주 보는 변의 길이가 같아요', { size: 20, fill: '#c2410c' }));
-            steps = ['사각형이에요.', '네 각이 모두 직각이에요.', sq ? '네 변의 길이도 모두 같아요. 이런 사각형이 정사각형이에요.' : '네 각이 모두 직각인 사각형이 직사각형이에요. 마주 보는 변의 길이가 같아요.'];
+            const ww = w * U3;
+            const hh = (sq ? w : h) * U3;
+            const y = yb - hh;
+            const name = sq ? '정사각형' : '직사각형';
+            g += S(1, rect(x0, y, ww, hh, { fill: C.blueL, width: 4 }) + text(x0 + ww / 2, yb + 26, `${w}`, { size: 20, fill: C.sub }) + text(x0 - 14, y + hh / 2 + 7, `${sq ? w : h}`, { size: 20, fill: C.sub, anchor: 'end' }) + big(650, 170, name, '#1e3a8a', 34));
+            g += S(2, rightMark([x0, yb], [1, 0], [0, -1], 16) + rightMark([x0 + ww, yb], [-1, 0], [0, -1], 16) + rightMark([x0, y], [1, 0], [0, 1], 16) + rightMark([x0 + ww, y], [-1, 0], [0, 1], 16) + text(650, 230, '네 각이 모두 직각', { size: 22, fill: C.red }));
+            g += S(3, sq ? line(x0, y - 12, x0 + ww, y - 12, { stroke: C.orange, width: 5 }) + line(x0 + ww + 12, y, x0 + ww + 12, yb, { stroke: C.orange, width: 5 }) + text(650, 280, '네 변의 길이가 모두 같아요', { size: 20, fill: '#c2410c' }) + text(650, 310, `(한 변 ${w})`, { size: 18, fill: C.sub }) : line(x0, y - 12, x0 + ww, y - 12, { stroke: C.orange, width: 5 }) + line(x0, yb + 6, x0 + ww, yb + 6, { stroke: C.orange, width: 5 }) + text(650, 280, '마주 보는 변의 길이가 같아요', { size: 20, fill: '#c2410c' }) + text(650, 310, `(가로 ${w}, 세로 ${h})`, { size: 18, fill: C.sub }));
+            steps = [sq ? `한 변의 길이가 ${w}인 사각형이에요.` : `가로 ${w}, 세로 ${h}인 사각형이에요.`, '네 각이 모두 직각이에요.', sq ? '네 변의 길이도 모두 같아요. 이런 사각형이 정사각형이에요.' : '네 각이 모두 직각인 사각형이 직사각형이에요. 마주 보는 변의 길이가 같아요.'];
+            cap = sq ? '정사각형: 네 각이 모두 직각이고 네 변의 길이가 모두 같은 사각형' : '직사각형: 네 각이 모두 직각인 사각형';
         }
-        return { body: g, caption: kind === 'angle' ? '각: 한 점에서 그은 두 반직선으로 이루어진 도형. 직각: 종이를 반듯하게 두 번 접었을 때 생기는 각' : kind === 'tri' ? '직각삼각형: 한 각이 직각인 삼각형' : kind === 'square' ? '정사각형: 네 각이 모두 직각이고 네 변의 길이가 모두 같은 사각형' : '직사각형: 네 각이 모두 직각인 사각형', steps };
+        return { body: g, caption: cap, steps };
     }
 
     function drawShareDiv({ a, b }) {
@@ -777,14 +792,14 @@ export function buildLowerUnits(kit) {
     function drawCircleParts({ r }) {
         const cx = 240;
         const cy = 270;
-        const R = 150;
+        const R = 15 * r; // 반지름 1 = 15칸(픽셀)
         let g = S(1, circle(cx, cy, R, { fill: C.blueL, stroke: C.blue, width: 4 }));
-        g += S(2, circle(cx, cy, 7, { fill: C.red }) + text(cx, cy + 28, '원의 중심', { size: 19, fill: C.red }) + text(580, 150, '원의 중심: 원의 가장 안쪽에 있는 점', { size: 17, fill: C.sub }));
-        g += S(3, line(cx, cy, cx + R * 0.8, cy - R * 0.6, { stroke: C.purple, width: 4 }) + text(cx + 112, cy - 26, `반지름 ${r}`, { size: 18, fill: C.purple }) + text(580, 200, '반지름: 중심과 원 위의 한 점을 이은 선분', { size: 17, fill: C.sub }), 'wipe');
-        g += S(4, line(cx, cy, cx - R * 0.6, cy - R * 0.8, { stroke: C.purple, width: 2, dash: '6 5' }) + line(cx, cy, cx - R * 0.95, cy + R * 0.3, { stroke: C.purple, width: 2, dash: '6 5' }) + text(580, 236, '한 원에서 반지름은 모두 같아요', { size: 17, fill: C.purple }));
-        g += S(5, line(cx - R, cy + 0.1, cx + R, cy, { stroke: '#15803d', width: 4 }).replace(`y1="${r2(cy + 0.1)}"`, `y1="${cy}"`) + text(cx + 70, cy + 62, `지름 ${r * 2}`, { size: 18, fill: '#15803d' }) + text(580, 290, '지름: 중심을 지나도록 원 위의 두 점을 이은 선분', { size: 16, fill: C.sub }), 'wipe');
-        g += S(6, big(580, 370, `지름 = 반지름 × 2 = ${r * 2}`, '#1e3a8a', 28));
-        return { body: g, caption: `한 원에서 반지름은 모두 같고, 지름은 반지름의 2배예요. 반지름 ${r} → 지름 ${r * 2}`, steps: ['원이에요.', '원의 가장 안쪽 한가운데 점이 원의 중심이에요.', '원의 중심과 원 위의 한 점을 이은 선분이 반지름이에요.', '반지름은 어디로 그어도 길이가 같아요.', '원의 중심을 지나며 원 위의 두 점을 이은 선분이 지름이에요.', `지름은 반지름의 2배. ${r} × 2 = ${r * 2}`] };
+        g += S(2, circle(cx, cy, 6, { fill: C.red }) + text(cx + 8, cy + 48, '원의 중심', { size: 16, fill: C.red, anchor: 'start' }) + line(cx + 4, cy + 6, cx + 20, cy + 34, { stroke: C.red, width: 1.5 }) + text(600, 150, '원의 중심: 원의 가장 안쪽에 있는 점', { size: 17, fill: C.sub }));
+        g += S(3, line(cx, cy, cx + R * 0.8, cy - R * 0.6, { stroke: C.purple, width: 4 }) + text(cx + R * 0.8 + 10, cy - R * 0.6 - 6, `반지름 ${r}`, { size: 18, fill: C.purple, anchor: 'start' }) + text(600, 200, '반지름: 중심과 원 위의 한 점을 이은 선분', { size: 17, fill: C.sub }), 'wipe');
+        g += S(4, line(cx, cy, cx - R * 0.6, cy - R * 0.8, { stroke: C.purple, width: 2, dash: '6 5' }) + line(cx, cy, cx - R * 0.95, cy + R * 0.3, { stroke: C.purple, width: 2, dash: '6 5' }) + text(600, 236, '한 원에서 반지름은 모두 같아요', { size: 17, fill: C.purple }));
+        g += S(5, line(cx - R, cy, cx + R, cy, { stroke: '#15803d', width: 4 }) + text(cx - R * 0.45, cy + 24, `지름 ${r * 2}`, { size: 18, fill: '#15803d' }) + text(600, 290, '지름: 중심을 지나도록 원 위의 두 점을 이은 선분', { size: 16, fill: C.sub }), 'wipe');
+        g += S(6, big(600, 370, `지름 = 반지름 × 2 = ${r * 2}`, '#1e3a8a', 28));
+        return { body: g, caption: `한 원에서 반지름은 모두 같고, 지름은 반지름의 2배예요. 반지름 ${r} → 지름 ${r * 2}`, steps: ['원이에요.', '원의 가장 안쪽 한가운데 점이 원의 중심이에요.', `원의 중심과 원 위의 한 점을 이은 선분이 반지름이에요. 이 원의 반지름은 ${r}`, '반지름은 어디로 그어도 길이가 같아요.', '원의 중심을 지나며 원 위의 두 점을 이은 선분이 지름이에요.', `지름은 반지름의 2배. ${r} × 2 = ${r * 2}`] };
     }
 
     function drawMixed({ n, d }) {
@@ -957,47 +972,112 @@ export function buildLowerUnits(kit) {
         return { body: g, caption: cap, steps };
     }
 
-    function drawTriangleKinds({ kind }) {
-        const defs = {
-            isos: { name: '이등변삼각형', pts: [[250, 130], [130, 390], [370, 390]], steps: ['삼각형이에요.', '두 변의 길이가 같아요.', '길이가 같은 두 변과 함께 놓인 두 각의 크기도 같아요.', '두 변의 길이가 같은 삼각형이 이등변삼각형이에요.'], cap: '이등변삼각형: 두 변의 길이가 같은 삼각형. 두 각의 크기도 같아요.' },
-            equi: { name: '정삼각형', pts: [[250, 140], [110, 382], [390, 382]], steps: ['삼각형이에요.', '세 변의 길이가 모두 같아요.', '세 각의 크기도 모두 60°로 같아요.', '세 변의 길이가 같은 삼각형이 정삼각형이에요.'], cap: '정삼각형: 세 변의 길이가 같은 삼각형. 세 각이 모두 60°예요.' },
-            acute: { name: '예각삼각형', pts: [[220, 140], [110, 390], [400, 390]], steps: ['삼각형이에요.', '세 각을 살펴봐요.', '세 각이 모두 직각보다 작은 예각이에요.', '세 각이 모두 예각인 삼각형이 예각삼각형이에요.'], cap: '예각삼각형: 세 각이 모두 예각인 삼각형' },
-            obtuse: { name: '둔각삼각형', pts: [[130, 200], [210, 390], [450, 390]], steps: ['삼각형이에요.', '세 각을 살펴봐요.', '한 각이 직각보다 큰 둔각이에요.', '한 각이 둔각인 삼각형이 둔각삼각형이에요.'], cap: '둔각삼각형: 한 각이 둔각인 삼각형' },
-        };
-        const d = defs[kind] || defs.isos;
-        const [A, B, Cc] = d.pts;
-        const tick = (p, q) => { const mx = (p[0] + q[0]) / 2; const my = (p[1] + q[1]) / 2; const a = Math.atan2(q[1] - p[1], q[0] - p[0]) + Math.PI / 2; return line(mx - 10 * Math.cos(a), my - 10 * Math.sin(a), mx + 10 * Math.cos(a), my + 10 * Math.sin(a), { stroke: C.red, width: 4 }); };
-        const ang = (p, q, rr) => { const a0 = Math.atan2(q[1] - p[1], q[0] - p[0]); const a1 = Math.atan2(rr[1] - p[1], rr[0] - p[0]); const m = (a0 + a1) / 2 + (Math.abs(a0 - a1) > Math.PI ? Math.PI : 0); return circle(p[0] + 30 * Math.cos(m), p[1] + 30 * Math.sin(m), 12, { fill: C.orange }); };
-        let g = S(1, poly(d.pts, { fill: C.blueL, width: 4 }));
-        if (kind === 'isos') { g += S(2, tick(A, B) + tick(A, Cc) + line(A[0], A[1], B[0], B[1], { stroke: C.red, width: 5 }) + line(A[0], A[1], Cc[0], Cc[1], { stroke: C.red, width: 5 })); g += S(3, ang(B, A, Cc) + ang(Cc, A, B)); } else if (kind === 'equi') { g += S(2, tick(A, B) + tick(A, Cc) + tick(B, Cc) + poly(d.pts, { stroke: C.red, width: 5 })); g += S(3, ang(A, B, Cc) + ang(B, A, Cc) + ang(Cc, A, B) + text(250, 330, '60°  60°  60°', { size: 20, fill: '#c2410c' })); } else { g += S(2, ang(A, B, Cc) + ang(B, A, Cc) + ang(Cc, A, B)); g += S(3, kind === 'acute' ? text(250, 330, '모두 90°보다 작아요', { size: 20, fill: '#c2410c' }) : circle(B[0] + 24, B[1] - 22, 26, { fill: 'none', stroke: C.red, width: 4 }) + text(B[0] + 10, B[1] + 32, '90°보다 커요', { size: 18, fill: C.red })); }
-        g += S(4, big(600, 220, d.name, '#1e3a8a', 36) + text(600, 270, d.cap.split(': ')[1].split('. ')[0], { size: 17, fill: C.sub }));
-        return { body: g, caption: d.cap, steps: d.steps };
+    /** 4학년 삼각형: 변의 길이나 각도를 바꾸면 삼각형 모양이 바뀌어요. */
+    function drawTriangleKinds({ kind, w = 6, h = 6, a = 60, b = 70 }) {
+        const names = { isos: '이등변삼각형', equi: '정삼각형', acute: '예각삼각형', obtuse: '둔각삼각형' };
+        const tick = (p, q) => { const mx = (p[0] + q[0]) / 2; const my = (p[1] + q[1]) / 2; const t = Math.atan2(q[1] - p[1], q[0] - p[0]) + Math.PI / 2; return line(mx - 10 * Math.cos(t), my - 10 * Math.sin(t), mx + 10 * Math.cos(t), my + 10 * Math.sin(t), { stroke: C.red, width: 4 }); };
+        const yb = 400;
+        let pts;
+        let angs;
+        if (kind === 'isos' || kind === 'equi') {
+            const U4 = kind === 'equi' ? 36 : 30;
+            const base = w * U4;
+            const hh = kind === 'equi' ? (base * Math.sqrt(3)) / 2 : h * U4;
+            const cx = 260;
+            pts = [[cx, yb - hh], [cx - base / 2, yb], [cx + base / 2, yb]];
+            const baseAng = Math.round((Math.atan2(hh, base / 2) * 180) / Math.PI);
+            angs = kind === 'equi' ? [60, 60, 60] : [180 - 2 * baseAng, baseAng, baseAng];
+        } else {
+            // 밑변의 두 각(a, b)으로 삼각형을 만들고 그림 칸에 맞게 줄여요.
+            const ra = (a * Math.PI) / 180;
+            const rb = (b * Math.PI) / 180;
+            const t = Math.sin(rb) / Math.sin(ra + rb);
+            const raw = [[t * Math.cos(ra), -t * Math.sin(ra)], [0, 0], [1, 0]];
+            const xs = raw.map((q) => q[0]);
+            const ys = raw.map((q) => q[1]);
+            const sc = Math.min(380 / (Math.max(...xs) - Math.min(...xs)), 270 / (Math.max(...ys) - Math.min(...ys)));
+            pts = raw.map((q) => [80 + (q[0] - Math.min(...xs)) * sc, yb + q[1] * sc]);
+            angs = [180 - a - b, a, b];
+        }
+        const cen = [(pts[0][0] + pts[1][0] + pts[2][0]) / 3, (pts[0][1] + pts[1][1] + pts[2][1]) / 3];
+        const angLabel = (i, color = '#c2410c') => { const dx = cen[0] - pts[i][0]; const dy = cen[1] - pts[i][1]; const len = Math.hypot(dx, dy) || 1; const k = Math.min(46, len * 0.5); return text(pts[i][0] + (dx / len) * k, pts[i][1] + (dy / len) * k + 6, `${angs[i]}°`, { size: 17, fill: color }); };
+        const [A, B, Cc] = pts;
+        let g = S(1, poly(pts, { fill: C.blueL, width: 4 }));
+        let steps;
+        let cap;
+        if (kind === 'isos') {
+            g += S(2, tick(A, B) + tick(A, Cc) + line(A[0], A[1], B[0], B[1], { stroke: C.red, width: 5 }) + line(A[0], A[1], Cc[0], Cc[1], { stroke: C.red, width: 5 }) + text((B[0] + Cc[0]) / 2, yb + 26, `밑변 ${w} · 높이 ${h}`, { size: 17, fill: C.sub }));
+            g += S(3, angLabel(1) + angLabel(2));
+            steps = ['삼각형이에요.', '두 변의 길이가 같아요.', `길이가 같은 두 변의 아래쪽 두 각의 크기도 같아요. (약 ${angs[1]}°)`, '두 변의 길이가 같은 삼각형이 이등변삼각형이에요. 밑변이나 높이가 달라져도 두 변은 늘 같아요.'];
+            cap = '이등변삼각형: 두 변의 길이가 같은 삼각형. 두 각의 크기도 같아요.';
+        } else if (kind === 'equi') {
+            g += S(2, tick(A, B) + tick(A, Cc) + tick(B, Cc) + poly(pts, { stroke: C.red, width: 5 }) + text((B[0] + Cc[0]) / 2, yb + 26, `한 변 ${w}`, { size: 17, fill: C.sub }));
+            g += S(3, angLabel(0) + angLabel(1) + angLabel(2));
+            steps = ['삼각형이에요.', `세 변의 길이가 모두 ${w}로 같아요.`, '세 각의 크기도 모두 60°로 같아요.', '세 변의 길이가 같은 삼각형이 정삼각형이에요. 크기가 달라져도 세 각은 늘 60°예요.'];
+            cap = '정삼각형: 세 변의 길이가 같은 삼각형. 세 각이 모두 60°예요.';
+        } else {
+            const big3 = angs.indexOf(Math.max(...angs));
+            g += S(2, angLabel(0) + angLabel(1) + angLabel(2));
+            g += S(3, kind === 'acute' ? text(600, 300, `${angs.join('°, ')}° 모두 90°보다 작아요`, { size: 19, fill: '#c2410c' }) : circle(pts[big3][0], pts[big3][1], 34, { fill: 'none', stroke: C.red, width: 4 }) + text(600, 300, `${angs[big3]}°는 90°보다 커요 (둔각)`, { size: 19, fill: C.red }));
+            steps = kind === 'acute' ? ['삼각형이에요.', `세 각의 크기는 ${angs.join('°, ')}°예요.`, '세 각이 모두 직각보다 작은 예각이에요.', '세 각이 모두 예각인 삼각형이 예각삼각형이에요.'] : ['삼각형이에요.', `세 각의 크기는 ${angs.join('°, ')}°예요.`, `한 각(${angs[big3]}°)이 직각보다 큰 둔각이에요.`, '한 각이 둔각인 삼각형이 둔각삼각형이에요.'];
+            cap = kind === 'acute' ? '예각삼각형: 세 각이 모두 예각인 삼각형' : '둔각삼각형: 한 각이 둔각인 삼각형';
+        }
+        g += S(4, big(610, 200, names[kind], '#1e3a8a', 34) + text(610, 244, cap.split(': ')[1].split('. ')[0], { size: 17, fill: C.sub }));
+        return { body: g, caption: cap, steps };
     }
 
-    function drawQuad({ kind }) {
-        const defs = {
-            perp: { name: '수직과 평행', cap: '두 직선이 만나서 이루는 각이 직각이면 서로 수직, 서로 만나지 않는 두 직선은 평행이에요.' },
-            trap: { name: '사다리꼴', pts: [[210, 170], [400, 170], [480, 380], [110, 380]], par: [[0, 1, 3, 2]], cap: '사다리꼴: 평행한 변이 한 쌍이라도 있는 사각형' },
-            para: { name: '평행사변형', pts: [[200, 170], [500, 170], [420, 380], [120, 380]], par: [[0, 1, 3, 2], [0, 3, 1, 2]], cap: '평행사변형: 마주 보는 두 쌍의 변이 서로 평행한 사각형. 마주 보는 변의 길이와 각의 크기가 같아요.' },
-            rhom: { name: '마름모', pts: [[300, 130], [450, 275], [300, 420], [150, 275]], par: [[0, 1, 3, 2], [0, 3, 1, 2]], cap: '마름모: 네 변의 길이가 모두 같은 사각형. 마주 보는 변이 평행해요.' },
-        };
-        const d = defs[kind] || defs.trap;
+    /** 4학년 사각형: 변의 길이·높이를 바꾸면 모양이 바뀌어요. 길이 1 = 32칸(픽셀) */
+    function drawQuad({ kind, w = 8, h = 5, top = 4 }) {
         if (kind === 'perp') {
             let g = S(1, line(110, 300, 430, 300, { width: 5, stroke: C.blue }) + line(270, 150, 270, 390, { width: 5, stroke: C.orange }));
             g += S(2, path('M 270 276 L 294 276 L 294 300', { stroke: C.red, width: 3 }) + big(270, 126, '수직', C.red, 26) + text(270, 424, '만나서 이루는 각이 직각', { size: 16, fill: C.sub }));
             g += S(3, line(480, 200, 740, 200, { width: 5, stroke: C.green }) + line(480, 330, 740, 330, { width: 5, stroke: C.green }));
             g += S(4, big(610, 150, '평행', '#15803d', 26) + text(610, 380, '아무리 늘여도 만나지 않아요', { size: 16, fill: C.sub }) + line(540, 200, 540, 330, { stroke: C.red, width: 2, dash: '5 4' }) + line(680, 200, 680, 330, { stroke: C.red, width: 2, dash: '5 4' }) + text(610, 272, '사이의 거리가 같아요', { size: 15, fill: C.red }));
-            return { body: g, caption: d.cap, steps: ['두 직선이 만나고 있어요.', '만나서 이루는 각이 직각이면 두 직선은 서로 수직이에요.', '서로 만나지 않는 두 직선이 있어요.', '아무리 늘여도 만나지 않는 두 직선을 평행하다고 해요. 평행선 사이의 거리는 어디서나 같아요.'] };
+            return { body: g, caption: '두 직선이 만나서 이루는 각이 직각이면 서로 수직, 서로 만나지 않는 두 직선은 평행이에요.', steps: ['두 직선이 만나고 있어요.', '만나서 이루는 각이 직각이면 두 직선은 서로 수직이에요.', '서로 만나지 않는 두 직선이 있어요.', '아무리 늘여도 만나지 않는 두 직선을 평행하다고 해요. 평행선 사이의 거리는 어디서나 같아요.'] };
         }
-        let g = S(1, poly(d.pts, { fill: C.blueL, width: 4 }));
+        const U4 = 32;
+        const x0 = 90;
+        const yb = 400;
+        let pts;
+        let par;
+        let name;
+        let cap;
+        let dims = '';
+        const lbl = (x, y, t, anchor = 'middle') => text(x, y, t, { size: 17, fill: C.sub, anchor });
+        if (kind === 'trap') {
+            const off = ((w - top) * U4) / 3;
+            const yt = yb - h * U4;
+            pts = [[x0 + off, yt], [x0 + off + top * U4, yt], [x0 + w * U4, yb], [x0, yb]];
+            par = [[0, 1, 3, 2]];
+            name = '사다리꼴';
+            cap = '사다리꼴: 평행한 변이 한 쌍이라도 있는 사각형';
+            dims = lbl(x0 + off + (top * U4) / 2, yt - 10, `윗변 ${top}`) + lbl(x0 + (w * U4) / 2, yb + 26, `아랫변 ${w}`);
+        } else if (kind === 'para') {
+            const sl = 1.5 * U4;
+            const yt = yb - h * U4;
+            pts = [[x0 + sl, yt], [x0 + sl + w * U4, yt], [x0 + w * U4, yb], [x0, yb]];
+            par = [[0, 1, 3, 2], [0, 3, 1, 2]];
+            name = '평행사변형';
+            cap = '평행사변형: 마주 보는 두 쌍의 변이 서로 평행한 사각형. 마주 보는 변의 길이와 각의 크기가 같아요.';
+            dims = lbl(x0 + (w * U4) / 2, yb + 26, `밑변 ${w}`) + line(x0 + sl, yt, x0 + sl, yb, { stroke: C.purple, width: 2, dash: '5 4' }) + text(x0 + sl + 8, (yt + yb) / 2 + 6, `높이 ${h}`, { size: 16, fill: C.purple, anchor: 'start' });
+        } else {
+            const cx = x0 + (w * U4) / 2;
+            const cy = yb - (h * U4) / 2;
+            pts = [[cx, cy - (h * U4) / 2], [cx + (w * U4) / 2, cy], [cx, yb], [x0, cy]];
+            par = [[0, 1, 3, 2], [0, 3, 1, 2]];
+            name = '마름모';
+            cap = '마름모: 네 변의 길이가 모두 같은 사각형. 마주 보는 변이 평행해요.';
+            dims = line(x0, cy, x0 + w * U4, cy, { stroke: C.purple, width: 2, dash: '5 4' }) + line(cx, cy - (h * U4) / 2, cx, yb, { stroke: C.purple, width: 2, dash: '5 4' }) + lbl(cx, yb + 26, `대각선 ${w} · ${h}`);
+        }
+        let g = S(1, poly(pts, { fill: C.blueL, width: 4 }) + dims);
         const colors = [C.red, C.orange];
-        d.par.forEach((pr, i) => { g += S(2 + i, line(d.pts[pr[0]][0], d.pts[pr[0]][1], d.pts[pr[1]][0], d.pts[pr[1]][1], { stroke: colors[i], width: 7 }) + line(d.pts[pr[2]][0], d.pts[pr[2]][1], d.pts[pr[3]][0], d.pts[pr[3]][1], { stroke: colors[i], width: 7 }) + text(630, 190 + i * 40, i === 0 ? '서로 평행한 변 한 쌍' : '평행한 변이 한 쌍 더!', { size: 20, fill: colors[i] })); });
-        const k = 2 + d.par.length;
-        g += S(k, big(630, 320, d.name, '#1e3a8a', 36) + (kind === 'rhom' ? text(630, 360, '네 변의 길이가 모두 같아요', { size: 18, fill: '#15803d' }) : ''));
+        par.forEach((pr, i) => { g += S(2 + i, line(pts[pr[0]][0], pts[pr[0]][1], pts[pr[1]][0], pts[pr[1]][1], { stroke: colors[i], width: 7 }) + line(pts[pr[2]][0], pts[pr[2]][1], pts[pr[3]][0], pts[pr[3]][1], { stroke: colors[i], width: 7 }) + text(640, 190 + i * 40, i === 0 ? '서로 평행한 변 한 쌍' : '평행한 변이 한 쌍 더!', { size: 20, fill: colors[i] })); });
+        const k = 2 + par.length;
+        g += S(k, big(640, 320, name, '#1e3a8a', 36) + (kind === 'rhom' ? text(640, 360, '네 변의 길이가 모두 같아요', { size: 18, fill: '#15803d' }) : ''));
         const steps = ['사각형이에요.', '서로 평행한 변 한 쌍을 찾았어요.'];
-        if (d.par.length > 1) steps.push('다른 한 쌍의 변도 서로 평행해요.');
-        steps.push(d.cap);
-        return { body: g, caption: d.cap, steps };
+        if (par.length > 1) steps.push('다른 한 쌍의 변도 서로 평행해요.');
+        steps.push(`${cap} 길이를 바꿔도 이 성질은 그대로예요.`);
+        return { body: g, caption: cap, steps };
     }
 
     function drawDiagonals({ n }) {
@@ -1206,7 +1286,7 @@ export function buildLowerUnits(kit) {
     }
 
     function drawAreaShape({ kind, w, h, top }) {
-        const u = Math.min(36, 380 / Math.max(w + (kind === 'para' ? 2 : 0), 4), 250 / Math.max(h, 2));
+        const u = 30; // 한 칸(1 cm) = 30칸(픽셀)
         const x0 = 110;
         const y0 = 130;
         const gw = w + (kind === 'para' ? 2 : 0);
@@ -1389,7 +1469,7 @@ export function buildLowerUnits(kit) {
     }
 
     function drawCuboidParts({ w, d, h }) {
-        const u = Math.min(46, 260 / Math.max(w + d * 0.5, h + d * 0.5));
+        const u = 28; // 길이 1 = 28칸(픽셀)
         const ox = 150;
         const oy = 400;
         const dx = d * u * 0.55;
@@ -1502,7 +1582,10 @@ export function buildLowerUnits(kit) {
         U(3, 1, 1, '덧셈과 뺄셈', [col('add', '세 자리 수의 덧셈', 100, 999, 365, 100, 999, 278, 'add'), col('sub', '세 자리 수의 뺄셈', 100, 999, 524, 100, 998, 187, 'sub')]),
         U(3, 1, 2, '평면도형', [
             { id: 'lines', name: '선분·반직선·직선', params: [], draw: drawBasicLines },
-            { id: 'right', name: '각 · 직각삼각형 · 직사각형 · 정사각형', params: [P.sel('kind', '도형', [['angle', '각과 직각'], ['tri', '직각삼각형'], ['rect', '직사각형'], ['square', '정사각형']], 'angle')], draw: drawRightShapes },
+            { id: 'angle', name: '각과 직각', params: [P.int('deg', '벌어진 정도(°)', 10, 170, 45)], snap: (p) => ({ deg: Math.round(p.deg / 5) * 5 }), fix: (p) => ({ ...p, kind: 'angle' }), draw: drawRightShapes },
+            { id: 'rtri', name: '직각삼각형', params: [P.int('w', '밑변', 3, 12, 8), P.int('h', '높이', 3, 8, 6)], fix: (p) => ({ ...p, kind: 'tri' }), draw: drawRightShapes },
+            { id: 'rect', name: '직사각형', params: [P.int('w', '가로', 3, 12, 9), P.int('h', '세로', 3, 8, 5)], fix: (p) => ({ ...p, kind: 'rect' }), draw: drawRightShapes },
+            { id: 'square', name: '정사각형', params: [P.int('w', '한 변', 3, 8, 6)], fix: (p) => ({ ...p, kind: 'square' }), draw: drawRightShapes },
         ]),
         U(3, 1, 3, '나눗셈', [{ id: 'share', name: '똑같이 나누기', params: [P.int('a', '전체 수', 2, 40, 12), P.int('b', '나누는 수', 2, 6, 3)], snap: (p) => ({ a: Math.max(p.b, Math.round(p.a / p.b) * p.b) }), draw: drawShareDiv }]),
         U(3, 1, 4, '곱셈', [{ id: 'area', name: '(두 자리 수) × (한 자리 수)', params: [P.int('a', '두 자리 수', 11, 99, 23), P.int('b', '한 자리 수', 2, 9, 4)], draw: drawAreaMul }]),
@@ -1516,7 +1599,7 @@ export function buildLowerUnits(kit) {
             { id: 'rem', name: '나머지가 있는 나눗셈', params: [P.int('a', '전체 수', 3, 40, 14), P.int('b', '나누는 수', 2, 6, 4)], snap: (p) => ({ a: Math.max(p.a, p.b) }), draw: drawShareDiv },
             { id: 'long', name: '나눗셈 세로셈', params: [P.int('a', '나누어지는 수', 10, 999, 86), P.int('b', '나누는 수', 2, 9, 4)], draw: drawLongDivInt },
         ]),
-        U(3, 2, 3, '원', [{ id: 'parts', name: '원의 중심·반지름·지름', params: [P.int('r', '반지름', 1, 50, 4)], draw: drawCircleParts }]),
+        U(3, 2, 3, '원', [{ id: 'parts', name: '원의 중심·반지름·지름', params: [P.int('r', '반지름', 3, 9, 6)], draw: drawCircleParts }]),
         U(3, 2, 4, '분수', [
             { id: 'ofset', name: '전체의 분수만큼', params: [P.int('total', '전체 수', 4, 24, 12), P.int('n', '분자', 1, 5, 2), P.int('d', '분모', 2, 6, 3)], snap: (p) => { const n = Math.min(p.n, p.d - 1) || 1; return { n, total: Math.max(p.d, Math.min(24, Math.round(p.total / p.d) * p.d)) }; }, draw: drawFracOfSet },
             { id: 'mixed', name: '가분수와 대분수', params: [P.int('n', '분자', 2, 20, 7), P.int('d', '분모', 2, 6, 3)], snap: (p) => ({ n: Math.max(p.d, Math.min(p.n, p.d * 4)) }), draw: drawMixed },
@@ -1540,13 +1623,23 @@ export function buildLowerUnits(kit) {
             { id: 'add', name: '분모가 같은 분수의 덧셈', params: [P.int('a', '첫째 분자', 1, 11, 2), P.int('b', '둘째 분자', 1, 11, 3), P.int('d', '분모', 3, 12, 7)], snap: (p) => { const a = Math.min(p.a, p.d - 1); return { a, b: Math.min(p.b, p.d - 1) }; }, fix: (p) => ({ ...p, op: 'add' }), draw: drawFracAddSame },
             { id: 'sub', name: '분모가 같은 분수의 뺄셈', params: [P.int('a', '첫째 분자', 2, 11, 5), P.int('b', '둘째 분자', 1, 10, 2), P.int('d', '분모', 3, 12, 7)], snap: (p) => { const a = Math.max(2, Math.min(p.a, p.d - 1)); return { a, b: Math.min(p.b, a - 1) }; }, fix: (p) => ({ ...p, op: 'sub' }), draw: drawFracAddSame },
         ]),
-        U(4, 2, 2, '삼각형', [{ id: 'kinds', name: '삼각형의 종류', params: [P.sel('kind', '삼각형', [['isos', '이등변삼각형'], ['equi', '정삼각형'], ['acute', '예각삼각형'], ['obtuse', '둔각삼각형']], 'isos')], draw: drawTriangleKinds }]),
+        U(4, 2, 2, '삼각형', [
+            { id: 'isos', name: '이등변삼각형', params: [P.int('w', '밑변', 3, 12, 6), P.int('h', '높이', 3, 9, 7)], fix: (p) => ({ ...p, kind: 'isos' }), draw: drawTriangleKinds },
+            { id: 'equi', name: '정삼각형', params: [P.int('w', '한 변', 3, 8, 6)], fix: (p) => ({ ...p, kind: 'equi' }), draw: drawTriangleKinds },
+            { id: 'acute', name: '예각삼각형', params: [P.int('a', '왼쪽 각(°)', 30, 85, 60), P.int('b', '오른쪽 각(°)', 30, 85, 70)], snap: (p) => { const a = Math.round(p.a / 5) * 5; return { a, b: Math.max(Math.round(p.b / 5) * 5, 95 - a) }; }, fix: (p) => ({ ...p, kind: 'acute' }), draw: drawTriangleKinds },
+            { id: 'obtuse', name: '둔각삼각형', params: [P.int('a', '둔각(°)', 95, 150, 110), P.int('b', '오른쪽 각(°)', 15, 60, 40)], snap: (p) => { const a = Math.round(p.a / 5) * 5; return { a, b: Math.min(Math.round(p.b / 5) * 5, 165 - a) }; }, fix: (p) => ({ ...p, kind: 'obtuse' }), draw: drawTriangleKinds },
+        ]),
         U(4, 2, 3, '소수의 덧셈과 뺄셈', [
             { id: 'hund', name: '소수 두 자리 수 (0.01)', params: [P.int('n', '0.01의 개수', 1, 99, 37)], draw: drawHundredths },
             col('add', '소수의 덧셈', 0.1, 9.99, 1.25, 0.1, 9.99, 0.48, 'add', 2),
             col('sub', '소수의 뺄셈', 0.1, 9.99, 3.42, 0.1, 9.98, 1.57, 'sub', 2),
         ]),
-        U(4, 2, 4, '사각형', [{ id: 'quad', name: '수직·평행과 여러 가지 사각형', params: [P.sel('kind', '도형', [['perp', '수직과 평행'], ['trap', '사다리꼴'], ['para', '평행사변형'], ['rhom', '마름모']], 'perp')], draw: drawQuad }]),
+        U(4, 2, 4, '사각형', [
+            { id: 'perp', name: '수직과 평행', params: [], fix: () => ({ kind: 'perp' }), draw: drawQuad },
+            { id: 'trap', name: '사다리꼴', params: [P.int('top', '윗변', 1, 9, 4), P.int('w', '아랫변', 3, 10, 8), P.int('h', '높이', 3, 8, 5)], snap: (p) => ({ top: Math.min(p.top, p.w - 1) }), fix: (p) => ({ ...p, kind: 'trap' }), draw: drawQuad },
+            { id: 'para', name: '평행사변형', params: [P.int('w', '밑변', 3, 9, 7), P.int('h', '높이', 3, 8, 5)], fix: (p) => ({ ...p, kind: 'para' }), draw: drawQuad },
+            { id: 'rhom', name: '마름모', params: [P.int('w', '가로 대각선', 4, 12, 10), P.int('h', '세로 대각선', 4, 8, 6)], fix: (p) => ({ ...p, kind: 'rhom' }), draw: drawQuad },
+        ]),
         U(4, 2, 5, '꺾은선그래프', [chart('line', '꺾은선그래프', 'line', '교실의 온도', '9시:12, 10시:15, 11시:19, 12시:22, 1시:24')]),
         U(4, 2, 6, '다각형', [{ id: 'diag', name: '정다각형과 대각선', params: [P.sel('n', '도형', POLY58, '5')], fix: (p) => ({ n: Number(p.n) }), draw: drawDiagonals }]),
 
@@ -1562,7 +1655,7 @@ export function buildLowerUnits(kit) {
             { id: 'add', name: '분모가 다른 분수의 덧셈', params: [P.int('a', '첫째 분자', 1, 5, 1), P.int('b', '첫째 분모', 2, 6, 2), P.int('c', '둘째 분자', 1, 5, 1), P.int('d', '둘째 분모', 2, 6, 3)], snap: (p) => ({ a: Math.min(p.a, p.b - 1) || 1, c: Math.min(p.c, p.d - 1) || 1 }), fix: (p) => ({ ...p, op: 'add' }), draw: drawFracAddDiff },
             { id: 'sub', name: '분모가 다른 분수의 뺄셈', params: [P.int('a', '첫째 분자', 1, 5, 3), P.int('b', '첫째 분모', 2, 6, 4), P.int('c', '둘째 분자', 1, 5, 1), P.int('d', '둘째 분모', 2, 6, 3)], snap: (p) => { let a = Math.min(p.a, p.b - 1) || 1; let c = Math.min(p.c, p.d - 1) || 1; while (c > 1 && c * p.b > a * p.d) c -= 1; if (c * p.b > a * p.d) a = p.b - 1; if (c * p.b > a * p.d) return { a: p.b - 1, c: 1, d: Math.max(p.d, p.b) }; return { a, c }; }, fix: (p) => ({ ...p, op: 'sub' }), draw: drawFracAddDiff },
         ]),
-        U(5, 1, 6, '다각형의 둘레와 넓이', [{ id: 'area', name: '도형의 넓이 구하기', params: [P.sel('kind', '도형', [['rect', '직사각형'], ['para', '평행사변형'], ['tri', '삼각형'], ['trap', '사다리꼴'], ['rhom', '마름모']], 'para'), P.int('w', '가로(밑변·아랫변)', 2, 10, 6), P.int('h', '세로(높이)', 2, 8, 4), P.int('top', '윗변(사다리꼴)', 1, 9, 3)], snap: (p) => { const w = p.kind === 'trap' && (p.w - Math.min(p.top, p.w - 1)) % 2 ? p.w : p.w; let top = Math.min(p.top, w - 1); if (p.kind === 'trap' && (w - top) % 2) top = Math.max(1, top - 1); const even = (v) => (p.kind === 'rhom' && v % 2 ? v + 1 : v); return { w: even(w), h: even(p.h), top: Math.max(1, top) }; }, draw: drawAreaShape }]),
+        U(5, 1, 6, '다각형의 둘레와 넓이', [{ id: 'area', name: '도형의 넓이 구하기', params: [P.sel('kind', '도형', [['rect', '직사각형'], ['para', '평행사변형'], ['tri', '삼각형'], ['trap', '사다리꼴'], ['rhom', '마름모']], 'para'), P.int('w', '가로(밑변·아랫변)', 3, 10, 6), P.int('h', '세로(높이)', 3, 8, 4), P.int('top', '윗변(사다리꼴)', 1, 9, 3)], snap: (p) => { const w = p.kind === 'trap' && (p.w - Math.min(p.top, p.w - 1)) % 2 ? p.w : p.w; let top = Math.min(p.top, w - 1); if (p.kind === 'trap' && (w - top) % 2) top = Math.max(1, top - 1); const even = (v) => (p.kind === 'rhom' && v % 2 ? v + 1 : v); return { w: even(w), h: even(p.h), top: Math.max(1, top) }; }, draw: drawAreaShape }]),
         U(5, 2, 1, '수의 범위와 어림하기', [
             { id: 'range', name: '이상·이하·초과·미만', params: [P.int('a', '작은 수', 1, 90, 5), P.int('b', '큰 수', 2, 99, 9), P.sel('kind', '범위', [['closed', '이상 ~ 이하'], ['left', '이상 ~ 미만'], ['right', '초과 ~ 이하'], ['open', '초과 ~ 미만']], 'closed')], snap: (p) => ({ b: Math.max(p.a + 2, Math.min(p.b, p.a + 10)) }), draw: drawRange },
             { id: 'round', name: '올림·버림·반올림', params: [P.int('n', '수', 11, 9999, 2463), P.sel('place', '나타낼 자리', [['10', '십의 자리'], ['100', '백의 자리'], ['1000', '천의 자리']], '100'), P.sel('kind', '방법', [['up', '올림'], ['down', '버림'], ['round', '반올림']], 'round')], snap: (p) => ({ n: Math.max(p.n, Number(p.place) + 1) }), draw: drawRound },

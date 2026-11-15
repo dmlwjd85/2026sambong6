@@ -7055,3 +7055,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .raid-call-go { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; background: #fde68a; color: #7c2d12; font-size: 12px; font-weight: 900; }
         .raid-call-x { flex: 0 0 auto; width: 30px; background: rgba(0, 0, 0, 0.25); border: 0; color: #fff; font-size: 12px; cursor: pointer; }
         @media (prefers-reduced-motion: reduce) { .raid-call.is-new { animation: none; } }
+
+        /* 광장 카드 직업 태그: 카드 왼쪽 위 테두리에 바짝 붙인 작은 동그라미(폰 세로에서는 원래대로 숨겨요). */
+        .plaza-job-tags { top: 2px; left: 2px; gap: 2px; }
+        .plaza-job-tag { width: 0.9rem; height: 0.9rem; }
+        .plaza-job-tag i { font-size: 7px; line-height: 1; }
+        @media (min-width: 1024px) {
+            .plaza-job-tag { width: 1rem; height: 1rem; }
+            .plaza-job-tag i { font-size: 8px; }
+        }

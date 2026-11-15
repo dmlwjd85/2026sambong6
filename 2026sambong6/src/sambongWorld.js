@@ -1379,7 +1379,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.62';
+        const APP_VERSION = 'v1.63';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -23338,11 +23338,12 @@ ${subjectLine}
                 const plazaJobs = resolveStudentJobsFromCatalog(displayData.jobs, getJobCatalog());
                 if (plazaJobs.length > 0) {
                     const jobIcons = plazaJobs.map(j => `
-                        <div class="w-5 h-5 rounded-full bg-slate-900 border flex items-center justify-center ${j.color} border-slate-600 shadow-sm" title="${escapeHtmlAttr(j.name)}">
-                            <i class="fa-solid ${j.icon} text-[9px]"></i>
+                        <div class="plaza-job-tag rounded-full bg-slate-900 border flex items-center justify-center ${j.color} border-slate-600 shadow-sm" title="${escapeHtmlAttr(j.name)}">
+                            <i class="fa-solid ${j.icon}"></i>
                         </div>
                     `).join('');
-                    jobHtml = `<div class="plaza-card-extra absolute top-1 left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
+                    // 직업 태그는 카드 테두리 안쪽 모서리에 작게 붙여요(카드 기준 위치라 얼굴·레벨을 가리지 않아요).
+                    jobHtml = `<div class="plaza-card-extra plaza-job-tags absolute flex flex-col z-20">${jobIcons}</div>`;
                 }
 
                 let condHtml = '';
@@ -23428,10 +23429,11 @@ ${subjectLine}
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${tierClass}${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
+                    ${jobHtml}
                     <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">
-                            ${shieldHtml}${jobHtml}${condHtml}
+                            ${shieldHtml}${condHtml}
                             <div class="plaza-card-figure">
                                 <div class="plaza-card-face text-3xl sm:text-4xl flex items-end justify-center z-10 ${lv.info.anim}">
                                     <div class="relative inline-block leading-none">${face}${creditStamp}</div>

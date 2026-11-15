@@ -1,23 +1,29 @@
 /**
- * 수업도구 「수학 개념」: 6학년 수학 단원 → 개념 → 숫자를 고르면 개념 그림을 그려 줘요.
- * 그림 만드는 규칙은 lib/mathConcept.js. 여기는 고르는 화면과 저장(PNG·SVG)·크게 보기예요.
+ * 수업도구 「수학 개념」: 단원 → 개념 → 숫자를 고르면 개념 그림을 그려 줘요.
+ * 그림 만드는 규칙은 lib/mathConcept.js. 여기는 고르는 화면, 단계별 애니메이션(설명 보기), 저장(PNG·SVG)·전체화면이에요.
+ *
+ * 애니메이션: 그림 조각마다 data-step="n" 이 붙어 있어요. n번째 단계가 되면 그 조각이 나타나고,
+ * 아래에 그 단계의 설명 문장이 크게 나와요. 저장하는 그림에는 항상 모든 조각이 들어가요.
  */
 import './mathConceptTool.css';
-import { MATH_H, MATH_UNITS, MATH_W, findMathConcept, renderMathConcept } from './lib/mathConcept.js';
+import { MATH_H, MATH_UNITS, MATH_W, findMathConcept, mathGrades, renderMathConcept } from './lib/mathConcept.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const KEY = 'sambong_math_concept';
+/** 자동 재생에서 한 단계를 보여 주는 시간(ms) */
+const STEP_MS = 2800;
 
 export function createMathConceptTool({ root, toast = () => {} } = {}) {
     const host = () => (typeof root === 'function' ? root() : root);
-    const st = { unit: MATH_UNITS[0].id, concept: MATH_UNITS[0].concepts[0].id, params: {}, bound: false };
+    const st = { unit: MATH_UNITS[0].id, concept: MATH_UNITS[0].concepts[0].id, params: {}, bound: false, step: 0, playing: false, timer: 0, speak: false };
     try {
         const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-        if (saved && saved.unit) { st.unit = String(saved.unit); st.concept = String(saved.concept || ''); st.params = saved.params && typeof saved.params === 'object' ? saved.params : {}; }
+        if (saved && saved.unit) { st.unit = String(saved.unit); st.concept = String(saved.concept || ''); st.params = saved.params && typeof saved.params === 'object' ? saved.params : {}; st.speak = saved.speak === true; }
     } catch (_) { /* 저장값이 없으면 처음 단원부터 */ }
     let last = null;
 
-    const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ unit: st.unit, concept: st.concept, params: st.params })); } catch (_) { /* 저장 공간이 없으면 넘어가요 */ } };
+    const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ unit: st.unit, concept: st.concept, params: st.params, speak: st.speak })); } catch (_) { /* 저장 공간이 없으면 넘어가요 */ } };
+    const total = () => (last ? last.steps.length : 1);
 
     function paramHtml(p, value) {
         const id = `mathp-${p.key}`;
@@ -27,59 +33,151 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         if (p.type === 'text') {
             return `<label class="mathviz-field is-wide" for="${id}"><span>${esc(p.label)}</span><input id="${id}" type="text" data-math-param="${p.key}" value="${esc(value)}" maxlength="120"></label>`;
         }
-        const step = p.type === 'int' ? 1 : 0.1;
-        return `<label class="mathviz-field" for="${id}"><span>${esc(p.label)}</span>
+        const step = p.type === 'int' ? 1 : 10 ** -(p.dp == null ? 2 : p.dp);
+        return `<label class="mathviz-field" for="${id}"><span>${esc(p.label)} <i>${p.min}~${p.max}</i></span>
             <span class="mathviz-stepper">
                 <button type="button" data-math="step" data-key="${p.key}" data-d="-${step}" aria-label="${esc(p.label)} 줄이기">−</button>
-                <input id="${id}" type="number" inputmode="decimal" data-math-param="${p.key}" value="${esc(value)}" min="${p.min}" max="${p.max}" step="${p.type === 'int' ? 1 : 'any'}">
+                <input id="${id}" type="number" inputmode="${p.type === 'int' ? 'numeric' : 'decimal'}" data-math-param="${p.key}" value="${esc(value)}" min="${p.min}" max="${p.max}" step="${step}">
                 <button type="button" data-math="step" data-key="${p.key}" data-d="${step}" aria-label="${esc(p.label)} 늘리기">＋</button>
             </span></label>`;
     }
 
-    /** 그림과 설명만 다시 그려요(숫자 칸에 적는 중에는 칸을 건드리지 않아요). */
+    /* ---------- 단계 애니메이션 ---------- */
+
+    function stopPlay() {
+        if (st.timer) clearTimeout(st.timer);
+        st.timer = 0;
+        st.playing = false;
+        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) { /* 읽어 주기가 없는 기기 */ }
+    }
+
+    function say(line) {
+        if (!st.speak) return;
+        try {
+            const synth = window.speechSynthesis;
+            if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;
+            synth.cancel();
+            const u = new SpeechSynthesisUtterance(String(line).replace(/÷/g, ' 나누기 ').replace(/×/g, ' 곱하기 ').replace(/(\d+)\/(\d+)/g, '$2분의 $1').replace(/=/g, ' 는 '));
+            u.lang = 'ko-KR';
+            u.rate = 0.9;
+            synth.speak(u);
+        } catch (_) { /* 읽어 주기가 없는 기기 */ }
+    }
+
+    /** 지금 단계까지의 조각만 보여 줘요. 방금 나온 조각은 움직이며 나타나요. */
+    function applyStep(animate) {
+        const el = host();
+        if (!el) return;
+        const stage = el.querySelector('[data-math-stage]');
+        if (stage) {
+            stage.querySelectorAll('[data-step]').forEach((node) => {
+                const k = Number(node.getAttribute('data-step')) || 0;
+                node.classList.remove('ms-in');
+                node.style.visibility = k <= st.step ? 'visible' : 'hidden';
+                if (animate && k === st.step) { void node.getBoundingClientRect(); node.classList.add('ms-in'); }
+            });
+        }
+        const all = st.step >= total();
+        const talk = el.querySelector('[data-math-talk]');
+        if (talk) {
+            const line = last && last.steps[st.step - 1];
+            talk.innerHTML = line ? `<b>${st.step}</b><span>${esc(line)}</span>` : '<span>▶ 「설명 보기」를 누르면 한 단계씩 차근차근 보여 줘요.</span>';
+            talk.classList.toggle('is-idle', !line);
+        }
+        const dots = el.querySelector('[data-math-dots]');
+        if (dots) dots.innerHTML = Array.from({ length: total() }, (_, i) => `<button type="button" class="mathviz-dot${i + 1 === st.step ? ' is-on' : i + 1 < st.step ? ' is-done' : ''}" data-math="goto" data-step-to="${i + 1}" aria-label="${i + 1}단계">${i + 1}</button>`).join('');
+        const play = el.querySelector('[data-math="play"]');
+        if (play) play.textContent = st.playing ? '⏸ 멈춤' : all || st.step === 0 ? '▶ 설명 보기' : '▶ 이어 보기';
+        const prev = el.querySelector('[data-math="prev"]');
+        if (prev) prev.disabled = st.step <= 1;
+        const next = el.querySelector('[data-math="next"]');
+        if (next) next.disabled = all;
+    }
+
+    function go(step, { animate = true, speak = true } = {}) {
+        st.step = Math.max(1, Math.min(total(), step));
+        applyStep(animate);
+        if (speak && last) say(last.steps[st.step - 1]);
+    }
+
+    function tick() {
+        if (!st.playing) return;
+        if (st.step >= total()) { st.playing = false; applyStep(false); return; }
+        go(st.step + 1);
+        st.timer = setTimeout(tick, STEP_MS + (st.speak ? 1200 : 0));
+    }
+
+    function play() {
+        if (st.playing) { stopPlay(); applyStep(false); return; }
+        st.playing = true;
+        if (st.step >= total() || st.step === 0) { go(1); st.timer = setTimeout(tick, STEP_MS + (st.speak ? 1200 : 0)); } else tick();
+        applyStep(false);
+    }
+
+    /** 그림만 다시 그려요(숫자 칸에 적는 중에는 칸을 건드리지 않아요). 숫자가 바뀌면 다 보이는 그림으로 돌아가요. */
     function draw() {
         const el = host();
         if (!el) return;
+        stopPlay();
         last = renderMathConcept(st.unit, st.concept, st.params);
         const stage = el.querySelector('[data-math-stage]');
         if (stage) stage.innerHTML = last.svg;
+        st.step = total();
+        applyStep(false);
+        const talk = el.querySelector('[data-math-talk]');
+        if (talk) { talk.innerHTML = '<span>▶ 「설명 보기」를 누르면 한 단계씩 차근차근 보여 줘요.</span>'; talk.classList.add('is-idle'); }
     }
 
     function render() {
         const el = host();
         if (!el) return;
         bind();
+        stopPlay();
         const { unit, concept } = findMathConcept(st.unit, st.concept);
         st.unit = unit.id;
         st.concept = concept.id;
         last = renderMathConcept(st.unit, st.concept, st.params);
         st.params = last.params;
-        const term = unit.term;
+        const grades = mathGrades();
         st.rendering = true;
         el.innerHTML = `<div class="mathviz">
             <div class="mathviz-side">
-                <div class="mathviz-terms" role="tablist">${[1, 2].map((t) => `<button type="button" class="mathviz-term${t === term ? ' is-on' : ''}" data-math="term" data-term="${t}" role="tab" aria-selected="${t === term}">6학년 ${t}학기</button>`).join('')}</div>
-                <div class="mathviz-units">${MATH_UNITS.filter((u) => u.term === term).map((u) => `<button type="button" class="mathviz-unit${u.id === unit.id ? ' is-on' : ''}" data-math="unit" data-unit="${u.id}"><b>${u.no}</b><span>${esc(u.name)}</span></button>`).join('')}</div>
+                ${grades.length > 1 ? `<div class="mathviz-grades" role="tablist">${grades.map((g) => `<button type="button" class="mathviz-grade${g === unit.grade ? ' is-on' : ''}" data-math="grade" data-grade="${g}" role="tab" aria-selected="${g === unit.grade}">${g}학년</button>`).join('')}</div>` : ''}
+                <div class="mathviz-terms" role="tablist">${[1, 2].map((t) => `<button type="button" class="mathviz-term${t === unit.term ? ' is-on' : ''}" data-math="term" data-term="${t}" role="tab" aria-selected="${t === unit.term}">${unit.grade}학년 ${t}학기</button>`).join('')}</div>
+                <div class="mathviz-units">${MATH_UNITS.filter((u) => u.grade === unit.grade && u.term === unit.term).map((u) => `<button type="button" class="mathviz-unit${u.id === unit.id ? ' is-on' : ''}" data-math="unit" data-unit="${u.id}"><b>${u.no}</b><span>${esc(u.name)}</span></button>`).join('')}</div>
             </div>
             <div class="mathviz-main">
                 <div class="mathviz-top">
-                <div class="mathviz-concepts">${unit.concepts.map((c) => `<button type="button" class="mathviz-chip${c.id === concept.id ? ' is-on' : ''}" data-math="concept" data-concept="${c.id}">${esc(c.name)}</button>`).join('')}</div>
+                    <div class="mathviz-concepts">${unit.concepts.map((c) => `<button type="button" class="mathviz-chip${c.id === concept.id ? ' is-on' : ''}" data-math="concept" data-concept="${c.id}">${esc(c.name)}</button>`).join('')}</div>
                     <button type="button" class="mathviz-btn mathviz-fullbtn" data-math="screen" aria-pressed="${isFull() ? 'true' : 'false'}">${isFull() ? '🗗 전체화면 끄기' : '⛶ 전체화면'}</button>
                 </div>
                 <div class="mathviz-params">${concept.params.map((p) => paramHtml(p, st.params[p.key])).join('')}
                     <button type="button" class="mathviz-reset" data-math="reset">처음 값으로</button>
                 </div>
                 <div class="mathviz-stage" data-math-stage>${last.svg}</div>
+                <div class="mathviz-player">
+                    <p class="mathviz-talk is-idle" data-math-talk role="status" aria-live="polite"><span>▶ 「설명 보기」를 누르면 한 단계씩 차근차근 보여 줘요.</span></p>
+                    <div class="mathviz-controls">
+                        <button type="button" class="mathviz-btn is-play" data-math="play">▶ 설명 보기</button>
+                        <button type="button" class="mathviz-btn" data-math="prev" aria-label="이전 단계">◀ 이전</button>
+                        <button type="button" class="mathviz-btn" data-math="next" aria-label="다음 단계">다음 ▶</button>
+                        <span class="mathviz-dots" data-math-dots></span>
+                        <button type="button" class="mathviz-btn${st.speak ? ' is-on' : ''}" data-math="speak" aria-pressed="${st.speak}">${st.speak ? '🔊 읽어 주기 켬' : '🔈 읽어 주기'}</button>
+                        <button type="button" class="mathviz-btn" data-math="all">전체 그림</button>
+                    </div>
+                </div>
                 <div class="mathviz-actions">
                     <button type="button" class="mathviz-btn is-main" data-math="png">🖼️ 그림(PNG) 저장</button>
                     <button type="button" class="mathviz-btn" data-math="copy">📋 그림 복사</button>
                     <button type="button" class="mathviz-btn" data-math="svg">SVG 저장</button>
                     <button type="button" class="mathviz-btn" data-math="full">🔍 그림만 크게</button>
                 </div>
-                <p class="mathviz-note">숫자를 바꾸면 그림이 바로 바뀌어요. 저장한 그림은 학습지·발표 자료에 붙여 쓸 수 있어요.</p>
+                <p class="mathviz-note">숫자를 바꾸면 그림이 바로 바뀌어요. 그림으로 그릴 수 없는 값은 가까운 값으로 맞춰 줘요. 저장한 그림에는 모든 단계가 들어가요.</p>
             </div>
         </div>`;
         st.rendering = false;
+        st.step = total();
+        applyStep(false);
         remember();
     }
 
@@ -139,6 +237,7 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
 
     async function act(kind) {
         try {
+            if (kind === 'screen') { await toggleScreen(); return; }
             if (kind === 'svg') { download(new Blob([last.svg], { type: 'image/svg+xml;charset=utf-8' }), `${fileName()}.svg`); return; }
             if (kind === 'png') { download(await toPng(), `${fileName()}.png`); toast('그림을 저장했어요.'); return; }
             if (kind === 'copy') {
@@ -147,7 +246,6 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
                 toast('그림을 복사했어요. 붙여넣기 하면 돼요.');
                 return;
             }
-            if (kind === 'screen') { await toggleScreen(); return; }
             if (kind === 'full') {
                 const stage = host().querySelector('[data-math-stage]');
                 if (document.fullscreenElement) await document.exitFullscreen();
@@ -157,6 +255,14 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         } catch (e) {
             toast(`잘 안 됐어요: ${e && e.message ? e.message : e}`);
         }
+    }
+
+    /** 칸에 적은 값이 그릴 수 없는 값이라 바뀌었으면 알려 줘요. */
+    function noteSnap(key, typed) {
+        const now = st.params[key];
+        if (typed === '' || typed == null || String(now) === String(typed).trim()) return;
+        if (Number(typed) === Number(now)) return;
+        toast(`그림으로 그릴 수 있는 값 ${now}(으)로 맞췄어요.`);
     }
 
     function bind() {
@@ -173,9 +279,11 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         });
         el.addEventListener('click', (e) => {
             const t = e.target.closest('[data-math]');
-            if (!t || !el.contains(t)) return;
+            if (!t || !el.contains(t) || t.disabled) return;
             const a = t.getAttribute('data-math');
-            if (a === 'term') { const u = MATH_UNITS.find((x) => x.term === Number(t.getAttribute('data-term'))); if (u) { st.unit = u.id; st.concept = ''; st.params = {}; render(); } }
+            const firstOf = (pred) => MATH_UNITS.find(pred);
+            if (a === 'grade') { const u = firstOf((x) => x.grade === Number(t.getAttribute('data-grade'))); if (u) { st.unit = u.id; st.concept = ''; st.params = {}; render(); } }
+            else if (a === 'term') { const cur = findMathConcept(st.unit, st.concept).unit; const u = firstOf((x) => x.grade === cur.grade && x.term === Number(t.getAttribute('data-term'))); if (u) { st.unit = u.id; st.concept = ''; st.params = {}; render(); } }
             else if (a === 'unit') { st.unit = t.getAttribute('data-unit'); st.concept = ''; st.params = {}; render(); }
             else if (a === 'concept') { st.concept = t.getAttribute('data-concept'); st.params = {}; render(); }
             else if (a === 'reset') { st.params = {}; render(); }
@@ -184,9 +292,16 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
                 const d = Number(t.getAttribute('data-d')) || 0;
                 st.params = { ...st.params, [key]: Math.round(((Number(st.params[key]) || 0) + d) * 1000) / 1000 };
                 render();
-            } else void act(a);
+            }
+            else if (a === 'play') play();
+            else if (a === 'prev') { stopPlay(); go(st.step - 1, { animate: false }); }
+            else if (a === 'next') { stopPlay(); go(st.step >= total() ? 1 : st.step + 1); }
+            else if (a === 'goto') { stopPlay(); go(Number(t.getAttribute('data-step-to')) || 1); }
+            else if (a === 'all') { stopPlay(); st.step = total(); applyStep(false); const talk = el.querySelector('[data-math-talk]'); if (talk) { talk.innerHTML = `<span>${esc(last.caption)}</span>`; talk.classList.remove('is-idle'); } }
+            else if (a === 'speak') { st.speak = !st.speak; if (!st.speak) { try { window.speechSynthesis.cancel(); } catch (_) { /* 무시 */ } } t.classList.toggle('is-on', st.speak); t.textContent = st.speak ? '🔊 읽어 주기 켬' : '🔈 읽어 주기'; t.setAttribute('aria-pressed', String(st.speak)); remember(); if (st.speak && last && st.step >= 1) say(last.steps[Math.min(st.step, total()) - 1]); }
+            else void act(a);
         });
-        // 적는 동안에는 그림만 바꾸고, 다 적으면(칸을 벗어나면) 범위에 맞춘 값으로 칸도 고쳐요.
+        // 적는 동안에는 그림만 바꾸고, 다 적으면(칸을 벗어나면) 그릴 수 있는 값으로 칸도 고쳐요.
         el.addEventListener('input', (e) => {
             const t = e.target.closest('[data-math-param]');
             if (!t) return;
@@ -197,10 +312,13 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         el.addEventListener('change', (e) => {
             const t = e.target.closest('[data-math-param]');
             if (!t || st.rendering) return; // 다시 그리는 중에 칸이 사라지며 나는 change 는 무시해요
-            st.params = { ...st.params, [t.getAttribute('data-math-param')]: t.value };
+            const key = t.getAttribute('data-math-param');
+            const typed = t.value;
+            st.params = { ...st.params, [key]: typed };
             render();
+            if (t.type === 'number') noteSnap(key, typed);
         });
     }
 
-    return { open: render, render };
+    return { open: render, render, stop: stopPlay };
 }

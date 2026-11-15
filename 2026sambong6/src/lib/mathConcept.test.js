@@ -12,6 +12,12 @@ describe('6학년 수학 개념 그림', () => {
             assert.ok(r.svg.trim().endsWith('</svg>'));
             assert.ok(!/NaN|undefined|Infinity/.test(r.svg), `${u.id}/${c.id} 에 잘못된 숫자`);
             assert.ok(r.caption.length > 5);
+            // 단계 설명과 그림 조각의 단계 번호가 맞아요(빈 단계 없이 1부터 끝까지).
+            assert.ok(r.steps.length >= 2, `${u.id}/${c.id} 단계가 너무 적어요`);
+            const used = new Set([...r.svg.matchAll(/data-step="(\d+)"/g)].map((m) => Number(m[1])));
+            assert.equal(Math.max(...used), r.steps.length, `${u.id}/${c.id} 마지막 단계`);
+            for (let k = 1; k <= r.steps.length; k += 1) assert.ok(used.has(k), `${u.id}/${c.id} ${k}단계 그림이 없어요`);
+            r.steps.forEach((line) => assert.ok(line && !/NaN|undefined/.test(line)));
             count += 1;
         }));
         assert.ok(count >= 20);
@@ -23,6 +29,9 @@ describe('6학년 수학 개념 그림', () => {
                 c.params.forEach((p) => { if (p.type === 'int' || p.type === 'num') raw[p.key] = p[edge]; else if (p.type === 'select') raw[p.key] = p.options[edge === 'min' ? 0 : p.options.length - 1][0]; });
                 const r = renderMathConcept(u.id, c.id, raw);
                 assert.ok(!/NaN|undefined|Infinity/.test(r.svg), `${u.id}/${c.id} ${edge}`);
+                const used = new Set([...r.svg.matchAll(/data-step="(\d+)"/g)].map((m) => Number(m[1])));
+                assert.equal(Math.max(...used), r.steps.length, `${u.id}/${c.id} ${edge} 마지막 단계`);
+                for (let k = 1; k <= r.steps.length; k += 1) assert.ok(used.has(k), `${u.id}/${c.id} ${edge} ${k}단계 그림이 없어요`);
             });
         }));
     });
@@ -68,5 +77,24 @@ describe('6학년 수학 개념 그림', () => {
         assert.match(renderMathConcept('6-2-5', 'circum', { d: 10, pi: '3.1' }).caption, /= 31$/);
         assert.match(renderMathConcept('6-2-4', 'share', { total: 20, a: 2, b: 3 }).caption, /8 과 12/);
         assert.match(renderMathConcept('6-1-4', 'ratio', { a: 3, b: 4 }).caption, /75 %/);
+    });
+});
+
+describe('그림으로 그릴 수 있는 값으로 맞추기', () => {
+    const concept = (uid, cid) => MATH_UNITS.find((u) => u.id === uid).concepts.find((c) => c.id === cid);
+    it('정수 칸은 정수로, 범위 안으로', () => {
+        assert.deepEqual(normalizeMathParams(concept('6-2-5', 'circum'), { d: 7.6, pi: '3.14' }), { d: 8, pi: '3.14' });
+        assert.equal(normalizeMathParams(concept('6-1-6', 'volume'), { w: 2.4, d: 99, h: 0 }).d, 6);
+    });
+    it('분자는 분모보다 작게, 비례배분 전체는 나누어떨어지게', () => {
+        assert.equal(normalizeMathParams(concept('6-1-1', 'fracdivnat'), { n: 9, d: 4, k: 2 }).n, 3);
+        assert.equal(normalizeMathParams(concept('6-2-4', 'share'), { total: 22, a: 2, b: 3 }).total, 20);
+        assert.equal(normalizeMathParams(concept('6-2-4', 'share'), { total: 3, a: 4, b: 5 }).total, 9);
+        const p = normalizeMathParams(concept('6-2-1', 'fracdivfrac'), { a: 12, b: 2, c: 7, d: 8 });
+        assert.ok((p.a * 8) / 2 <= 24 && p.c === 7);
+    });
+    it('소수 칸은 정해진 자릿수까지만', () => {
+        assert.equal(normalizeMathParams(concept('6-1-3', 'decdivnat'), { a: 8.6449, b: 4 }).a, 8.64);
+        assert.equal(normalizeMathParams(concept('6-2-2', 'decdivdec'), { a: 1.44, b: 0.66 }).b, 0.7);
     });
 });

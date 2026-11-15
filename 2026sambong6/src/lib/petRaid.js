@@ -347,7 +347,7 @@ export function replayRaidRun(run) {
 /**
  * 전투 하나의 보상을 계산해요(한 전투에 한 번만).
  * - 이기면: 그 스테이지를 처음 깼을 때 첫 보상, 아니면 반복 보상(하루 dailyRewards 번까지)
- * - 지면 보상 없음. 펫 경험치는 이기면 스테이지×4, 져도 스테이지×1.
+ * - 지면 봉은 없어요. 펫 경험치는 이기면 스테이지×4, 져도 스테이지×1 — 단, 하루 보상 횟수를 다 쓴 뒤에는 0이에요.
  * @returns {{ ok, error, bong, exp, first, limited, progress }}
  */
 export function claimRaidReward(progressRaw, run, { id, today = '', settings = null } = {}) {
@@ -360,7 +360,9 @@ export function claimRaidReward(progressRaw, run, { id, today = '', settings = n
     const day = String(today || '');
     const dayRewards = progress.day === day ? progress.dayRewards : 0;
     const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30) };
-    if (!run.win) return { ok: true, error: '', bong: 0, exp: run.stage, first: false, limited: false, progress: next };
+    // 하루 보상 횟수를 다 쓰면 봉도 경험치도 더 주지 않아요(도전은 계속 할 수 있어요).
+    const used = dayRewards >= cfg.dailyRewards;
+    if (!run.win) return { ok: true, error: '', bong: 0, exp: used ? 0 : run.stage, first: false, limited: used, progress: next };
     const first = !progress.firsts.includes(run.stage);
     let bong = 0;
     let limited = false;
@@ -373,7 +375,7 @@ export function claimRaidReward(progressRaw, run, { id, today = '', settings = n
     } else {
         limited = true;
     }
-    return { ok: true, error: '', bong, exp: run.stage * 4, first, limited, progress: next };
+    return { ok: true, error: '', bong, exp: limited ? 0 : run.stage * 4, first, limited, progress: next };
 }
 
 export const RAID_ERROR_TEXT = Object.freeze({

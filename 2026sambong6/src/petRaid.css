@@ -177,3 +177,32 @@
 .raid-fx-feed-row.is-strong i { color: #86efac; }
 .raid-fx-feed-row.is-hurt i { color: #fca5a5; }
 @keyframes raid-feed { from { transform: translateX(20px); opacity: 0; } }
+
+/* 전투 화면: 참가자 체력을 화면 왼쪽 가장자리에 나열 */
+.raid-fx-hpside { position: absolute; z-index: 5; left: 4px; top: calc(7.6rem + env(safe-area-inset-top, 0px)); display: grid; grid-auto-flow: column; grid-template-rows: repeat(13, auto); gap: 2px 4px; pointer-events: none; }
+.raid-fx-hprow { margin: 0; width: 6.6rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 4px; padding: 1px 5px 2px; border-radius: 5px; background: rgba(2, 6, 23, 0.72); border-left: 3px solid #4ade80; font-size: 10px; line-height: 1.2; }
+.raid-fx-hprow b { font-weight: 800; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.raid-fx-hprow em { font-style: normal; font-weight: 900; color: #bbf7d0; }
+.raid-fx-hprow span { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.18); overflow: hidden; }
+.raid-fx-hprow span i { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #86efac); transition: width 0.3s ease-out; }
+.raid-fx-hprow.is-me { border-left-color: #fbbf24; background: rgba(69, 26, 3, 0.8); }
+.raid-fx-hprow.is-low { border-left-color: #ef4444; }
+.raid-fx-hprow.is-low span i { background: linear-gradient(90deg, #dc2626, #f87171); }
+.raid-fx-hprow.is-low em { color: #fca5a5; }
+.raid-fx-hprow.is-out { opacity: 0.55; border-left-color: #64748b; }
+.raid-fx-hprow.is-out em { color: #94a3b8; }
+@media (orientation: landscape) and (max-height: 520px) {
+    .raid-fx-hpside { grid-template-rows: repeat(7, auto); top: calc(3rem + env(safe-area-inset-top, 0px)); }
+    .raid-fx-top { margin-top: calc(0.4rem + env(safe-area-inset-top, 0px)); }
+    .raid-fx-feed { top: calc(3rem + env(safe-area-inset-top, 0px)); }
+}
+@media (min-width: 700px) { .raid-fx-hprow { width: 8.4rem; font-size: 12px; } .raid-fx-hprow span { height: 6px; } }
+.raid-fx:fullscreen { width: 100vw; height: 100vh; }
+
+/* 속성 상성표 */
+.raid-chart summary { font-size: 13px; font-weight: 900; color: #fde68a; cursor: pointer; }
+.raid-chart table { width: 100%; margin-top: 0.5rem; border-collapse: collapse; font-size: 11px; }
+.raid-chart th, .raid-chart td { padding: 0.3rem 0.25rem; border-top: 1px solid rgba(148, 163, 184, 0.25); text-align: left; vertical-align: middle; }
+.raid-chart thead th { border-top: 0; font-size: 10px; color: #94a3b8; font-weight: 800; }
+.raid-chart td .pet-type, .raid-chart th .pet-type { margin: 1px 0; display: inline-block; }
+.raid-chart-none { font-style: normal; color: #64748b; }

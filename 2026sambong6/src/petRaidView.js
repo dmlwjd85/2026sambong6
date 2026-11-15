@@ -12,6 +12,7 @@ import {
     RAID_MAX_PARTY,
     RAID_MIN_PARTY,
     RAID_STAGE_COUNT,
+    RAID_STRONG,
     claimRaidReward,
     createRaidParty,
     isRaidPartyStale,
@@ -20,6 +21,7 @@ import {
     raidErrorText,
     raidMaxParty,
     raidMemberFromPet,
+    raidPetStats,
     raidTypeMult,
     raidUnlockedStage,
     reopenRaidParty,
@@ -203,8 +205,8 @@ export function createPetRaidView(ctx) {
     }
 
     async function playBattle(run, sim) {
-        const host = ctx.root();
-        if (!host) return;
+        // 전투는 화면 전체를 덮어요(되는 기기에서는 진짜 전체 화면으로 바꿔요).
+        const host = document.body;
         const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
         const color = TYPE_COLOR[run.boss.type] || '#fff';
         const el = document.createElement('div');
@@ -226,10 +228,27 @@ export function createPetRaidView(ctx) {
                     <b>${esc(m.name)}</b>
                     <em data-dmg></em>
                 </span>`).join('')}</div>
+            <div class="raid-fx-hpside">${run.members.map((m) => `
+                <p class="raid-fx-hprow${m.id === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.name)}</b><span><i style="width:100%"></i></span><em>${raidPetStats(m.power).hp}</em></p>`).join('')}</div>
             <p class="raid-fx-phase"></p>
             <div class="raid-fx-feed" aria-hidden="true"></div>
             <p class="raid-fx-banner" aria-live="polite"></p>`;
         host.appendChild(el);
+        try { if (el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (_) { /* 전체 화면이 안 되는 기기 */ }
+        // 참가자 체력: 화면 가장자리에 한 줄씩 보여 줘요.
+        const maxHpOf = {};
+        const hpOf = {};
+        run.members.forEach((m) => { maxHpOf[m.id] = raidPetStats(m.power).hp; hpOf[m.id] = maxHpOf[m.id]; });
+        const setMemberHp = (id, hpNow) => {
+            hpOf[id] = Math.max(0, hpNow);
+            const row = el.querySelector(`[data-hp-id="${CSS.escape(id)}"]`);
+            if (!row) return;
+            const ratio = hpOf[id] / (maxHpOf[id] || 1);
+            row.querySelector('i').style.width = `${ratio * 100}%`;
+            row.querySelector('em').textContent = hpOf[id] > 0 ? hpOf[id] : '쓰러짐';
+            row.classList.toggle('is-low', ratio > 0 && ratio <= 0.35);
+            row.classList.toggle('is-out', hpOf[id] <= 0);
+        };
         let skipped = false;
         el.querySelector('.raid-fx-skip').addEventListener('click', () => { skipped = true; });
         const pause = (ms) => (skipped || reduce ? Promise.resolve() : wait(ms));
@@ -290,6 +309,7 @@ export function createPetRaidView(ctx) {
             await say(`${run.members.length}마리 출격!`, '', 900);
             let hp = sim.bossMaxHp;
             let slot = 0;
+            let watching = false;
             for (let r = 0; r < sim.rounds.length; r += 1) {
                 const round = sim.rounds[r];
                 if (skipped) break;
@@ -342,8 +362,9 @@ export function createPetRaidView(ctx) {
                             // 누가 얼마를 때렸는지: 보스 양옆으로 번갈아 띄워요.
                             const col = slot % 4;
                             slot += 1;
-                            const fx = bc.x + (col < 2 ? -1 : 1) * br.width * (col % 2 ? 0.42 : 0.24);
-                            const fy = bc.y - br.height * 0.18 + (col % 2) * 34;
+                            // 왼쪽 가장자리에는 체력 줄이 있어서, 숫자는 보스 위쪽과 오른쪽에 띄워요.
+                            const fx = bc.x + br.width * [-0.1, 0.3, 0.1, 0.42][col];
+                            const fy = bc.y - br.height * [0.4, 0.3, 0.16, 0.06][col];
                             const cls = h.crit ? 'is-crit' : h.mult > 1 ? 'is-strong' : h.mult < 1 ? 'is-weak' : '';
                             float(`${h.crit ? '💥' : ''}${h.dmg.toLocaleString()}`, fx, fy, cls, nameOf[h.by] || '');
                             log(nameOf[h.by] || '', `${h.crit ? '치명타 ' : ''}${h.dmg.toLocaleString()}`, cls);
@@ -385,11 +406,22 @@ export function createPetRaidView(ctx) {
                         if (!pe) return;
                         const pc = center(pe);
                         pop(pe, 'is-hurt', 460);
+                        setMemberHp(h.target, hpOf[h.target] - h.dmg);
                         float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, 'is-hurt');
+                        if (h.faint && h.target === me()) { watching = true; }
                         if (h.faint) { pe.classList.add('is-faint'); log(nameOf[h.target] || '', '쓰러짐', 'is-hurt'); }
                     });
                     await pause(560);
+                    // 내 펫이 쓰러져도 전투는 끝까지 지켜봐요.
+                    if (watching && !skipped) { phase.textContent = '내 펫이 쓰러졌어요 · 끝까지 응원해요!'; phase.className = 'raid-fx-phase is-boss'; await pause(500); }
                 }
+            }
+            // 건너뛰었으면 체력도 마지막 값으로 맞춰요.
+            {
+                const left = {};
+                run.members.forEach((m) => { left[m.id] = maxHpOf[m.id]; });
+                sim.rounds.forEach((rd) => rd.boss.forEach((h) => { left[h.target] = h.faint ? 0 : left[h.target] - h.dmg; }));
+                run.members.forEach((m) => setMemberHp(m.id, left[m.id]));
             }
             // 건너뛰었으면 마지막 모습으로 맞춰요.
             setHp(sim.bossHp);
@@ -412,6 +444,7 @@ export function createPetRaidView(ctx) {
                 await say(sim.alive.length ? '시간 초과…' : '모두 쓰러졌어요…', 'is-lose', reduce ? 600 : 1500);
             }
         } finally {
+            try { if (document.fullscreenElement === el && document.exitFullscreen) await document.exitFullscreen(); } catch (_) { /* 무시 */ }
             el.remove();
         }
     }
@@ -449,10 +482,10 @@ export function createPetRaidView(ctx) {
         const nameOf = (id) => { const m = run.members.find((x) => x.id === id); return m ? m.name : id; };
         let line = '';
         if (!reward) line = '보상은 이미 받았어요.';
-        else if (!run.win) line = `다음엔 친구를 더 모아 봐요! 대표 펫 경험치 +${reward.exp}`;
+        else if (!run.win) line = reward.exp > 0 ? `다음엔 친구를 더 모아 봐요! 대표 펫 경험치 +${reward.exp}` : '다음엔 친구를 더 모아 봐요!';
+        else if (reward.limited) line = `오늘 반복 보상 ${raidCfg().dailyRewards}번을 다 받았어요. 내일 또 받을 수 있어요.`;
         else if (ctx.free()) line = `대표 펫 경험치 +${reward.exp} (선생님은 봉을 받지 않아요)`;
         else if (reward.first) line = `첫 클리어 보상 ${deps.bong(reward.bong)} · 대표 펫 경험치 +${reward.exp}`;
-        else if (reward.limited) line = `오늘 보상은 다 받았어요. 대표 펫 경험치 +${reward.exp}`;
         else line = `보상 ${deps.bong(reward.bong)} · 대표 펫 경험치 +${reward.exp}`;
         const p = myParty();
         const leader = p && p.leaderId === me();
@@ -506,7 +539,7 @@ export function createPetRaidView(ctx) {
             <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${RAID_MIN_PARTY}명부터 ${maxParty()}명까지, 도전은 몇 번이든 할 수 있어요.</p>
             <div class="raid-stages">${stages}</div>
             ${bossCard(sel, cfg)}
-            <p class="pet-note">오늘 반복 보상 ${Math.min(day, cfg.dailyRewards)} / ${cfg.dailyRewards}번 받음 · 첫 클리어 보상은 따로 받아요.</p>
+            <p class="pet-note">오늘 반복 보상 ${Math.min(day, cfg.dailyRewards)} / ${cfg.dailyRewards}번 받음 · 첫 클리어 보상은 따로 받아요. 방은 내가 깬 다음 스테이지까지 만들 수 있고, 친구 방에는 어느 스테이지든 참가할 수 있어요.</p>
             ${m ? `<button type="button" class="pet-btn is-main" data-p="raid-create">🚩 STAGE ${sel} 탐험 방 만들기</button>`
                 : `<p class="pet-lead is-warn">${esc(raidErrorText('no_pet'))}</p>`}
         </div>
@@ -517,6 +550,25 @@ export function createPetRaidView(ctx) {
                 <button type="button" class="pet-btn is-food" data-p="raid-join" data-party="${esc(p.id)}"${m && p.members.length < maxParty() ? '' : ' disabled'}>함께 가기</button>
             </div>`).join('') : '<p class="pet-note">아직 모이는 방이 없어요. 방을 만들고 친구를 불러 봐요!</p>'}
         </div>`;
+    }
+
+    /** 속성 상성표: 누가 누구에게 강하고 약한지 */
+    function chartHtml() {
+        const types = Object.keys(PET_TYPES);
+        const rows = types.map((t) => {
+            const strong = RAID_STRONG[t] || [];
+            const weak = types.filter((x) => (RAID_STRONG[x] || []).includes(t));
+            const chips = (list) => (list.length ? list.map((x) => typeBadge(x)).join(' ') : '<i class="raid-chart-none">없음</i>');
+            return `<tr><th>${typeBadge(t)}</th><td>${chips(strong)}</td><td>${chips(weak)}</td></tr>`;
+        }).join('');
+        return `<details class="pet-card raid-chart">
+            <summary>📊 속성 상성표 보기</summary>
+            <table>
+                <thead><tr><th>내 펫</th><th>강해요 (데미지 1.5배)</th><th>약해요 (데미지 0.75배)</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <p class="pet-note">강한 상대에게는 더 세게 때리고 덜 아프게 맞아요. 약한 상대에게는 그 반대예요. 보스 속성을 보고 팀을 짜 봐요!</p>
+        </details>`;
     }
 
     /** 마스터 설정: 스테이지·보상·하루 보상 횟수 */
@@ -557,7 +609,7 @@ export function createPetRaidView(ctx) {
         const cfg = raidCfg();
         if (lastResult) return `${resultHtml()}${adminHtml(cfg)}`;
         const p = myParty();
-        return `${p ? partyHtml(p, cfg) : lobbyHtml(cfg)}${adminHtml(cfg)}`;
+        return `${p ? partyHtml(p, cfg) : lobbyHtml(cfg)}${chartHtml()}${adminHtml(cfg)}`;
     }
 
     async function saveSettings(reset) {

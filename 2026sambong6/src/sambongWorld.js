@@ -1379,7 +1379,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.63';
+        const APP_VERSION = 'v1.64';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10179,7 +10179,7 @@ ${subjectLine}
         /** 상점 하위: skin | item | convenience | class | lotto */
         let shopSub = 'skin';
         /** 도전 서브: goldenbell | speedquiz | raid */
-        let challengeSub = 'goldenbell';
+        let challengeSub = 'pet'; // 도전 탭을 열면 메이트 펫이 먼저 보여요
         /** 수업도구 서브: timetable | thermo | chalk ... */
         let classtoolSub = 'timetable';
         /** 탭 내부 아이콘 패널 현재 선택값 */
@@ -10631,7 +10631,7 @@ ${subjectLine}
 
         window.switchChallengeSub = function(sub) {
             // 냥코 원정은 삭제됨 — 옛 딥링크는 골든벨로 보냄
-            challengeSub = (sub === 'catbattle' || !sub) ? 'goldenbell' : sub;
+            challengeSub = sub === 'catbattle' ? 'goldenbell' : (sub || 'pet');
             ['goldenbell', 'speedquiz', 'raid', 'ox', 'pet'].forEach(s => {
                 const btn = document.getElementById('challengeSub-' + s);
                 if (btn) btn.classList.toggle('is-active', s === challengeSub);

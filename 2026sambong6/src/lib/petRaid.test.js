@@ -151,7 +151,7 @@ describe('탐험 보상', () => {
         assert.equal(r.ok, true);
         assert.equal(r.bong, 0);
         assert.equal(r.limited, true);
-        assert.ok(r.exp > 0);
+        assert.equal(r.exp, 0); // 하루 횟수를 넘기면 경험치도 없어요
         // 다음 날에는 다시 받아요
         assert.equal(R.claimRaidReward(r.progress, run({ id: 'r6' }), { id: '1', today: '2026-11-17' }).bong, 1);
     });

@@ -74,6 +74,9 @@ export function computeResearchStats(opts) {
     let allClearToday = 0;
     let purchaseCount = 0;
     let purchaseCountWeek = 0;
+    let questCancelToday = 0;
+    let questCancelWeek = 0;
+    let questCancelAll = 0;
 
     const perStudent = students.map((stu) => {
         const sid = String(stu.id);
@@ -85,6 +88,18 @@ export function computeResearchStats(opts) {
         let xpGainWeek = 0;
         let bongGainToday = 0;
         let bongGainWeek = 0;
+        // 눌렀다가 취소한 퀘스트(#107): 취소로 되돌린 XP는 증가량에서 빼고, 취소 횟수를 따로 보여 줘요.
+        let xpBackToday = 0;
+        let xpBackWeek = 0;
+        const logCancel = { today: 0, week: 0, all: 0 };
+        const recCancel = { today: 0, week: 0, all: 0 };
+        (Array.isArray(stu.questCancels) ? stu.questCancels : []).forEach((c) => {
+            if (!c || !c.id) return;
+            const day = c.date || toYmd(c.timestamp);
+            recCancel.all += 1;
+            if (day === today) recCancel.today += 1;
+            if (inRange(day, weekStart, weekEnd)) recCancel.week += 1;
+        });
 
         history.forEach((h) => {
             if (!h) return;
@@ -108,10 +123,25 @@ export function computeResearchStats(opts) {
             if (!log) return;
             const day = toYmd(log.at);
             const delta = Number(log.delta) || 0;
+            if (String(log.reason || '').startsWith('퀘스트 취소')) {
+                logCancel.all += 1;
+                if (day === today) { logCancel.today += 1; xpBackToday += Math.max(0, -delta); }
+                if (inRange(day, weekStart, weekEnd)) { logCancel.week += 1; xpBackWeek += Math.max(0, -delta); }
+                return;
+            }
             if (delta <= 0) return;
             if (day === today) xpGainToday += delta;
             if (inRange(day, weekStart, weekEnd)) xpGainWeek += delta;
         });
+        xpGainToday = Math.max(0, xpGainToday - xpBackToday);
+        xpGainWeek = Math.max(0, xpGainWeek - xpBackWeek);
+        // 취소 기록(questCancels)과 XP 변동 기록 가운데 많은 쪽을 써요(방패가 XP 회수를 막으면 변동 기록이 안 남아요).
+        const cancelToday = Math.max(recCancel.today, logCancel.today);
+        const cancelWeek = Math.max(recCancel.week, logCancel.week);
+        const cancelAll = Math.max(recCancel.all, logCancel.all);
+        questCancelToday += cancelToday;
+        questCancelWeek += cancelWeek;
+        questCancelAll += cancelAll;
 
         (Array.isArray(stu.bongChangeLog) ? stu.bongChangeLog : []).forEach((log) => {
             if (!log) return;
@@ -149,6 +179,9 @@ export function computeResearchStats(opts) {
             xpGainWeek,
             bongGainToday,
             bongGainWeek,
+            cancelToday,
+            cancelWeek,
+            cancelAll,
             purchaseCount: purchases.length,
             jobs: Array.isArray(stu.jobs) ? stu.jobs.length : 0,
         };
@@ -211,6 +244,9 @@ export function computeResearchStats(opts) {
         avgXpGainWeek: Math.round(avgXpGainWeek * 10) / 10,
         purchaseCount,
         purchaseCountWeek,
+        questCancelToday,
+        questCancelWeek,
+        questCancelAll,
         bankUseCount,
         topQuests,
         topQuestsToday,
@@ -234,6 +270,8 @@ export function researchStatsToCsv(stats) {
     lines.push(`이번주_평균XP증가,${stats.avgXpGainWeek}`);
     lines.push(`상점_이용건수_전체,${stats.purchaseCount}`);
     lines.push(`상점_이용건수_이번주,${stats.purchaseCountWeek}`);
+    lines.push(`퀘스트_눌렀다취소_오늘,${stats.questCancelToday || 0}`);
+    lines.push(`퀘스트_눌렀다취소_이번주,${stats.questCancelWeek || 0}`);
     lines.push('');
     lines.push('퀘스트완료_Top3(선택기간),완료수');
     (stats.topQuestsPeriod || []).forEach((q) => lines.push(`"${String(q.name).replace(/"/g, '""')}",${q.count}`));
@@ -241,7 +279,7 @@ export function researchStatsToCsv(stats) {
     lines.push('인기퀘스트(누적),완료수');
     (stats.topQuests || []).forEach((q) => lines.push(`"${String(q.name).replace(/"/g, '""')}",${q.count}`));
     lines.push('');
-    lines.push('학번,이름,XP,봉,오늘일일완료,주간일일완료,오늘XP증가,주간XP증가,오늘봉증가,주간봉증가,구매건수,직업수');
+    lines.push('학번,이름,XP,봉,오늘일일완료,주간일일완료,오늘XP증가,주간XP증가,오늘봉증가,주간봉증가,구매건수,직업수,오늘취소,주간취소');
     (stats.perStudent || []).forEach((r) => {
         lines.push([
             r.id,
@@ -256,6 +294,8 @@ export function researchStatsToCsv(stats) {
             r.bongGainWeek,
             r.purchaseCount,
             r.jobs,
+            r.cancelToday || 0,
+            r.cancelWeek || 0,
         ].join(','));
     });
     return lines.join('\n');

@@ -88,6 +88,8 @@ import {
     isQuestCompletedForUi,
     isWeeklyQuestCompletedThisWeek,
     patchStudentQuestBoardRow,
+    questCancelledOnDate,
+    recordQuestCancel,
     questCompleteConfirmMessage,
     creditDefaultAllowsQuestXpGain,
     sanitizeDailyQuestFlags,
@@ -23659,9 +23661,16 @@ ${subjectLine}
                     : '<div class="text-slate-500 text-center py-3">해당 기간 완료 기록이 없습니다.</div>';
                 const xpKey = _researchPeriod === 'today' ? 'xpGainToday' : 'xpGainWeek';
                 const sortedXp = [...(stats.perStudent || [])].sort((a, b) => (b[xpKey] || 0) - (a[xpKey] || 0));
+                // #107: 눌렀다가 취소한 퀘스트의 XP는 증가량에서 빼고, 취소 횟수를 이름 옆에 보여 줘요.
+                const cancelKey = _researchPeriod === 'today' ? 'cancelToday' : (_researchPeriod === 'all' ? 'cancelAll' : 'cancelWeek');
                 const xpTop = sortedXp.slice(0, 5).map((r, i) =>
-                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${r.name}</span><span class="text-sb-blue font-bold">+${r[xpKey] || 0} XP</span></div>`
+                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${r.name}${r[cancelKey] ? ` <span class="text-amber-300 font-bold">↩ 취소 ${r[cancelKey]}</span>` : ''}</span><span class="text-sb-blue font-bold">+${r[xpKey] || 0} XP</span></div>`
                 ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                const cancelTotal = _researchPeriod === 'today' ? stats.questCancelToday : (_researchPeriod === 'all' ? stats.questCancelAll : stats.questCancelWeek);
+                const cancelRows = [...(stats.perStudent || [])].filter((r) => r[cancelKey] > 0).sort((a, b) => b[cancelKey] - a[cancelKey]);
+                const cancelHtml = cancelRows.length
+                    ? cancelRows.map((r) => `<span class="inline-block mr-2">${r.name} <strong class="text-amber-300">${r[cancelKey]}</strong></span>`).join('')
+                    : '<span class="text-slate-500">없음</span>';
                 const completionRate = _researchPeriod === 'today' ? stats.todayCompletionRate
                     : (_researchPeriod === 'all' ? (stats.allCompletionRate ?? stats.weekCompletionRate) : stats.weekCompletionRate);
                 const avgXp = _researchPeriod === 'today' ? stats.avgXpGainToday : stats.avgXpGainWeek;
@@ -23686,6 +23695,11 @@ ${subjectLine}
                     <div>
                         <div class="text-[9px] text-sb-blue font-bold mb-1">XP 증가량 상위</div>
                         ${xpTop}
+                    </div>
+                    <div class="rounded-lg border border-amber-500/30 bg-amber-950/20 p-2 text-[9px]">
+                        <div class="text-amber-200 font-bold mb-1">↩ 눌렀다가 취소한 퀘스트 · ${cancelTotal || 0}건</div>
+                        <div>${cancelHtml}</div>
+                        <div class="text-slate-500 mt-1">취소한 퀘스트는 완료 수에 넣지 않고, 되돌린 XP도 증가량에서 뺐어요.</div>
                     </div>`;
                 panels.forEach((panel) => { panel.innerHTML = html; });
             } catch (e) {
@@ -23955,6 +23969,7 @@ ${subjectLine}
                 rows = patchStudentQuestBoardRow(rows, sid, {
                     questHistory: window.playerState.questHistory,
                     quests: window.playerState.quests,
+                    questCancels: window.playerState.questCancels,
                 });
             }
             
@@ -23967,6 +23982,7 @@ ${subjectLine}
             const colDone = dailyQuests.map(() => 0);
             let sumDoneAll = 0;
             let allClearStudents = 0;
+            let cancelCount = 0;
 
             const headCells = dailyQuests.map((q, qi) => 
                 `<th class="p-0.5 sm:p-1 text-center font-normal border-b border-slate-700/90 bg-slate-900/95 min-w-[1.65rem]" title="${q.name} · ${q.desc}">
@@ -23985,6 +24001,10 @@ ${subjectLine}
                         rowDone++;
                         colDone[qi]++;
                     }
+                    // #107: 눌렀다가 취소한 칸은 '안 함'(·)과 구별해서 보여 줘요.
+                    const cancelled = !ok && !!(stu && questCancelledOnDate(stu, q.id, todayStr));
+                    if (cancelled) cancelCount++;
+                    if (cancelled) return `<td class="p-0.5 text-center border-b border-slate-800/80 text-amber-300" title="${q.name}: 눌렀다가 취소했어요"><span class="font-black" aria-label="취소">↩</span></td>`;
                     return `<td class="p-0.5 text-center border-b border-slate-800/80 ${ok ? 'text-emerald-400' : 'text-slate-600'}"><span class="font-black">${ok ? '✓' : '·'}</span></td>`;
                 }).join('');
                 sumDoneAll += rowDone;
@@ -24020,6 +24040,9 @@ ${subjectLine}
                 <div class="flex flex-nowrap gap-1 overflow-x-auto px-1 py-1 border-t border-slate-700/60 bg-slate-900/40 max-w-full">
                     <span class="text-[8px] text-slate-500 font-bold shrink-0 self-center">열별 완료</span>
                     ${badgeLine}
+                </div>
+                <div class="px-1 py-1 border-t border-slate-700/60 bg-slate-900/40 text-[8px] text-slate-400 font-bold">
+                    <span class="text-emerald-400">✓</span> 완료 · <span class="text-amber-300">↩</span> 눌렀다가 취소${cancelCount ? ` (오늘 ${cancelCount}건)` : ''} · <span class="text-slate-500">·</span> 아직 안 함
                 </div>`;
             boards.forEach((board) => { board.innerHTML = html; });
 
@@ -29083,6 +29106,16 @@ ${subjectLine}
                 if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
 
                 let deductXp = catalogQuestRewards(getQuestCatalog().find((q) => q.id === qId), xp, bong).xp;
+                // #107: 눌렀다가 취소한 것을 남겨서, 서로 보는 현황판·통계에 '취소'로 보이게 해요.
+                {
+                    const cancelMeta = getQuestCatalog().find((q) => q.id === qId);
+                    window.playerState.questCancels = recordQuestCancel(window.playerState.questCancels, {
+                        id: qId,
+                        name: cancelMeta ? cancelMeta.name : qId,
+                        date: getLocalDateStr(),
+                        timestamp: Date.now(),
+                    });
+                }
                 if (window.playerState.questHistory) {
                     const dateStr = getLocalDateStr();
                     const idx = window.playerState.questHistory.map(q => q.id === qId && q.date === dateStr).lastIndexOf(true);
@@ -31614,7 +31647,7 @@ ${subjectLine}
         const STUDENT_GAME_FIELD_KEYS = [
             'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
-            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
+            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'questCancels', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
             'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
@@ -32120,6 +32153,7 @@ ${subjectLine}
                 lunchBid: { date: '', amount: 0 },
                 lastLunchDeductDate: '',
                 questHistory: [],
+                questCancels: [],
                 usedRaidPasswords: [],
                 bankRegularSavings: 0,
                 bankTermDeposits: [],

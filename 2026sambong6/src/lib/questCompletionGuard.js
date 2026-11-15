@@ -51,6 +51,35 @@ export function questHistoryHasInRange(history, qId, startStr, endStr) {
     });
 }
 
+/* ---------- 눌렀다가 취소한 퀘스트(#107) ---------- */
+
+/** 취소 기록은 최근 몇 개까지 남길지 */
+export const QUEST_CANCEL_LOG_LIMIT = 60;
+/** 퀘스트 취소 때 XP 변동 기록(xpChangeLog)에 남는 사유의 앞머리 */
+export const QUEST_CANCEL_REASON_PREFIX = '퀘스트 취소';
+
+/** 취소 기록 목록에 하나를 더해요(최근 것만 남겨요). */
+export function recordQuestCancel(list, { id, name = '', date = '', timestamp = 0 } = {}, limit = QUEST_CANCEL_LOG_LIMIT) {
+    const cur = (Array.isArray(list) ? list : []).filter((c) => c && c.id && c.date);
+    const qid = String(id || '').trim();
+    if (!qid || !date) return cur.slice(-limit);
+    return cur.concat({ id: qid, name: String(name || qid).slice(0, 60), date: String(date), timestamp: Math.max(0, Math.floor(Number(timestamp) || 0)) }).slice(-limit);
+}
+
+/**
+ * 그날 이 퀘스트를 눌렀다가 취소했는지. 취소한 뒤 다시 완료했으면 false예요(완료가 이겨요).
+ * 취소 기록(questCancels)을 보고, 이 기능이 생기기 전 취소는 XP 변동 기록의 '퀘스트 취소: {id}'로 알아봐요.
+ */
+export function questCancelledOnDate(state, qId, dateStr) {
+    const s = state && typeof state === 'object' ? state : {};
+    const id = String(qId || '');
+    if (!id || !dateStr) return false;
+    if (questHistoryHasOnDate(s.questHistory, id, dateStr)) return false;
+    if ((Array.isArray(s.questCancels) ? s.questCancels : []).some((c) => c && String(c.id) === id && c.date === dateStr)) return true;
+    const reason = `${QUEST_CANCEL_REASON_PREFIX}: ${id}`;
+    return (Array.isArray(s.xpChangeLog) ? s.xpChangeLog : []).some((log) => log && log.reason === reason && toLocalYmd(new Date(Number(log.at) || 0)) === dateStr);
+}
+
 /** 오늘 일일 퀘스트 실제 완료 — 기록 날짜가 오늘인 경우만 */
 export function isDailyQuestCompletedToday(state, qId, todayStr) {
     return questHistoryHasOnDate(state && state.questHistory, qId, todayStr);

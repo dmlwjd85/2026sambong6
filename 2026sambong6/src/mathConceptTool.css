@@ -87,3 +87,7 @@
 .mathviz-grade { min-height: 40px; border-radius: 0.7rem; border: 2px solid #334155; background: #0f172a; color: #e2e8f0; font-size: 13px; font-weight: 900; cursor: pointer; }
 .mathviz-grade.is-on { background: #7c3aed; border-color: #ddd6fe; color: #fff; }
 .mathviz-root:fullscreen .mathviz-stage, .mathviz-root.is-full .mathviz-stage { width: min(100%, calc((100vh - 20rem) * 800 / 520)); }
+
+/* 읽어 주는 목소리 고르기 */
+.mathviz-voice { height: 36px; max-width: 190px; padding: 0 0.5rem; border-radius: 10px; border: 1px solid #67e8f9; background: #0f172a; color: #e2e8f0; font-size: 12px; font-weight: 700; }
+.mathviz-voice[hidden] { display: none; }

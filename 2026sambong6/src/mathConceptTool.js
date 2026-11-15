@@ -11,19 +11,23 @@ import { MATH_H, MATH_UNITS, MATH_W, findMathConcept, mathGrades, renderMathConc
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const KEY = 'sambong_math_concept';
 /** 자동 재생에서 한 단계를 보여 주는 시간(ms) */
+import { koreanVoices, pickVoice, speechFallbackMs, speechText } from './lib/mathSpeech.js';
+
 const STEP_MS = 2800;
+/** 읽어 주기가 끝난 뒤 다음 단계로 넘어가기 전 쉬는 시간 */
+const AFTER_SPEECH_MS = 700;
 
 export function createMathConceptTool({ root, toast = () => {} } = {}) {
     const host = () => (typeof root === 'function' ? root() : root);
     const FIRST = MATH_UNITS.find((u) => u.grade === 6) || MATH_UNITS[0];
-    const st = { unit: FIRST.id, concept: FIRST.concepts[0].id, params: {}, bound: false, step: 0, playing: false, timer: 0, speak: false };
+    const st = { unit: FIRST.id, concept: FIRST.concepts[0].id, params: {}, bound: false, step: 0, playing: false, timer: 0, speak: false, voice: '', sayId: 0, sayTimer: 0 };
     try {
         const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-        if (saved && saved.unit) { st.unit = String(saved.unit); st.concept = String(saved.concept || ''); st.params = saved.params && typeof saved.params === 'object' ? saved.params : {}; st.speak = saved.speak === true; }
+        if (saved && saved.unit) { st.unit = String(saved.unit); st.concept = String(saved.concept || ''); st.params = saved.params && typeof saved.params === 'object' ? saved.params : {}; st.speak = saved.speak === true; st.voice = typeof saved.voice === 'string' ? saved.voice : ''; }
     } catch (_) { /* 저장값이 없으면 처음 단원부터 */ }
     let last = null;
 
-    const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ unit: st.unit, concept: st.concept, params: st.params, speak: st.speak })); } catch (_) { /* 저장 공간이 없으면 넘어가요 */ } };
+    const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ unit: st.unit, concept: st.concept, params: st.params, speak: st.speak, voice: st.voice })); } catch (_) { /* 저장 공간이 없으면 넘어가요 */ } };
     const total = () => (last ? last.steps.length : 1);
 
     function paramHtml(p, value) {
@@ -45,24 +49,47 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
 
     /* ---------- 단계 애니메이션 ---------- */
 
+    const synthOf = () => { try { return typeof SpeechSynthesisUtterance !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null; } catch (_) { return null; } };
+    const voicesNow = () => { const sy = synthOf(); try { return sy ? koreanVoices(sy.getVoices()) : []; } catch (_) { return []; } };
+
+    function hush() {
+        st.sayId += 1; // 읽던 문장의 "끝났어요" 신호는 무시해요.
+        if (st.sayTimer) clearTimeout(st.sayTimer);
+        st.sayTimer = 0;
+        try { const sy = synthOf(); if (sy) sy.cancel(); } catch (_) { /* 읽어 주기가 없는 기기 */ }
+    }
+
     function stopPlay() {
         if (st.timer) clearTimeout(st.timer);
         st.timer = 0;
         st.playing = false;
-        try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) { /* 읽어 주기가 없는 기기 */ }
+        hush();
     }
 
-    function say(line) {
-        if (!st.speak) return;
+    /** 한 문장을 읽어요. 다 읽으면(또는 읽을 수 없으면) onDone 을 꼭 한 번 불러요. 읽기 시작했으면 true */
+    function say(line, onDone) {
+        const done = () => { if (onDone) onDone(); };
+        const sy = st.speak ? synthOf() : null;
+        if (!sy) { done(); return false; }
+        hush();
+        const id = st.sayId;
+        let finished = false;
+        const finish = () => { if (finished || id !== st.sayId) return; finished = true; if (st.sayTimer) clearTimeout(st.sayTimer); st.sayTimer = 0; done(); };
         try {
-            const synth = window.speechSynthesis;
-            if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;
-            synth.cancel();
-            const u = new SpeechSynthesisUtterance(String(line).replace(/÷/g, ' 나누기 ').replace(/×/g, ' 곱하기 ').replace(/(\d+)\/(\d+)/g, '$2분의 $1').replace(/=/g, ' 는 '));
-            u.lang = 'ko-KR';
-            u.rate = 0.9;
-            synth.speak(u);
-        } catch (_) { /* 읽어 주기가 없는 기기 */ }
+            const words = speechText(line);
+            const u = new SpeechSynthesisUtterance(words);
+            const v = pickVoice(sy.getVoices(), st.voice);
+            if (v) u.voice = v;
+            u.lang = v ? v.lang : 'ko-KR';
+            u.rate = 0.92;
+            u.onend = finish;
+            u.onerror = finish;
+            st.utter = u; // 읽는 동안 지워지지 않게 붙잡아 둬요(일부 브라우저에서 끝 신호가 사라져요).
+            sy.speak(u);
+            // 끝났다는 신호가 안 오는 기기를 위한 안전장치
+            st.sayTimer = setTimeout(finish, speechFallbackMs(words, u.rate));
+            return true;
+        } catch (_) { finish(); return false; }
     }
 
     /** 지금 단계까지의 조각만 보여 줘요. 방금 나온 조각은 움직이며 나타나요. */
@@ -95,23 +122,39 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         if (next) next.disabled = all;
     }
 
-    function go(step, { animate = true, speak = true } = {}) {
+    function go(step, { animate = true, speak = true, onSpoken = null } = {}) {
         st.step = Math.max(1, Math.min(total(), step));
         applyStep(animate);
-        if (speak && last) say(last.steps[st.step - 1]);
+        if (speak && last) return say(last.steps[st.step - 1], onSpoken);
+        if (onSpoken) onSpoken();
+        return false;
+    }
+
+    /** 자동 재생의 한 단계: 그림을 보여 주고, 설명을 끝까지 읽은 뒤(읽어 주기가 꺼져 있으면 정해진 시간 뒤) 다음으로 가요. */
+    function showAndWait(step) {
+        const started = Date.now();
+        let spoke = false;
+        let moved = false;
+        const next = () => {
+            if (moved || !st.playing) return;
+            moved = true;
+            // 읽기가 아주 짧아도 그림을 볼 시간은 주고, 읽기가 끝나면 조금 쉬었다 넘어가요.
+            const wait = Math.max(spoke ? AFTER_SPEECH_MS : 0, STEP_MS - (Date.now() - started));
+            st.timer = setTimeout(tick, wait);
+        };
+        spoke = go(step, { onSpoken: next });
     }
 
     function tick() {
         if (!st.playing) return;
         if (st.step >= total()) { st.playing = false; applyStep(false); return; }
-        go(st.step + 1);
-        st.timer = setTimeout(tick, STEP_MS + (st.speak ? 1200 : 0));
+        showAndWait(st.step + 1);
     }
 
     function play() {
         if (st.playing) { stopPlay(); applyStep(false); return; }
         st.playing = true;
-        if (st.step >= total() || st.step === 0) { go(1); st.timer = setTimeout(tick, STEP_MS + (st.speak ? 1200 : 0)); } else tick();
+        if (st.step >= total() || st.step === 0) showAndWait(1); else tick();
         applyStep(false);
     }
 
@@ -127,6 +170,17 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         applyStep(false);
         const talk = el.querySelector('[data-math-talk]');
         if (talk) { talk.innerHTML = '<span>▶ 「설명 보기」를 누르면 한 단계씩 차근차근 보여 줘요.</span>'; talk.classList.add('is-idle'); }
+    }
+
+    /** 목소리 고르기 칸: 한국어 목소리가 둘 이상이고 읽어 주기가 켜져 있을 때만 보여요(자연스러운 순서). */
+    function fillVoices() {
+        const el = host();
+        const sel = el && el.querySelector('[data-math-voice]');
+        if (!sel) return;
+        const list = voicesNow();
+        const cur = pickVoice(list, st.voice);
+        sel.hidden = !(st.speak && list.length > 1);
+        sel.innerHTML = list.map((v, i) => `<option value="${esc(v.name)}"${cur && v.name === cur.name ? ' selected' : ''}>${i === 0 ? '⭐ ' : ''}${esc(v.name.replace(/^Microsoft\s+|\s*-\s*Korean.*$/gi, ''))}</option>`).join('');
     }
 
     function render() {
@@ -164,6 +218,7 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
                         <button type="button" class="mathviz-btn" data-math="next" aria-label="다음 단계">다음 ▶</button>
                         <span class="mathviz-dots" data-math-dots></span>
                         <button type="button" class="mathviz-btn${st.speak ? ' is-on' : ''}" data-math="speak" aria-pressed="${st.speak}">${st.speak ? '🔊 읽어 주기 켬' : '🔈 읽어 주기'}</button>
+                        <select class="mathviz-voice" data-math-voice aria-label="읽어 주는 목소리" hidden></select>
                         <button type="button" class="mathviz-btn" data-math="all">전체 그림</button>
                     </div>
                 </div>
@@ -179,6 +234,9 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
         st.rendering = false;
         st.step = total();
         applyStep(false);
+        fillVoices();
+        // 목소리 목록은 조금 늦게 준비되는 기기가 있어요.
+        if (!st.voiceHook) { const sy = synthOf(); if (sy && sy.addEventListener) { st.voiceHook = true; sy.addEventListener('voiceschanged', fillVoices); } }
         remember();
     }
 
@@ -299,7 +357,7 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
             else if (a === 'next') { stopPlay(); go(st.step >= total() ? 1 : st.step + 1); }
             else if (a === 'goto') { stopPlay(); go(Number(t.getAttribute('data-step-to')) || 1); }
             else if (a === 'all') { stopPlay(); st.step = total(); applyStep(false); const talk = el.querySelector('[data-math-talk]'); if (talk) { talk.innerHTML = `<span>${esc(last.caption)}</span>`; talk.classList.remove('is-idle'); } }
-            else if (a === 'speak') { st.speak = !st.speak; if (!st.speak) { try { window.speechSynthesis.cancel(); } catch (_) { /* 무시 */ } } t.classList.toggle('is-on', st.speak); t.textContent = st.speak ? '🔊 읽어 주기 켬' : '🔈 읽어 주기'; t.setAttribute('aria-pressed', String(st.speak)); remember(); if (st.speak && last && st.step >= 1) say(last.steps[Math.min(st.step, total()) - 1]); }
+            else if (a === 'speak') { st.speak = !st.speak; if (!st.speak) hush(); fillVoices(); t.classList.toggle('is-on', st.speak); t.textContent = st.speak ? '🔊 읽어 주기 켬' : '🔈 읽어 주기'; t.setAttribute('aria-pressed', String(st.speak)); remember(); if (st.speak && last && st.step >= 1) say(last.steps[Math.min(st.step, total()) - 1]); }
             else void act(a);
         });
         // 적는 동안에는 그림만 바꾸고, 다 적으면(칸을 벗어나면) 그릴 수 있는 값으로 칸도 고쳐요.
@@ -311,6 +369,8 @@ export function createMathConceptTool({ root, toast = () => {} } = {}) {
             remember();
         });
         el.addEventListener('change', (e) => {
+            const vs = e.target.closest('[data-math-voice]');
+            if (vs) { st.voice = vs.value; remember(); if (!st.playing && last && st.step >= 1) say(last.steps[Math.min(st.step, total()) - 1]); return; }
             const t = e.target.closest('[data-math-param]');
             if (!t || st.rendering) return; // 다시 그리는 중에 칸이 사라지며 나는 change 는 무시해요
             const key = t.getAttribute('data-math-param');

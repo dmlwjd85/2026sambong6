@@ -222,3 +222,13 @@
 .raid-fx-smash { position: absolute; width: 150px; height: 150px; margin: -75px; border-radius: 50%; background: radial-gradient(circle, #fff 0 18%, #fca5a5 30%, rgba(239, 68, 68, 0.75) 48%, transparent 70%); animation: raid-burst 0.45s ease-out forwards; pointer-events: none; }
 .raid-fx-red.is-single { background: radial-gradient(ellipse at 50% 80%, transparent 30%, rgba(220, 38, 38, 0.55) 100%); box-shadow: inset 0 0 60px 14px #dc2626; }
 .raid-fx-num.is-big b { font-size: 34px; }
+
+/* 준비 표시·데려갈 펫 고르기 */
+.raid-ready { font-style: normal; font-size: 13px; flex: 0 0 auto; }
+.raid-member:has(.raid-ready.is-on) { border-color: #4ade80; }
+.raid-petpick { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: 0.35rem; }
+.raid-petpick-item { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 0.35rem 0.2rem; border-radius: 0.7rem; border: 2px solid rgba(148, 163, 184, 0.3); background: rgba(15, 23, 42, 0.7); color: #e2e8f0; cursor: pointer; min-height: 44px; }
+.raid-petpick-item .raid-member-art { flex: 0 0 auto; width: 2.6rem; height: 2.6rem; }
+.raid-petpick-item b { font-size: 12px; font-weight: 900; }
+.raid-petpick-item i { font-style: normal; font-size: 10px; color: #94a3b8; }
+.raid-petpick-item.is-on { border-color: #fbbf24; background: rgba(120, 53, 15, 0.5); }

@@ -24,6 +24,7 @@ import {
     oxbErrorText,
     oxbMember,
     oxbTurnInfo,
+    readyOxbRoom,
     reopenOxbRoom,
     sanitizeOxbProgress,
     sanitizeOxbRoom,
@@ -172,16 +173,22 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
         }
         await tx(r.id, (cur) => leaveOxbRoom(cur, { id: me(), now: Date.now() }));
     }
-    async function start() {
+    /** 준비 / 준비 취소. 내가 마지막으로 준비해서 모두 준비가 되면(인원도 맞으면) 바로 전투가 시작돼요. */
+    async function ready() {
         const r = myRoom();
-        if (!r) return;
+        if (!r || r.status !== 'open') return;
+        const mineNow = r.members.find((m) => m.id === me());
+        const want = !(mineNow && mineNow.ready);
         const deck = buildOxbDeck((getBank() || {}).questions);
+        if (want && deck.length < 5) { void api.alert(oxbErrorText('no_questions')); return; }
         const seed = Math.floor(Math.random() * 2147483646) + 1;
-        // 출발할 때 팀원 장비를 그대로 쓰고, 내 장비는 지금 것으로 새로 고쳐요.
-        const mine = myMember();
+        const mine = myMember(); // 내 장비는 준비하는 순간의 것으로 새로 고쳐요
+        sfx.cursor();
         await tx(r.id, (cur) => {
-            const joined = mine ? joinOxbRoom(cur, { member: mine, now: Date.now() }) : { ok: true, room: cur };
-            return startOxbFight(joined.ok ? joined.room : cur, { id: me(), settings: cfg(), deck, seed, now: Date.now() });
+            const rd = readyOxbRoom(cur, { id: me(), ready: want, member: mine, now: Date.now() });
+            if (!rd.ok || !rd.allReady || rd.room.members.length < cfg().minParty) return rd;
+            const started = startOxbFight(rd.room, { id: me(), settings: cfg(), deck, seed, now: Date.now() });
+            return started.ok ? started : rd;
         });
     }
     async function again() {
@@ -609,6 +616,8 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
         const b = c.bosses[r.bossIdx];
         const enough = r.members.length >= c.minParty;
         const done = r.status === 'fight'; // 전투가 끝났고 방장이 아직 다시 모으지 않았어요
+        const readyCount = r.members.filter((m) => m.ready).length;
+        const iAmReady = r.members.some((m) => m.id === me() && m.ready);
         return `<div class="oxb-win oxb-room">
             <p class="oxb-room-boss"><span>${esc(b.icon)}</span><b>${esc(b.name)}</b><i>체력 ${(b.hpPer * r.members.length).toLocaleString()} · 공격 ${b.atk} · 보상 ${esc(boss.bong(b.bong))}</i></p>
             ${leader && !done ? `<div class="oxb-bosses">${c.bosses.map((_, i) => bossCard(i, c, i === r.bossIdx)).join('')}</div>` : ''}
@@ -617,10 +626,11 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
                 <span class="oxb-member-no">${i + 1}</span>
                 <span class="oxb-member-face">${boss.avatar ? boss.avatar(m.id) : '🧑'}</span>
                 <span class="oxb-member-text"><b>${m.id === r.leaderId ? '👑 ' : ''}${esc(m.name)}</b><i>${esc(statLine(m))}</i></span>
+                ${done ? '' : `<span class="oxb-ready${m.ready ? ' is-on' : ''}">${m.ready ? '✅ 준비 완료' : '⏳ 준비 중'}</span>`}
             </div>`).join('')}</div>
             ${done ? '<p class="oxc-lead oxc-center">전투가 끝났어요. 방장이 다시 모으면 또 갈 수 있어요.</p>'
-                : leader ? `<button type="button" class="ox-go" data-oxb="start"${enough ? '' : ' disabled'}>⚔️ 전투 시작!${enough ? '' : ` (${c.minParty}명부터)`}</button>`
-                    : '<p class="oxc-lead oxc-center">방장이 시작하면 전투가 열려요. 기다려 주세요!</p>'}
+                : `<p class="oxc-lead oxc-center">${enough ? `모두 「준비」를 누르면 바로 시작해요! (${readyCount}/${r.members.length}명 준비)` : `${c.minParty}명이 모여야 시작할 수 있어요. 친구를 기다려요! (${readyCount}/${r.members.length}명 준비)`}</p>
+                <button type="button" class="ox-go oxb-readybtn${iAmReady ? ' is-on' : ''}" data-oxb="ready">${iAmReady ? '준비 취소' : '⚔️ 준비!'}</button>`}
             ${leader && done ? '<button type="button" class="ox-go" data-oxb="again">같은 팀으로 다시 모으기</button>' : ''}
             <button type="button" class="ox-text-btn oxb-leave" data-oxb="leave">${leader ? '방 없애기' : '팀에서 나가기'}</button>
         </div>`;
@@ -712,7 +722,7 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
         else if (act === 'create') void create();
         else if (act === 'join') void join(t.getAttribute('data-room'));
         else if (act === 'leave') void leave();
-        else if (act === 'start') void start();
+        else if (act === 'ready') void ready();
         else if (act === 'again') void again();
         else if (act === 'set-save') void saveSettings(false);
         else if (act === 'set-reset') void saveSettings(true);

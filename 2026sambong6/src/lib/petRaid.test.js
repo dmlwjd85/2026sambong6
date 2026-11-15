@@ -108,7 +108,8 @@ describe('탐험 방', () => {
         const made = R.createRaidParty({ member: member(0), stage: 1, unlocked: 1, now: T0 });
         assert.equal(made.ok, true);
         assert.equal(R.createRaidParty({ member: member(0), stage: 2, unlocked: 1 }).error, 'locked_stage');
-        assert.equal(R.startRaid(made.party, { id: '1', seed: 5, now: T0 }).error, 'need_party');
+        assert.equal(R.startRaid(made.party, { id: '1', seed: 5, now: T0 }).error, 'not_ready');
+        assert.equal(R.startRaid(allReady(made.party), { id: '1', seed: 5, now: T0 }).error, 'need_party');
         let party = R.joinRaidParty(made.party, { member: member(1), max: 13, now: T0 }).party;
         // 같은 사람이 다시 들어오면 정보만 바뀌어요
         party = R.joinRaidParty(party, { member: { ...member(1), power: 500 }, max: 13, now: T0 }).party;
@@ -116,8 +117,11 @@ describe('탐험 방', () => {
         assert.equal(party.members[1].power, 500);
         assert.equal(R.joinRaidParty(party, { member: member(2), max: 2, now: T0 }).error, 'full');
         assert.equal(R.joinRaidParty(party, { member: member(2), max: 13, now: T0 + R.RAID_PARTY_TTL_MS + 1 }).error, 'stale');
-        assert.equal(R.startRaid(party, { id: '2', seed: 5, now: T0 }).error, 'leader_only');
-        const started = R.startRaid(party, { id: '1', seed: 5, now: T0 + 1000 });
+        assert.equal(R.startRaid(party, { id: '2', seed: 5, now: T0 }).error, 'not_ready');
+        party = allReady(party);
+        assert.equal(R.startRaid(party, { id: '9', seed: 5, now: T0 }).error, 'not_member');
+        const started = R.startRaid(party, { id: '2', seed: 5, now: T0 + 1000 }); // 방장이 아니어도 모두 준비되면 출발해요
+        assert.equal(started.party.run.members.some((m) => m.ready), false);
         assert.equal(started.party.status, 'fight');
         assert.equal(started.party.run.win, started.sim.win);
         assert.equal(R.joinRaidParty(started.party, { member: member(2), now: T0 }).error, 'fighting');
@@ -177,10 +181,11 @@ describe('최소 인원 설정', () => {
         const m = (id) => R.raidMemberFromPet(pet, { id, name: `학생${id}`, now: 1000, today: '2026-11-16' });
         let party = R.createRaidParty({ member: m('1'), stage: 1, unlocked: 1, now: 1000 }).party;
         assert.equal(R.sanitizeRaidSettings(null).minParty, 2);
+        party = allReady(party);
         assert.equal(R.startRaid(party, { id: '1', seed: 5, now: 1000 }).error, 'need_party');
         assert.equal(R.startRaid(party, { id: '1', settings: { minParty: 1 }, seed: 5, now: 1000 }).ok, true);
         party = R.joinRaidParty(party, { member: m('2'), max: 13, now: 1000 }).party;
-        assert.equal(R.startRaid(party, { id: '1', settings: { minParty: 3 }, seed: 5, now: 1000 }).error, 'need_party');
+        assert.equal(R.startRaid(allReady(party), { id: '1', settings: { minParty: 3 }, seed: 5, now: 1000 }).error, 'need_party');
         assert.equal(R.raidMaxParty({ minParty: 5, maxParty: 3 }, 13), 5);
     });
 });
@@ -214,5 +219,36 @@ describe('기술과 보스 공격 방식', () => {
         assert.ok(R.simulateRaid(team, { type: 'rock', hp: 999999, atk: 10, aoe: 0 }, 3).rounds.every((rd) => rd.bossMove === 'single'));
         assert.ok(R.simulateRaid(team, { type: 'rock', hp: 999999, atk: 10, aoe: 100 }, 3).rounds.every((rd) => rd.bossMove === 'all'));
         assert.equal(R.sanitizeRaidSettings(null).stages[9].aoe, 50);
+    });
+});
+
+/** 팀원 모두 '준비'를 누른 방 */
+function allReady(party) {
+    let x = party;
+    party.members.forEach((m) => { x = R.readyRaidParty(x, { id: m.id, ready: true, now: 1000 }).party; });
+    return x;
+}
+
+describe('준비 버튼', () => {
+    const pet = (species) => ({ phase: 'pet', species, stage: 1, level: 5, exp: 0, enhance: 0, full: 90, fedAt: 1000 });
+    const m = (id, species = 'emberkit') => R.raidMemberFromPet(pet(species), { id, name: `학생${id}`, now: 1000, today: '2026-11-16' });
+    it('모두 준비해야 출발하고, 펫을 바꾸거나 스테이지가 바뀌면 다시 준비해요', () => {
+        let party = R.createRaidParty({ member: m('1'), stage: 1, unlocked: 3, now: 1000 }).party;
+        party = R.joinRaidParty(party, { member: m('2'), max: 13, now: 1000 }).party;
+        let r = R.readyRaidParty(party, { id: '1', now: 1000 });
+        assert.deepEqual([r.ok, r.allReady], [true, false]);
+        r = R.readyRaidParty(r.party, { id: '2', now: 1000 });
+        assert.equal(r.allReady, true);
+        assert.equal(R.readyRaidParty(r.party, { id: '9', now: 1000 }).error, 'not_member');
+        assert.equal(R.readyRaidParty(r.party, { id: '2', ready: false, now: 1000 }).allReady, false);
+        // 펫을 바꾸면(다시 들어오면) 그 사람만 준비가 풀리고 자리는 그대로예요
+        const swapped = R.joinRaidParty(r.party, { member: m('1', 'dropotter'), max: 13, now: 1000 }).party;
+        assert.deepEqual(swapped.members.map((x) => [x.id, x.species, !!x.ready]), [['1', 'dropotter', false], ['2', 'emberkit', true]]);
+        // 스테이지를 바꾸면 모두 다시 준비, 같은 스테이지면 그대로
+        assert.equal(R.setRaidStage(r.party, { id: '1', stage: 2, unlocked: 3, now: 1000 }).party.members.some((x) => x.ready), false);
+        assert.equal(R.setRaidStage(r.party, { id: '1', stage: 1, unlocked: 3, now: 1000 }).party.members.every((x) => x.ready), true);
+        // 전투 뒤 다시 모으면 준비도 처음부터
+        const fought = R.startRaid(r.party, { id: '2', seed: 3, now: 2000 }).party;
+        assert.equal(R.reopenRaidParty(fought, { id: '1', now: 3000 }).party.members.some((x) => x.ready), false);
     });
 });

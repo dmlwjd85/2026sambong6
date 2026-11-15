@@ -207,3 +207,8 @@
 /* 보스가 누구를 때릴지 고르는 순간 */
 .oxb-hero.is-aim .oxb-avatar { animation: oxb-aim 0.5s steps(4); }
 @keyframes oxb-aim { 50% { filter: drop-shadow(0 0 8px #ef4444) brightness(1.15); transform: translateY(-3px); } }
+
+/* 준비 표시 */
+.oxb-ready { margin-left: auto; flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 900; background: rgba(8, 12, 48, 0.8); border: 1px solid rgba(248, 250, 252, 0.3); color: #cbd5e1; text-shadow: none; }
+.oxb-ready.is-on { background: #166534; border-color: #86efac; color: #dcfce7; }
+.oxb-readybtn.is-on { background: #334155; border-color: #94a3b8; color: #e2e8f0; }

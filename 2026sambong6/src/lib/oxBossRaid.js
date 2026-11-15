@@ -152,6 +152,7 @@ function sanitizeMember(raw) {
         fIcon: text(m.fIcon, 4),
     };
     if (m.hp != null) out.hp = int(m.hp, 0, OXB_PLAYER_HP);
+    if (m.ready === true) out.ready = true; // 방에서 '준비'를 눌렀는지
     return out;
 }
 
@@ -238,8 +239,9 @@ export function joinOxbRoom(raw, { member, now = 0 } = {}) {
     if (!m) return fail('no_member');
     if (room.status !== 'open') return fail('started');
     delete m.hp;
+    delete m.ready; // 새로 들어오면 아직 준비 전이에요
     const at = room.members.findIndex((x) => x.id === m.id);
-    if (at >= 0) room.members[at] = m; // 다시 들어오면 장비만 새로 고쳐요
+    if (at >= 0) { if (room.members[at].ready) m.ready = true; room.members[at] = m; } // 다시 들어오면 장비만 새로 고쳐요
     else if (room.members.length >= OXB_MAX_PARTY) return fail('full');
     else room.members.push(m);
     room.updatedAt = int(now);
@@ -263,9 +265,34 @@ export function setOxbBoss(raw, { id, bossIdx, now = 0 } = {}) {
     if (!room) return fail('no_room');
     if (cleanId(id) !== room.leaderId) return fail('not_leader');
     if (room.status !== 'open') return fail('started');
-    room.bossIdx = int(bossIdx, 0, OXB_DEFAULT_BOSSES.length - 1);
+    const next = int(bossIdx, 0, OXB_DEFAULT_BOSSES.length - 1);
+    // 보스가 바뀌면 모두 다시 준비해야 해요.
+    if (next !== room.bossIdx) room.members.forEach((m) => { delete m.ready; });
+    room.bossIdx = next;
     room.updatedAt = int(now);
     return { ok: true, room };
+}
+
+/** 모두 준비했는지 */
+export function isOxbAllReady(room) {
+    return !!room && room.members.length > 0 && room.members.every((m) => m.ready === true);
+}
+
+/** 준비 / 준비 취소. member 를 주면 내 장비도 지금 것으로 새로 고쳐요. */
+export function readyOxbRoom(raw, { id, ready = true, member = null, now = 0 } = {}) {
+    const room = sanitizeOxbRoom(raw);
+    if (!room) return fail('no_room');
+    if (room.status !== 'open') return fail('started');
+    const me = cleanId(id);
+    const at = room.members.findIndex((m) => m.id === me);
+    if (at < 0) return fail('not_member');
+    const fresh = member ? sanitizeMember(member) : null;
+    const m = fresh && fresh.id === me ? fresh : room.members[at];
+    delete m.hp;
+    if (ready) m.ready = true; else delete m.ready;
+    room.members[at] = m;
+    room.updatedAt = int(now);
+    return { ok: true, room, allReady: isOxbAllReady(room) };
 }
 
 /** 문제 은행에서 이번 전투에 쓸 문제 묶음을 섞어 뽑아요. */
@@ -283,8 +310,10 @@ export function buildOxbDeck(questions, rnd = Math.random) {
 export function startOxbFight(raw, { id, settings = null, deck = [], seed = 1, now = 0 } = {}) {
     const room = sanitizeOxbRoom(raw);
     if (!room) return fail('no_room');
-    if (cleanId(id) !== room.leaderId) return fail('not_leader');
+    // 팀원 모두가 '준비'를 눌러야 시작해요. 마지막으로 준비한 사람의 화면이 시작을 걸어요.
+    if (!room.members.some((m) => m.id === cleanId(id))) return fail('not_member');
     if (room.status === 'fight' && room.fight && !room.fight.result) return fail('started');
+    if (!isOxbAllReady(room)) return fail('not_ready');
     const cfg = sanitizeOxbSettings(settings);
     if (room.members.length < cfg.minParty) return fail('too_few');
     if (!Array.isArray(deck) || deck.length < 5) return fail('no_questions');
@@ -299,7 +328,7 @@ export function startOxbFight(raw, { id, settings = null, deck = [], seed = 1, n
         seed: int(seed) || 1,
         bossIdx: room.bossIdx,
         boss: { name: b.name, icon: b.icon, hp: maxHp, maxHp, atk: b.atk, bong: b.bong },
-        members: room.members.map((m) => ({ ...m, hp: OXB_PLAYER_HP })),
+        members: room.members.map((m) => { const x = { ...m, hp: OXB_PLAYER_HP }; delete x.ready; return x; }),
         deck,
         turn: 0,
         turnSec: cfg.turnSec,
@@ -402,6 +431,7 @@ export function reopenOxbRoom(raw, { id, now = 0 } = {}) {
     if (!room) return fail('no_room');
     if (cleanId(id) !== room.leaderId) return fail('not_leader');
     if (room.fight && !room.fight.result) room.fight = null; // 하다 만 전투는 버려요
+    room.members.forEach((m) => { delete m.ready; }); // 다시 모으면 준비도 처음부터
     room.status = 'open';
     room.updatedAt = int(now);
     return { ok: true, room };
@@ -444,6 +474,7 @@ export const OXB_ERROR_TEXT = Object.freeze({
     started: '이미 전투가 시작됐어요.',
     full: `한 팀은 ${OXB_MAX_PARTY}명까지예요.`,
     not_leader: '방장만 할 수 있어요.',
+    not_ready: '아직 준비하지 않은 친구가 있어요.',
     too_few: '사람이 모자라요. 친구를 더 불러요.',
     no_questions: 'OX 문제가 5개보다 적어요. 선생님이 문제를 올려 주셔야 해요.',
     fighting: '전투 중에는 나갈 수 없어요.',

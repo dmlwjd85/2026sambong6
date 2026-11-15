@@ -6,7 +6,7 @@
  * 팀원 화면마다 같은 씨앗으로 같은 전투를 다시 돌려 연출을 보여 준 뒤, 각자 자기 보상을 받아요.
  */
 import './petRaid.css';
-import { PET_SKILL_NAMES, PET_TYPES, grantPetExp, petBoxMain, petBoxMainIndex, petBoxToDoc, petBoxWith, sanitizePetBox } from './lib/petGame.js';
+import { PET_SKILL_NAMES, PET_SPECIES, PET_TYPES, grantPetExp, petBoxMainIndex, petBoxToDoc, petBoxWith, petPower, petView, sanitizePetBox } from './lib/petGame.js';
 import { petArtHtml, petImageUrl } from './lib/petArt.js';
 import {
     RAID_MAX_PARTY,
@@ -24,6 +24,7 @@ import {
     raidPetStats,
     raidTypeMult,
     raidUnlockedStage,
+    readyRaidParty,
     reopenRaidParty,
     replayRaidRun,
     sanitizeRaidParty,
@@ -33,6 +34,7 @@ import {
 } from './lib/petRaid.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const PET_SPECIES_TYPE = (species) => (PET_SPECIES[species] ? PET_SPECIES[species].type : 'fire');
 const TYPE_COLOR = Object.freeze({ fire: '#fb923c', water: '#38bdf8', grass: '#4ade80', electric: '#facc15', ice: '#a5f3fc', rock: '#d6b98c', star: '#c4b5fd' });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,7 +56,14 @@ export function createPetRaidView(ctx) {
     const box = () => sanitizePetBox(deps.state() && deps.state().pet);
     const raidCfg = () => sanitizeRaidSettings((deps.settings && deps.settings() && deps.settings().raid) || null);
     const maxParty = () => raidMaxParty(raidCfg(), deps.classSize ? deps.classSize() : RAID_MAX_PARTY);
-    const myMember = () => raidMemberFromPet(petBoxMain(box()), { id: me(), name: deps.selfName ? deps.selfName() : me(), now: ctx.now(), today: ctx.today() });
+    let pickSlot = -1; // 탐험에 데려갈 펫 칸(-1이면 대표 펫)
+    /** 데려갈 펫 칸: 고른 칸이 없거나 못 가는 펫이면 대표 펫 */
+    const raidSlot = () => {
+        const b = box();
+        const ok = (i) => i >= 0 && i < b.slots && b.list[i] && b.list[i].phase === 'pet' && !petView(b.list[i], ctx.now(), ctx.today()).away;
+        return ok(pickSlot) ? pickSlot : petBoxMainIndex(b);
+    };
+    const myMember = () => { const b = box(); const i = raidSlot(); return raidMemberFromPet(i >= 0 ? b.list[i] : null, { id: me(), name: deps.selfName ? deps.selfName() : me(), now: ctx.now(), today: ctx.today() }); };
     const unlocked = () => (ctx.free() ? RAID_STAGE_COUNT : raidUnlockedStage(box().raid));
     const liveParties = () => parties.filter((p) => !isRaidPartyStale(p, ctx.now()));
     // 내가 들어 있는 방은 오래돼도 내 방이에요(오래됐다고 안 보이면 '방 없애기'가 먹통이 돼요). 다른 사람에게만 안 보여요.
@@ -146,11 +155,29 @@ export function createPetRaidView(ctx) {
         await tx(p.id, (cur) => setRaidStage(cur, { id: me(), stage, unlocked: unlocked(), now: ctx.now() }));
     }
 
-    async function go() {
+    /** 준비 / 준비 취소. 내가 마지막으로 준비해서 모두 준비가 되면(인원도 맞으면) 바로 출발해요. */
+    async function ready() {
         const p = myParty();
-        if (!p) return;
+        if (!p || p.status !== 'open') return;
+        const mine = p.members.find((m) => m.id === me());
+        const want = !(mine && mine.ready);
         const seed = Math.floor(Math.random() * 2147483646) + 1;
-        await tx(p.id, (cur) => startRaid(cur, { id: me(), settings: raidCfg(), seed, now: ctx.now() }));
+        await tx(p.id, (cur) => {
+            const rd = readyRaidParty(cur, { id: me(), ready: want, now: ctx.now() });
+            if (!rd.ok || !rd.allReady || rd.party.members.length < raidCfg().minParty) return rd;
+            const started = startRaid(rd.party, { id: me(), settings: raidCfg(), seed, now: ctx.now() });
+            return started.ok ? started : rd;
+        });
+    }
+
+    /** 데려갈 펫 바꾸기(방 안에서도 돼요. 바꾸면 내 준비가 풀려요) */
+    async function swapPet(slotIndex) {
+        pickSlot = slotIndex;
+        const p = myParty();
+        const m = myMember();
+        if (!p || p.status !== 'open' || !m) { ctx.render(); return; }
+        await tx(p.id, (cur) => joinRaidParty(cur, { member: m, max: maxParty(), now: ctx.now() }));
+        ctx.render();
     }
 
     async function again() {
@@ -168,7 +195,10 @@ export function createPetRaidView(ctx) {
         const res = claimRaidReward(b.raid, run, { id: me(), today: ctx.today(), settings: raidCfg() });
         if (!res.ok) return null;
         let next = { ...b, raid: res.progress };
-        const idx = petBoxMainIndex(next);
+        // 경험치는 전투에 나간 펫이 받아요(그 펫을 못 찾으면 대표 펫).
+        const fought = run.members.find((m) => m.id === me());
+        const foughtIdx = fought ? next.list.findIndex((pp, i) => i < next.slots && pp.phase === 'pet' && pp.species === fought.species && pp.level === fought.level && pp.enhance === fought.enhance) : -1;
+        const idx = foughtIdx >= 0 ? foughtIdx : petBoxMainIndex(next);
         let levelUps = 0;
         if (idx >= 0 && res.exp > 0) {
             const grown = grantPetExp({ ...next.list[idx], dex: next.dex }, res.exp);
@@ -497,12 +527,13 @@ export function createPetRaidView(ctx) {
 
     const typeBadge = (t) => `<span class="pet-type type-${t}">${PET_TYPES[t].emoji} ${esc(PET_TYPES[t].name)}</span>`;
 
-    function memberChip(m, bossType, leaderId) {
+    function memberChip(m, bossType, leaderId, showReady = false) {
         const mult = raidTypeMult(m.type, bossType);
         return `<div class="raid-member type-${m.type}${m.id === me() ? ' is-me' : ''}">
             <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny })}</span>
             <span class="raid-member-text"><b>${m.id === leaderId ? '👑 ' : ''}${esc(m.name)}</b><i>${esc(m.petName)} · ${m.power}</i></span>
             ${mult > 1 ? '<em class="raid-eff is-good">유리 ▲</em>' : mult < 1 ? '<em class="raid-eff is-bad">불리 ▼</em>' : ''}
+            ${showReady ? `<em class="raid-ready${m.ready ? ' is-on' : ''}">${m.ready ? '✅' : '⏳'}</em>` : ''}
         </div>`;
     }
 
@@ -542,7 +573,33 @@ export function createPetRaidView(ctx) {
         </div>`;
     }
 
+    /** 데려갈 펫 고르기: 내 펫이 두 마리 이상일 때만 보여요. */
+    function petPickHtml(bossType) {
+        const b = box();
+        const cur = raidSlot();
+        const list = [];
+        for (let i = 0; i < b.slots; i += 1) {
+            const pp = b.list[i];
+            if (!pp || pp.phase !== 'pet') continue;
+            const v = petView(pp, ctx.now(), ctx.today());
+            if (v.away) continue;
+            list.push({ i, v });
+        }
+        if (list.length < 2) return '';
+        return `<p class="pet-sub">데려갈 펫 바꾸기 <em>(바꾸면 다시 준비해야 해요)</em></p>
+            <div class="raid-petpick">${list.map(({ i, v }) => {
+                const type = PET_SPECIES_TYPE(v.species);
+                const mult = bossType ? raidTypeMult(type, bossType) : 1;
+                return `<button type="button" class="raid-petpick-item type-${type}${i === cur ? ' is-on' : ''}" data-p="raid-pet" data-slot="${i}" aria-pressed="${i === cur}">
+                    <span class="raid-member-art">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny })}</span>
+                    <b>${esc(v.name)}</b><i>전투력 ${petPower(v)}${mult > 1 ? ' · 유리 ▲' : mult < 1 ? ' · 불리 ▼' : ''}</i>
+                </button>`;
+            }).join('')}</div>`;
+    }
+
     function partyHtml(p, cfg) {
+        const readyCount = p.members.filter((m) => m.ready).length;
+        const iAmReady = p.members.some((m) => m.id === me() && m.ready);
         const leader = p.leaderId === me();
         const max = maxParty();
         const total = p.members.reduce((s, m) => s + m.power, 0);
@@ -552,12 +609,12 @@ export function createPetRaidView(ctx) {
             ${bossCard(p.stage, cfg)}
             ${leader && !waiting ? `<label class="raid-stage-pick">스테이지 <select data-raid-stage>${stageOpts}</select></label>` : ''}
             <p class="pet-sub">우리 팀 ${p.members.length} / ${max}명 · 전투력 합 ${total.toLocaleString()}</p>
-            <div class="raid-members">${p.members.map((m) => memberChip(m, cfg.stages[p.stage - 1].type, p.leaderId)).join('')}</div>
+            <div class="raid-members">${p.members.map((m) => memberChip(m, cfg.stages[p.stage - 1].type, p.leaderId, !waiting)).join('')}</div>
+            ${waiting ? '' : petPickHtml(cfg.stages[p.stage - 1].type)}
             <p class="pet-note">사람이 많을수록 유리해요. 한 명 늘 때마다 팀 공격력이 ${cfg.teamBonus}%씩 세져요. 전투는 자동이에요.</p>
             ${waiting ? '<p class="pet-lead">전투가 끝났어요. 방장이 다시 모으면 또 갈 수 있어요.</p>'
-                : leader
-                    ? `<button type="button" class="pet-btn is-main" data-p="raid-go"${p.members.length >= cfg.minParty ? '' : ' disabled'}>⚔️ 출발! ${p.members.length >= cfg.minParty ? '' : `(${cfg.minParty}명부터)`}</button>`
-                    : '<p class="pet-lead">방장이 출발하면 전투가 시작돼요. 기다려 주세요!</p>'}
+                : `<p class="pet-lead">${p.members.length >= cfg.minParty ? `모두 「준비」를 누르면 바로 출발해요! (${readyCount}/${p.members.length}명 준비)` : `${cfg.minParty}명이 모여야 출발할 수 있어요. 친구를 기다려요! (${readyCount}/${p.members.length}명 준비)`}</p>
+                    <button type="button" class="pet-btn ${iAmReady ? '' : 'is-main'}" data-p="raid-ready">${iAmReady ? '준비 취소' : '⚔️ 준비!'}</button>`}
             ${leader && waiting ? '<button type="button" class="pet-btn is-main" data-p="raid-again">같은 팀으로 다시 모으기</button>' : ''}
             <button type="button" class="pet-link" data-p="raid-leave">${leader ? '방 없애기' : '팀에서 나가기'}</button>
         </div>`;
@@ -584,6 +641,7 @@ export function createPetRaidView(ctx) {
             <div class="raid-stages">${stages}</div>
             ${bossCard(sel, cfg)}
             <p class="pet-note">오늘 반복 보상 ${Math.min(day, cfg.dailyRewards)} / ${cfg.dailyRewards}번 받음 · 첫 클리어 보상은 따로 받아요. 방은 내가 깬 다음 스테이지까지 만들 수 있고, 친구 방에는 어느 스테이지든 참가할 수 있어요.</p>
+            ${petPickHtml(cfg.stages[sel - 1].type)}
             ${m ? `<button type="button" class="pet-btn is-main" data-p="raid-create">🚩 STAGE ${sel} 탐험 방 만들기</button>`
                 : `<p class="pet-lead is-warn">${esc(raidErrorText('no_pet'))}</p>`}
         </div>
@@ -685,7 +743,8 @@ export function createPetRaidView(ctx) {
         if (act === 'raid-create') { void create(); return true; }
         if (act === 'raid-join') { void join(t.getAttribute('data-party')); return true; }
         if (act === 'raid-leave') { void leave(); return true; }
-        if (act === 'raid-go') { void go(); return true; }
+        if (act === 'raid-ready') { void ready(); return true; }
+        if (act === 'raid-pet') { void swapPet(Number(t.getAttribute('data-slot')) || 0); return true; }
         if (act === 'raid-again') { void again(); return true; }
         if (act === 'raid-settings-save') { void saveSettings(false); return true; }
         if (act === 'raid-settings-reset') { void saveSettings(true); return true; }

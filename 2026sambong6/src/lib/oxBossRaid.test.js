@@ -16,6 +16,8 @@ import {
     oxbTurnInfo,
     reopenOxbRoom,
     sanitizeOxbSettings,
+    setOxbBoss,
+    readyOxbRoom,
     startOxbFight,
 } from './oxBossRaid.js';
 
@@ -23,9 +25,17 @@ const bank = Array.from({ length: 30 }, (_, i) => ({ prompt: `문제 ${i}`, answ
 const gear = { weapon: { dmgMin: 3, dmgMax: 4, proc: 0.14, emoji: '⚔️' }, shield: { block: 0.16, emoji: '🛡️' }, shoes: { procBonus: 0.02, emoji: '👟' } };
 const mem = (id, g = null) => oxbMember({ id, name: `학생${id}`, gear: g });
 
+/** 팀원 모두 '준비'를 누른 방 */
+function allReady(r) {
+    let x = r;
+    r.members.forEach((m) => { x = readyOxbRoom(x, { id: m.id, ready: true, now: 1000 }).room; });
+    return x;
+}
+
 function room(n = 3, settings = null, g = null) {
     let r = createOxbRoom({ member: mem('1', g), bossIdx: 0, now: 1000 }).room;
     for (let i = 2; i <= n; i += 1) r = joinOxbRoom(r, { member: mem(String(i), g), now: 1000 }).room;
+    r = allReady(r);
     const s = startOxbFight(r, { id: '1', settings, deck: buildOxbDeck(bank, () => 0.5), seed: 7, now: 2000 });
     assert.equal(s.ok, true);
     return s.room;
@@ -51,12 +61,16 @@ test('장비가 능력치가 돼요', () => {
 
 test('방: 5명까지, 인원이 모자라면 출발 못 해요', () => {
     let r = createOxbRoom({ member: mem('1'), now: 1 }).room;
-    assert.equal(startOxbFight(r, { id: '1', deck: buildOxbDeck(bank), now: 2 }).error, 'too_few');
+    assert.equal(startOxbFight(r, { id: '1', deck: buildOxbDeck(bank), now: 2 }).error, 'not_ready');
+    assert.equal(startOxbFight(allReady(r), { id: '1', deck: buildOxbDeck(bank), now: 2 }).error, 'too_few');
     for (let i = 2; i <= 5; i += 1) r = joinOxbRoom(r, { member: mem(String(i)), now: 1 }).room;
     assert.equal(joinOxbRoom(r, { member: mem('6'), now: 1 }).error, 'full');
-    assert.equal(startOxbFight(r, { id: '2', deck: buildOxbDeck(bank), now: 2 }).error, 'not_leader');
+    assert.equal(startOxbFight(r, { id: '2', deck: buildOxbDeck(bank), now: 2 }).error, 'not_ready');
+    r = allReady(r);
+    assert.equal(startOxbFight(r, { id: '9', deck: buildOxbDeck(bank), now: 2 }).error, 'not_member');
     assert.equal(startOxbFight(r, { id: '1', deck: [], now: 2 }).error, 'no_questions');
-    const s = startOxbFight(r, { id: '1', deck: buildOxbDeck(bank), now: 2 });
+    const s = startOxbFight(r, { id: '3', deck: buildOxbDeck(bank), now: 2 }); // 방장이 아니어도 모두 준비되면 시작돼요
+    assert.equal(s.room.fight.members.some((m) => m.ready), false);
     assert.equal(s.room.fight.boss.maxHp, 150 * 5);
     assert.equal(leaveOxbRoom(s.room, { id: '3', now: 3 }).error, 'fighting');
     assert.equal(leaveOxbRoom(s.room, { id: '1', now: 3 }).room, null);
@@ -124,7 +138,7 @@ test('방패는 데미지를 깎고 신발은 피해요', () => {
         for (let s = 1; s <= seedRooms; s += 1) {
             let r = createOxbRoom({ member: mem('1', g), now: 1 }).room;
             r = joinOxbRoom(r, { member: mem('2', g), now: 1 }).room;
-            r = startOxbFight(r, { id: '1', deck: buildOxbDeck(bank, () => 0.5), seed: s * 31, now: 2 }).room;
+            r = startOxbFight(allReady(r), { id: '1', deck: buildOxbDeck(bank, () => 0.5), seed: s * 31, now: 2 }).room;
             const a = answerOxbTurn(r, { by: '1', turn: 0, pick: '', now: 3 }).last;
             assert.equal(a.timeout, true);
             assert.equal(a.by, '1');
@@ -213,4 +227,26 @@ test('설정 고치기', () => {
     assert.equal(s.bosses[0].bong, 100);
     assert.equal(s.bosses.length, 5);
     assert.equal(OXB_PLAYER_HP, 100);
+});
+
+test('준비: 모두 준비해야 시작하고, 새로 오거나 보스가 바뀌면 다시 준비해요', () => {
+    let r = createOxbRoom({ member: mem('1'), now: 1 }).room;
+    r = joinOxbRoom(r, { member: mem('2'), now: 1 }).room;
+    let a = readyOxbRoom(r, { id: '1', ready: true, now: 2 });
+    assert.deepEqual([a.ok, a.allReady], [true, false]);
+    a = readyOxbRoom(a.room, { id: '2', ready: true, member: mem('2', gear), now: 2 });
+    assert.equal(a.allReady, true);
+    assert.equal(a.room.members[1].guard, 0.4); // 준비할 때 장비도 새로 고쳐요
+    assert.equal(readyOxbRoom(a.room, { id: '9', now: 2 }).error, 'not_member');
+    // 준비 취소
+    assert.equal(readyOxbRoom(a.room, { id: '2', ready: false, now: 2 }).allReady, false);
+    // 새 친구가 오면 그 친구는 준비 전
+    const joined = joinOxbRoom(a.room, { member: mem('3'), now: 3 }).room;
+    assert.deepEqual(joined.members.map((m) => !!m.ready), [true, true, false]);
+    // 보스를 바꾸면 모두 다시 준비
+    assert.equal(setOxbBoss(a.room, { id: '1', bossIdx: 2, now: 3 }).room.members.some((m) => m.ready), false);
+    assert.equal(setOxbBoss(a.room, { id: '1', bossIdx: 0, now: 3 }).room.members.every((m) => m.ready), true); // 같은 보스면 그대로
+    // 전투가 끝나 다시 모으면 준비도 처음부터
+    const fight = startOxbFight(a.room, { id: '2', deck: buildOxbDeck(bank), seed: 3, now: 4 }).room;
+    assert.equal(reopenOxbRoom(fight, { id: '1', now: 5 }).room.members.some((m) => m.ready), false);
 });

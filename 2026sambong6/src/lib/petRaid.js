@@ -156,6 +156,7 @@ function sanitizeMember(raw) {
         enhance: int(raw.enhance, 0, 10),
         type: sp.type,
         power: int(raw.power, 0, 1000),
+        ...(raw.ready === true ? { ready: true } : {}), // 방에서 '준비'를 눌렀는지
     };
 }
 
@@ -302,10 +303,12 @@ export function joinRaidParty(partyRaw, { member, max = RAID_MAX_PARTY, now = 0 
     if (!m) return bad('no_pet', party);
     if (party.status !== 'open') return bad('fighting', party);
     if (isRaidPartyStale(party, now)) return bad('stale', party);
-    // 이미 있으면 펫 정보만 새로 바꿔요.
-    const others = party.members.filter((x) => x.id !== m.id);
-    if (others.length >= Math.min(RAID_MAX_PARTY, int(max, RAID_MIN_PARTY))) return bad('full', party);
-    return { ok: true, error: '', party: { ...party, members: others.concat(m), updatedAt: int(now) } };
+    // 이미 있으면 펫 정보만 새로 바꿔요(자리는 그대로). 새로 오거나 펫을 바꾸면 다시 준비해야 해요.
+    delete m.ready;
+    const at = party.members.findIndex((x) => x.id === m.id);
+    if (at < 0 && party.members.length >= Math.min(RAID_MAX_PARTY, int(max, RAID_MIN_PARTY))) return bad('full', party);
+    const members = at >= 0 ? party.members.map((x, i) => (i === at ? m : x)) : party.members.concat(m);
+    return { ok: true, error: '', party: { ...party, members, updatedAt: int(now) } };
 }
 
 /** 나가기. 방장이 나가면 방이 사라져요(party: null). */
@@ -325,21 +328,41 @@ export function setRaidStage(partyRaw, { id, stage, unlocked = 1, now = 0 } = {}
     if (party.status !== 'open') return bad('fighting', party);
     const st = int(stage, 1, RAID_STAGE_COUNT);
     if (st > int(unlocked, 1, RAID_STAGE_COUNT)) return bad('locked_stage', party);
-    return { ok: true, error: '', party: { ...party, stage: st, updatedAt: int(now) } };
+    // 스테이지가 바뀌면 모두 다시 준비해야 해요.
+    const members = st === party.stage ? party.members : party.members.map((m) => { const x = { ...m }; delete x.ready; return x; });
+    return { ok: true, error: '', party: { ...party, stage: st, members, updatedAt: int(now) } };
 }
 
-/** 방장이 출발해요: 전투를 계산해 결과까지 방에 적어요. */
+/** 모두 준비했는지 */
+export function isRaidAllReady(party) {
+    return !!party && party.members.length > 0 && party.members.every((m) => m.ready === true);
+}
+
+/** 준비 / 준비 취소 */
+export function readyRaidParty(partyRaw, { id, ready = true, now = 0 } = {}) {
+    const party = sanitizeRaidParty(partyRaw);
+    if (!party) return bad('no_party');
+    if (party.status !== 'open') return bad('fighting', party);
+    const me = cleanId(id);
+    if (!party.members.some((m) => m.id === me)) return bad('not_member', party);
+    const members = party.members.map((m) => { if (m.id !== me) return m; const x = { ...m }; if (ready) x.ready = true; else delete x.ready; return x; });
+    const next = { ...party, members, updatedAt: int(now) };
+    return { ok: true, error: '', party: next, allReady: isRaidAllReady(next) };
+}
+
+/** 출발: 팀원 모두가 '준비'를 누르면 시작해요(마지막으로 준비한 사람의 화면이 출발을 걸어요). 전투를 계산해 결과까지 방에 적어요. */
 export function startRaid(partyRaw, { id, settings = null, seed = 1, now = 0 } = {}) {
     const party = sanitizeRaidParty(partyRaw);
     if (!party) return bad('no_party');
-    if (party.leaderId !== cleanId(id)) return bad('leader_only', party);
+    if (!party.members.some((m) => m.id === cleanId(id))) return bad('not_member', party);
     if (party.status !== 'open') return bad('fighting', party);
+    if (!isRaidAllReady(party)) return bad('not_ready', party);
     const cfg = sanitizeRaidSettings(settings);
     if (party.members.length < cfg.minParty) return bad('need_party', party);
     const boss = { ...cfg.stages[party.stage - 1] };
     const s = int(seed) || 1;
     const sim = simulateRaid(party.members, boss, s, { teamBonus: cfg.teamBonus });
-    const run = { id: `${party.leaderId}_${int(now)}`, seed: s, stage: party.stage, boss, teamBonus: cfg.teamBonus, win: sim.win, startedAt: int(now), members: party.members.map((m) => ({ ...m })) };
+    const run = { id: `${party.leaderId}_${int(now)}`, seed: s, stage: party.stage, boss, teamBonus: cfg.teamBonus, win: sim.win, startedAt: int(now), members: party.members.map((m) => { const x = { ...m }; delete x.ready; return x; }) };
     return { ok: true, error: '', party: { ...party, status: 'fight', run, updatedAt: int(now) }, sim };
 }
 
@@ -348,7 +371,8 @@ export function reopenRaidParty(partyRaw, { id, now = 0 } = {}) {
     const party = sanitizeRaidParty(partyRaw);
     if (!party) return bad('no_party');
     if (party.leaderId !== cleanId(id)) return bad('leader_only', party);
-    return { ok: true, error: '', party: { ...party, status: 'open', updatedAt: int(now) } };
+    // 다시 모으면 준비도 처음부터
+    return { ok: true, error: '', party: { ...party, status: 'open', members: party.members.map((m) => { const x = { ...m }; delete x.ready; return x; }), updatedAt: int(now) } };
 }
 
 /** 방에 적힌 전투를 다시 돌려요(모든 기기에서 같은 결과). */
@@ -401,6 +425,8 @@ export const RAID_ERROR_TEXT = Object.freeze({
     stale: '오래된 방이에요. 새로 만들어요.',
     full: '팀이 가득 찼어요.',
     leader_only: '방장만 할 수 있어요.',
+    not_ready: '아직 준비하지 않은 친구가 있어요.',
+    not_member: '이 팀이 아니에요.',
     need_party: '사람이 더 모여야 출발할 수 있어요.',
 });
 

@@ -60,6 +60,31 @@ export const PET_SPECIES = Object.freeze({
     pebbletle: Object.freeze({ id: 'pebbletle', type: 'rock', names: ['돌북', '바위북', '산악북'], weight: 16 }),
     stardrake: Object.freeze({ id: 'stardrake', type: 'star', names: ['별룡이', '은하룡', '삼봉성룡'], weight: 4, rare: true }),
 });
+/**
+ * 펫마다 공격 기술이 3가지 있어요. 레벨이 오르면 하나씩 배우고, 탐험 전투에서 배운 기술 중 하나를 무작위로 써요.
+ * 배우는 레벨: 1 · 10 · 20, 세기: 1배 · 1.3배 · 1.7배
+ */
+export const PET_SKILL_LEVELS = Object.freeze([1, 10, 20]);
+export const PET_SKILL_MULTS = Object.freeze([1, 1.3, 1.7]);
+export const PET_SKILL_NAMES = Object.freeze({
+    emberkit: Object.freeze(['불씨 톡톡', '화염 돌진', '대폭발 화르르']),
+    dropotter: Object.freeze(['물방울 퐁', '물대포', '해일 소용돌이']),
+    sproutdeer: Object.freeze(['잎사귀 날리기', '덩굴 채찍', '숲의 분노']),
+    zapowl: Object.freeze(['찌릿 부리', '번개 깃털', '천둥 폭풍']),
+    snowbun: Object.freeze(['눈뭉치 던지기', '얼음 발차기', '눈보라 대행진']),
+    pebbletle: Object.freeze(['조약돌 던지기', '바위 굴리기', '대지 흔들기']),
+    stardrake: Object.freeze(['별가루 뿌리기', '혜성 꼬리치기', '은하수 브레스']),
+});
+/** 이 레벨에서 배운 기술 수(1~3) */
+export function petSkillCount(level) {
+    return Math.max(1, PET_SKILL_LEVELS.filter((lv) => Number(level) >= lv).length);
+}
+/** 기술 목록: [{ index, name, level(배우는 레벨), mult, learned }] */
+export function petSkills(species, level) {
+    const names = PET_SKILL_NAMES[species] || PET_SKILL_NAMES.emberkit;
+    return names.map((name, index) => ({ index, name, level: PET_SKILL_LEVELS[index], mult: PET_SKILL_MULTS[index], learned: Number(level) >= PET_SKILL_LEVELS[index] }));
+}
+
 /** 색이 다른 펫이 나올 확률 */
 export const PET_SHINY_CHANCE = 0.05;
 

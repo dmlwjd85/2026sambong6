@@ -6,7 +6,7 @@
  * 팀원 화면마다 같은 씨앗으로 같은 전투를 다시 돌려 연출을 보여 준 뒤, 각자 자기 보상을 받아요.
  */
 import './petRaid.css';
-import { PET_TYPES, grantPetExp, petBoxMain, petBoxMainIndex, petBoxToDoc, petBoxWith, sanitizePetBox } from './lib/petGame.js';
+import { PET_SKILL_NAMES, PET_TYPES, grantPetExp, petBoxMain, petBoxMainIndex, petBoxToDoc, petBoxWith, sanitizePetBox } from './lib/petGame.js';
 import { petArtHtml, petImageUrl } from './lib/petArt.js';
 import {
     RAID_MAX_PARTY,
@@ -300,7 +300,8 @@ export function createPetRaidView(ctx) {
         const feed = el.querySelector('.raid-fx-feed');
         const nameOf = {};
         const total = {};
-        run.members.forEach((m) => { nameOf[m.id] = m.name; total[m.id] = 0; });
+        const skillOf = {};
+        run.members.forEach((m) => { nameOf[m.id] = m.name; total[m.id] = 0; skillOf[m.id] = PET_SKILL_NAMES[m.species] || []; });
         /** 오른쪽 위 기록: 누가 얼마를 때렸는지 최근 4줄 */
         const log = (who, dmg, cls) => {
             const row = document.createElement('p');
@@ -335,7 +336,20 @@ export function createPetRaidView(ctx) {
                         const pc = center(pe);
                         pop(pe, 'is-attack', 320);
                         const shot = document.createElement('i');
-                        shot.className = `raid-fx-shot${h.crit ? ' is-crit' : ''}`;
+                        const sk = Math.max(0, Math.min(2, Number(h.skill) || 0));
+                        shot.className = `raid-fx-shot is-s${sk}${h.crit ? ' is-crit' : ''}`;
+                        if (sk >= 1) {
+                            // 두 번째·세 번째 기술은 빛줄기가 함께 나가요.
+                            const beam = document.createElement('i');
+                            beam.className = `raid-fx-beam is-s${sk}`;
+                            beam.style.setProperty('--c', pe.style.getPropertyValue('--c'));
+                            beam.style.left = `${pc.x}px`;
+                            beam.style.top = `${pc.y}px`;
+                            beam.style.width = `${Math.hypot(bc.x - pc.x, bc.y - pc.y)}px`;
+                            beam.style.transform = `rotate(${Math.atan2(bc.y - pc.y, bc.x - pc.x)}rad)`;
+                            layer.appendChild(beam);
+                            setTimeout(() => beam.remove(), 360);
+                        }
                         shot.style.setProperty('--c', pe.style.getPropertyValue('--c'));
                         shot.style.left = `${pc.x}px`;
                         shot.style.top = `${pc.y}px`;
@@ -354,7 +368,7 @@ export function createPetRaidView(ctx) {
                             const hx = bc.x + (Math.random() * 0.5 - 0.25) * br.width;
                             const hy = bc.y + (Math.random() * 0.4 - 0.2) * br.height;
                             const burst = document.createElement('i');
-                            burst.className = `raid-fx-burst${h.crit ? ' is-crit' : ''}`;
+                            burst.className = `raid-fx-burst${h.crit || sk === 2 ? ' is-crit' : ''}`;
                             burst.style.setProperty('--c', pe.style.getPropertyValue('--c'));
                             burst.style.left = `${hx}px`;
                             burst.style.top = `${hy}px`;
@@ -374,8 +388,10 @@ export function createPetRaidView(ctx) {
                             const fx = bc.x + br.width * [-0.1, 0.3, 0.1, 0.42][col];
                             const fy = bc.y - br.height * [0.4, 0.3, 0.16, 0.06][col];
                             const cls = h.crit ? 'is-crit' : h.mult > 1 ? 'is-strong' : h.mult < 1 ? 'is-weak' : '';
-                            float(`${h.crit ? '💥' : ''}${h.dmg.toLocaleString()}`, fx, fy, cls, nameOf[h.by] || '');
-                            log(nameOf[h.by] || '', `${h.crit ? '치명타 ' : ''}${h.dmg.toLocaleString()}`, cls);
+                            const skName = skillOf[h.by] && skillOf[h.by][sk] ? skillOf[h.by][sk] : '';
+                            float(`${h.crit ? '💥' : ''}${h.dmg.toLocaleString()}`, fx, fy, cls, `${nameOf[h.by] || ''}${skName ? ` · ${skName}` : ''}`);
+                            log(`${nameOf[h.by] || ''}${skName ? ` ${skName}` : ''}`, `${h.crit ? '치명타 ' : ''}${h.dmg.toLocaleString()}`, cls);
+                            if (sk === 2) pop(el, 'is-shake', 320);
                             total[h.by] = (total[h.by] || 0) + h.dmg;
                             const sum = pe.querySelector('[data-dmg]');
                             if (sum) { sum.textContent = total[h.by].toLocaleString(); pop(sum, 'is-up', 300); }
@@ -388,7 +404,13 @@ export function createPetRaidView(ctx) {
                 hp = round.bossHp;
                 // 보스의 공격: 몸을 웅크렸다가 덮치고, 화면이 빨갛게 번쩍여요.
                 if (round.boss.length && !skipped) {
-                    phase.textContent = `${run.boss.name}의 반격!`;
+                    const all = round.bossMove === 'all' || (!round.bossMove && round.boss.length > 1);
+                    phase.textContent = `${run.boss.name}의 ${all ? '전체 공격!' : '단일 공격!'}`;
+                    if (!all && round.boss[0]) {
+                        // 단일 공격: 누구를 노리는지 먼저 표시해요.
+                        const tp = petEl(round.boss[0].target);
+                        if (tp) { const c0 = center(tp); const mark = document.createElement('i'); mark.className = 'raid-fx-target'; mark.style.left = `${c0.x}px`; mark.style.top = `${c0.y}px`; layer.appendChild(mark); setTimeout(() => mark.remove(), 900); }
+                    }
                     phase.className = 'raid-fx-phase is-boss';
                     pop(bossEl, 'is-windup', 380);
                     await pause(360);
@@ -396,16 +418,30 @@ export function createPetRaidView(ctx) {
                     await pause(170);
                     if (!skipped) {
                         const red = document.createElement('i');
-                        red.className = 'raid-fx-red';
+                        red.className = `raid-fx-red${all ? '' : ' is-single'}`;
                         el.appendChild(red);
                         setTimeout(() => red.remove(), 620);
-                        const claw = document.createElement('i');
-                        claw.className = 'raid-fx-claw';
-                        const tr = el.querySelector('.raid-fx-team').getBoundingClientRect();
-                        const er = el.getBoundingClientRect();
-                        claw.style.top = `${tr.top - er.top + tr.height / 2}px`;
-                        layer.appendChild(claw);
-                        setTimeout(() => claw.remove(), 480);
+                        if (all) {
+                            // 전체 공격: 팀 전체를 할퀴고 충격파가 퍼져요.
+                            const claw = document.createElement('i');
+                            claw.className = 'raid-fx-claw';
+                            const tr = el.querySelector('.raid-fx-team').getBoundingClientRect();
+                            const er = el.getBoundingClientRect();
+                            claw.style.top = `${tr.top - er.top + tr.height / 2}px`;
+                            layer.appendChild(claw);
+                            setTimeout(() => claw.remove(), 480);
+                            const wave = document.createElement('i');
+                            wave.className = 'raid-fx-wave';
+                            const bc2 = center(bossEl);
+                            wave.style.left = `${bc2.x}px`;
+                            wave.style.top = `${bc2.y}px`;
+                            layer.appendChild(wave);
+                            setTimeout(() => wave.remove(), 600);
+                        } else if (round.boss[0]) {
+                            // 단일 공격: 한 마리에게 큰 충격이 꽂혀요.
+                            const tp = petEl(round.boss[0].target);
+                            if (tp) { const c1 = center(tp); const hit = document.createElement('i'); hit.className = 'raid-fx-smash'; hit.style.left = `${c1.x}px`; hit.style.top = `${c1.y}px`; layer.appendChild(hit); setTimeout(() => hit.remove(), 460); }
+                        }
                         pop(el, 'is-quake', 420);
                         try { if (navigator.vibrate) navigator.vibrate([40, 30, 80]); } catch (_) { /* 진동 없는 기기 */ }
                     }
@@ -415,7 +451,7 @@ export function createPetRaidView(ctx) {
                         const pc = center(pe);
                         pop(pe, 'is-hurt', 460);
                         setMemberHp(h.target, hpOf[h.target] - h.dmg);
-                        float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, 'is-hurt');
+                        float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, all ? 'is-hurt' : 'is-hurt is-big');
                         if (h.faint && h.target === me()) { watching = true; }
                         if (h.faint) { pe.classList.add('is-faint'); log(nameOf[h.target] || '', '쓰러짐', 'is-hurt'); }
                     });
@@ -589,7 +625,7 @@ export function createPetRaidView(ctx) {
             <td><select class="pet-set-input is-sel" data-raid-set="type-${i}">${Object.keys(PET_TYPES).map((t) => `<option value="${t}"${s.type === t ? ' selected' : ''}>${PET_TYPES[t].emoji}${PET_TYPES[t].name}</option>`).join('')}</select></td>
             <td>${n(`hp-${i}`, s.hp, 100, 5000000, 'is-wide')}</td>
             <td>${n(`atk-${i}`, s.atk, 0, 100000)}</td>
-            <td>${n(`hits-${i}`, s.hits, 1, RAID_MAX_PARTY, 'is-narrow')}</td>
+            <td>${n(`aoe-${i}`, s.aoe, 0, 100, 'is-narrow')}</td>
             <td>${n(`first-${i}`, s.first, 0, 1000, 'is-narrow')}</td>
             <td>${n(`repeat-${i}`, s.repeat, 0, 1000, 'is-narrow')}</td>
         </tr>`).join('');
@@ -601,10 +637,11 @@ export function createPetRaidView(ctx) {
                 <label class="pet-set-row"><span>한 팀 최대</span>${n('maxParty', cfg.maxParty, 0, RAID_MAX_PARTY)} 명 (0 = 학급 인원, 최대 13)</label>
                 <label class="pet-set-row"><span>인원 보너스</span>한 명 늘 때마다 공격력 +${n('teamBonus', cfg.teamBonus, 0, 50)} %</label>
                 <div class="raid-admin-table"><table>
-                    <thead><tr><th>#</th><th>보스 이름</th><th>속성</th><th>체력</th><th>공격력</th><th>때리는 수</th><th>첫 보상</th><th>반복 보상</th></tr></thead>
+                    <thead><tr><th>#</th><th>보스 이름</th><th>속성</th><th>체력</th><th>공격력</th><th>전체 공격 %</th><th>첫 보상</th><th>반복 보상</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>
                 <p class="pet-note">펫 한 마리: 체력 200 + 전투력×2, 공격력 20 + 전투력×0.5 (전투력은 최대 1000). 전투는 최대 18턴이에요.</p>
+                <p class="pet-note">보스는 턴마다 「전체 공격 %」 확률로 모두에게 공격력의 절반을, 아니면 한 마리에게 공격력의 1.5배를 줘요. 펫은 배운 기술(Lv.1·10·20, 1배·1.3배·1.7배) 중 하나를 무작위로 써요.</p>
                 <div class="pet-foods">
                     <button type="button" class="pet-btn is-main" data-p="raid-settings-save">탐험 설정 저장</button>
                     <button type="button" class="pet-btn" data-p="raid-settings-reset">기본값으로</button>
@@ -630,7 +667,7 @@ export function createPetRaidView(ctx) {
             minParty: val('minParty'),
             maxParty: val('maxParty'),
             teamBonus: val('teamBonus'),
-            stages: Array.from({ length: RAID_STAGE_COUNT }, (_, i) => ({ name: val(`name-${i}`), type: val(`type-${i}`), hp: val(`hp-${i}`), atk: val(`atk-${i}`), hits: val(`hits-${i}`), first: val(`first-${i}`), repeat: val(`repeat-${i}`) })),
+            stages: Array.from({ length: RAID_STAGE_COUNT }, (_, i) => ({ name: val(`name-${i}`), type: val(`type-${i}`), hp: val(`hp-${i}`), atk: val(`atk-${i}`), aoe: val(`aoe-${i}`), first: val(`first-${i}`), repeat: val(`repeat-${i}`) })),
         });
         try {
             const cur = (deps.settings && deps.settings()) || {};

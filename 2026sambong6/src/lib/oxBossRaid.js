@@ -3,7 +3,7 @@
  *
  * - 최대 5명이 한 팀이 되어 차례대로(릴레이) OX 문제를 풀어요.
  * - 맞히면 보스에게 데미지. 빨리 맞힐수록 세고, 무기가 좋을수록 보너스가 붙어요.
- * - 틀리거나 시간이 끝나면 보스가 그 사람을 때려요. 방패는 데미지를 깎고, 신발은 피하게 해 줘요.
+ * - 틀리거나 시간이 끝나면 보스가 팀원 가운데 아무나 한 명을 때려요. 방패는 데미지를 깎고, 신발은 피하게 해 줘요.
  * - 한 명이라도 체력이 0이 되면 게임 오버예요.
  * - 재미 규칙: 연속 정답 콤보(데미지 +10%씩), 합동 필살기 게이지(가득 차면 다음 정답 3배),
  *   콤보 5번마다 가장 아픈 친구 회복, 보스 체력 30% 아래에서 분노(공격 1.5배).
@@ -191,7 +191,7 @@ function sanitizeFight(raw) {
             turn: int(l.turn), by: cleanId(l.by), pick: l.pick === 'O' || l.pick === 'X' ? l.pick : '', answer: l.answer === 'X' ? 'X' : 'O', explain: text(l.explain, 120),
             ok: l.ok === true, timeout: l.timeout === true, dmg: int(l.dmg), crit: l.crit === true, limit: l.limit === true, speed: frac(l.speed, 1, 2), combo: int(l.combo),
             healId: cleanId(l.healId), heal: int(l.heal), rageStart: l.rageStart === true,
-            bossDmg: int(l.bossDmg), evade: l.evade === true, guarded: int(l.guarded), down: l.down === true, timeUp: l.timeUp === true,
+            target: cleanId(l.target) || cleanId(l.by), bossDmg: int(l.bossDmg), evade: l.evade === true, guarded: int(l.guarded), down: l.down === true, timeUp: l.timeUp === true,
         } : null,
     };
 }
@@ -348,7 +348,7 @@ export function answerOxbTurn(raw, { by, turn, pick = '', ms = 0, now = 0 } = {}
     const last = {
         turn: f.turn, by: m.id, pick: answered ? pick : '', answer: q.a, explain: q.e, ok, timeout: !answered,
         dmg: 0, crit: false, limit: false, speed: 1, combo: 0, healId: '', heal: 0, rageStart: false,
-        bossDmg: 0, evade: false, guarded: 0, down: false, timeUp: false,
+        target: '', bossDmg: 0, evade: false, guarded: 0, down: false, timeUp: false,
     };
     if (ok) {
         const speed = oxbSpeedMult(ms, f.turnSec);
@@ -379,13 +379,15 @@ export function answerOxbTurn(raw, { by, turn, pick = '', ms = 0, now = 0 } = {}
     } else {
         f.combo = 0;
         f.stats[m.id].no += 1;
-        const evade = rnd() < m.evade;
+        // 보스는 팀원 가운데 아무나 한 명을 때려요(틀린 사람이 아닐 수도 있어요). 방패·신발은 맞는 사람 것을 써요.
+        const t = f.members[Math.floor(rnd() * f.members.length)] || m;
+        const evade = rnd() < t.evade;
         const rawDmg = Math.max(1, Math.round(f.boss.atk * (f.rage ? OXB_RAGE_MULT : 1) * (0.9 + rnd() * 0.2)));
-        const guarded = evade ? 0 : Math.round(rawDmg * m.guard);
+        const guarded = evade ? 0 : Math.round(rawDmg * t.guard);
         const bossDmg = evade ? 0 : rawDmg - guarded;
-        m.hp = Math.max(0, m.hp - bossDmg);
-        Object.assign(last, { evade, guarded, bossDmg, down: m.hp <= 0 });
-        if (m.hp <= 0) f.result = 'lose';
+        t.hp = Math.max(0, t.hp - bossDmg);
+        Object.assign(last, { target: t.id, evade, guarded, bossDmg, down: t.hp <= 0 });
+        if (t.hp <= 0) f.result = 'lose';
     }
     f.turn += 1;
     if (!f.result && f.turn >= OXB_MAX_TURNS) { f.result = 'lose'; last.timeUp = true; }

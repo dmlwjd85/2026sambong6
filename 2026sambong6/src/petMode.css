@@ -510,3 +510,12 @@
 .pet-hearts i:nth-child(3) { left: -10px; top: -46px; animation-delay: 0.55s; }
 @keyframes pet-heart { 0% { opacity: 0; transform: translateY(14px) scale(0.4); } 25% { opacity: 1; transform: translateY(-6px) scale(1.2); } 100% { opacity: 0; transform: translateY(-52px) scale(0.9); } }
 @media (prefers-reduced-motion: reduce) { .pet-sprite.is-react > .pet-art, .pet-hearts i, .pet-talk { animation: none !important; } .pet-hearts i { opacity: 1; } }
+
+/* 펫 기술 3가지 */
+.pet-skills { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem; }
+.pet-skill { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 0.35rem 0.2rem; border-radius: 0.7rem; border: 1px dashed #475569; background: rgba(15, 23, 42, 0.6); text-align: center; opacity: 0.7; }
+.pet-skill b { font-size: 12px; font-weight: 900; color: #cbd5e1; word-break: keep-all; }
+.pet-skill i { font-style: normal; font-size: 10px; color: #94a3b8; }
+.pet-skill.is-on { opacity: 1; border-style: solid; border-color: #fbbf24; background: rgba(120, 53, 15, 0.45); }
+.pet-skill.is-on b { color: #fde68a; }
+.pet-skill.is-on i { color: #fed7aa; }

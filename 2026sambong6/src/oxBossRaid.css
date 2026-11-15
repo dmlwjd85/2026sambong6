@@ -203,3 +203,7 @@
 @media (prefers-reduced-motion: reduce) {
     .oxb-scene *, .oxb-room-boss span { animation: none !important; transition: none !important; }
 }
+
+/* 보스가 누구를 때릴지 고르는 순간 */
+.oxb-hero.is-aim .oxb-avatar { animation: oxb-aim 0.5s steps(4); }
+@keyframes oxb-aim { 50% { filter: drop-shadow(0 0 8px #ef4444) brightness(1.15); transform: translateY(-3px); } }

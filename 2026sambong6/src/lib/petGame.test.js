@@ -317,3 +317,13 @@ it('경험치 팩: 봉을 내고 경험치를 받아요(마스터가 값·경험
     assert.deepEqual(custom.expPacks[0], { price: 30, exp: 40 });
     assert.deepEqual(custom.expPacks[1], { price: 100, exp: 110 });
 });
+
+it('기술: 레벨 1·10·20에 하나씩 배워요', async () => {
+    const { petSkills, petSkillCount, PET_SKILL_NAMES, PET_SPECIES } = await import('./petGame.js');
+    assert.deepEqual(Object.keys(PET_SKILL_NAMES).sort(), Object.keys(PET_SPECIES).sort());
+    assert.deepEqual([petSkillCount(1), petSkillCount(9), petSkillCount(10), petSkillCount(19), petSkillCount(20), petSkillCount(30)], [1, 1, 2, 2, 3, 3]);
+    const list = petSkills('dropotter', 12);
+    assert.deepEqual(list.map((k) => k.learned), [true, true, false]);
+    assert.equal(list[2].level, 20);
+    assert.equal(list[1].name, '물대포');
+});

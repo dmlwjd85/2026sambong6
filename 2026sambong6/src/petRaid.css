@@ -206,3 +206,19 @@
 .raid-chart thead th { border-top: 0; font-size: 10px; color: #94a3b8; font-weight: 800; }
 .raid-chart td .pet-type, .raid-chart th .pet-type { margin: 1px 0; display: inline-block; }
 .raid-chart-none { font-style: normal; color: #64748b; }
+
+/* 기술별 연출: 1번은 빛구슬, 2번은 빛줄기, 3번은 굵은 빛줄기 + 큰 폭발 */
+.raid-fx-shot.is-s1 { width: 18px; height: 18px; }
+.raid-fx-shot.is-s2 { width: 28px; height: 28px; box-shadow: 0 0 26px 12px var(--c), 0 0 6px 3px #fff; }
+.raid-fx-beam { position: absolute; height: 5px; margin-top: -2.5px; transform-origin: 0 50%; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--c) 20%, #fff 60%, var(--c)); box-shadow: 0 0 10px var(--c); animation: raid-beam 0.34s ease-out forwards; pointer-events: none; }
+.raid-fx-beam.is-s2 { height: 12px; margin-top: -6px; box-shadow: 0 0 22px 4px var(--c); }
+@keyframes raid-beam { 0% { clip-path: inset(0 100% 0 0); opacity: 1; } 55% { clip-path: inset(0 0 0 0); opacity: 1; } 100% { clip-path: inset(0 0 0 0); opacity: 0; } }
+/* 보스 단일 공격: 과녁 표시와 큰 충격 */
+.raid-fx-target { position: absolute; width: 64px; height: 64px; margin: -32px; border-radius: 50%; border: 4px solid #ef4444; box-shadow: 0 0 14px #ef4444, inset 0 0 10px #ef4444; animation: raid-target 0.9s ease-in forwards; pointer-events: none; }
+.raid-fx-target::before, .raid-fx-target::after { content: ''; position: absolute; left: 50%; top: 50%; background: #ef4444; }
+.raid-fx-target::before { width: 80px; height: 3px; margin: -1.5px -40px; }
+.raid-fx-target::after { width: 3px; height: 80px; margin: -40px -1.5px; }
+@keyframes raid-target { 0% { transform: scale(2.4) rotate(90deg); opacity: 0; } 45% { transform: scale(1) rotate(0); opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.raid-fx-smash { position: absolute; width: 150px; height: 150px; margin: -75px; border-radius: 50%; background: radial-gradient(circle, #fff 0 18%, #fca5a5 30%, rgba(239, 68, 68, 0.75) 48%, transparent 70%); animation: raid-burst 0.45s ease-out forwards; pointer-events: none; }
+.raid-fx-red.is-single { background: radial-gradient(ellipse at 50% 80%, transparent 30%, rgba(220, 38, 38, 0.55) 100%); box-shadow: inset 0 0 60px 14px #dc2626; }
+.raid-fx-num.is-big b { font-size: 34px; }

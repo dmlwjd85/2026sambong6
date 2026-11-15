@@ -101,18 +101,20 @@ test('무기가 좋으면 더 세요', () => {
 test('틀리면 보스가 때리고, 체력이 0이면 게임 오버', () => {
     let r = room(2);
     let downs = 0;
+    const targets = new Set();
     for (let i = 0; i < 20 && !r.fight.result; i += 1) {
         const { member, question } = oxbTurnInfo(r.fight);
         const wrong = question.a === 'O' ? 'X' : 'O';
         // 1번만 계속 틀려요
         const a = answerOxbTurn(r, { by: member.id, turn: r.fight.turn, pick: member.id === '1' ? wrong : question.a, ms: 4000, now: 1 });
-        if (member.id === '1') { assert.equal(a.last.ok, false); assert.ok(a.last.bossDmg > 0); }
+        if (member.id === '1') { assert.equal(a.last.ok, false); assert.ok(a.last.bossDmg > 0); assert.ok(['1', '2'].includes(a.last.target)); targets.add(a.last.target); }
         if (a.last.down) downs += 1;
         r = a.room;
     }
     assert.equal(r.fight.result, 'lose');
     assert.equal(downs, 1);
-    assert.equal(r.fight.members[0].hp, 0);
+    assert.equal(targets.size, 2); // 틀린 사람만 맞는 게 아니라 아무나 맞아요
+    assert.equal(r.fight.members.filter((m) => m.hp === 0).length, 1);
     assert.equal(answerOxbTurn(r, { by: '2', turn: r.fight.turn, pick: 'O', now: 1 }).error, 'finished');
 });
 
@@ -125,6 +127,7 @@ test('방패는 데미지를 깎고 신발은 피해요', () => {
             r = startOxbFight(r, { id: '1', deck: buildOxbDeck(bank, () => 0.5), seed: s * 31, now: 2 }).room;
             const a = answerOxbTurn(r, { by: '1', turn: 0, pick: '', now: 3 }).last;
             assert.equal(a.timeout, true);
+            assert.equal(a.by, '1');
             total += a.bossDmg; if (a.evade) evades += 1;
         }
         return { total, evades };

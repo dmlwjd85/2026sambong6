@@ -15,6 +15,7 @@ import {
     PET_NAME_MAX,
     PET_PLAY_EXP,
     PET_PLAY_PER_DAY,
+    PET_SKILL_LEVELS,
     PET_RETURN_PRICE,
     PET_SPECIES,
     PET_TYPES,
@@ -31,6 +32,7 @@ import {
     petBoxWith,
     petErrorText,
     petNextSlotRule,
+    petSkills,
     petView,
     playWithPet,
     rankClassPets,
@@ -187,7 +189,11 @@ export function createPetMode(deps) {
 
     function grew(r, text) {
         if (r.levelUps > 0) {
-            show(`레벨 업! Lv.${r.pet.level}`, 'good');
+            // 레벨이 올라 새 기술을 배웠으면 알려 줘요.
+            const before = r.pet.level - r.levelUps;
+            const gotLv = PET_SKILL_LEVELS.filter((lv) => before < lv && r.pet.level >= lv).pop();
+            const got = gotLv ? petSkills(r.pet.species, r.pet.level).find((k) => k.level === gotLv) : null;
+            show(got ? `레벨 업! Lv.${r.pet.level} · 새 기술 「${got.name}」을(를) 배웠어요!` : `레벨 업! Lv.${r.pet.level}`, 'good');
             if (feedback) feedback.play('ok');
         } else {
             show(`${text} +${r.exp} 경험치`, '');
@@ -560,6 +566,8 @@ export function createPetMode(deps) {
             ${v.canEvolve
                 ? '<button type="button" class="pet-btn is-evolve" data-p="evolve">🌟 진화하기!</button>'
                 : (nextEvo ? `<p class="pet-note">Lv.${nextEvo}이 되면 진화할 수 있어요.</p>` : '<p class="pet-note">마지막 단계까지 진화했어요!</p>')}
+            <p class="pet-sub">기술 <em>(탐험 전투에서 배운 기술 중 하나를 무작위로 써요)</em></p>
+            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}</div>
             <p class="pet-sub">먹이 주기 ${v.fullNow > 90 ? '<em>(배가 불러요. 조금 있다가 줘요)</em>' : ''}</p>
             <div class="pet-foods">${foods}</div>
             ${v.level >= PET_MAX_LEVEL ? '' : `<p class="pet-sub">경험치 팩</p>

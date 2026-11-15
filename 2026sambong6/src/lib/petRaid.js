@@ -9,7 +9,7 @@
  * - 도전은 무제한이에요. 보상은 스테이지 첫 클리어 보상(한 번)과 반복 보상(하루 정해진 횟수까지)이에요.
  * - 스테이지·보상·하루 보상 횟수는 마스터가 고칠 수 있어요(settings/global 의 petSettings.raid).
  */
-import { PET_SPECIES, PET_TYPES, petPower, petView, sanitizeRaidProgress } from './petGame.js';
+import { PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
 
 export const RAID_MIN_PARTY = 2;
 export const RAID_MAX_PARTY = 13;
@@ -38,19 +38,20 @@ export function raidTypeMult(attacker, defender) {
 
 /**
  * 기본 스테이지 10개. art 는 보스 그림(펫 일러스트를 크게·어둡게 써요), 나머지는 마스터가 고칠 수 있어요.
- * hp·atk: 보스 체력·공격력, hits: 한 번에 때리는 펫 수, first: 첫 클리어 봉, repeat: 반복 클리어 봉
+ * hp·atk: 보스 체력·공격력, aoe: 전체 공격을 쓸 확률(%), first: 첫 클리어 봉, repeat: 반복 클리어 봉
+ * (hits 는 예전 규칙에서 쓰던 값이라 남겨만 둬요.)
  */
 export const RAID_DEFAULT_STAGES = Object.freeze([
-    { name: '숲속의 큰 싹록', type: 'grass', art: 'sproutdeer_1', hp: 1500, atk: 45, hits: 1, first: 3, repeat: 1 },
-    { name: '웅덩이 대장 몽달', type: 'water', art: 'dropotter_1', hp: 3200, atk: 70, hits: 1, first: 4, repeat: 1 },
-    { name: '성난 화르냥', type: 'fire', art: 'emberkit_2', hp: 6000, atk: 110, hits: 2, first: 5, repeat: 1 },
-    { name: '폭풍의 번쩍부엉', type: 'electric', art: 'zapowl_2', hp: 10000, atk: 150, hits: 2, first: 6, repeat: 2 },
-    { name: '눈보라 서리토', type: 'ice', art: 'snowbun_2', hp: 16000, atk: 200, hits: 2, first: 8, repeat: 2 },
-    { name: '절벽의 바위북', type: 'rock', art: 'pebbletle_2', hp: 25000, atk: 260, hits: 2, first: 10, repeat: 2 },
-    { name: '고대 숲의 숲왕록', type: 'grass', art: 'sproutdeer_3', hp: 38000, atk: 330, hits: 3, first: 12, repeat: 3 },
-    { name: '깊은 바다 해달왕', type: 'water', art: 'dropotter_3', hp: 55000, atk: 420, hits: 3, first: 15, repeat: 3 },
-    { name: '화산의 염호랑', type: 'fire', art: 'emberkit_3', hp: 78000, atk: 520, hits: 3, first: 18, repeat: 4 },
-    { name: '암흑 성룡', type: 'star', art: 'stardrake_3', hp: 100000, atk: 540, hits: 4, first: 25, repeat: 5 },
+    { name: '숲속의 큰 싹록', type: 'grass', art: 'sproutdeer_1', hp: 1500, atk: 45, hits: 1, aoe: 20, first: 3, repeat: 1 },
+    { name: '웅덩이 대장 몽달', type: 'water', art: 'dropotter_1', hp: 3200, atk: 70, hits: 1, aoe: 25, first: 4, repeat: 1 },
+    { name: '성난 화르냥', type: 'fire', art: 'emberkit_2', hp: 6000, atk: 110, hits: 2, aoe: 30, first: 5, repeat: 1 },
+    { name: '폭풍의 번쩍부엉', type: 'electric', art: 'zapowl_2', hp: 10000, atk: 150, hits: 2, aoe: 30, first: 6, repeat: 2 },
+    { name: '눈보라 서리토', type: 'ice', art: 'snowbun_2', hp: 16000, atk: 200, hits: 2, aoe: 35, first: 8, repeat: 2 },
+    { name: '절벽의 바위북', type: 'rock', art: 'pebbletle_2', hp: 25000, atk: 260, hits: 2, aoe: 35, first: 10, repeat: 2 },
+    { name: '고대 숲의 숲왕록', type: 'grass', art: 'sproutdeer_3', hp: 38000, atk: 330, hits: 3, aoe: 40, first: 12, repeat: 3 },
+    { name: '깊은 바다 해달왕', type: 'water', art: 'dropotter_3', hp: 55000, atk: 420, hits: 3, aoe: 40, first: 15, repeat: 3 },
+    { name: '화산의 염호랑', type: 'fire', art: 'emberkit_3', hp: 90000, atk: 520, hits: 3, aoe: 45, first: 18, repeat: 4 },
+    { name: '암흑 성룡', type: 'star', art: 'stardrake_3', hp: 125000, atk: 540, hits: 4, aoe: 50, first: 25, repeat: 5 },
 ].map((x) => Object.freeze(x)));
 
 export const RAID_DEFAULT_SETTINGS = Object.freeze({
@@ -87,6 +88,7 @@ export function sanitizeRaidSettings(raw) {
             hp: num(r.hp, def.hp, 100, 5000000),
             atk: num(r.atk, def.atk, 0, 100000),
             hits: num(r.hits, def.hits, 1, RAID_MAX_PARTY),
+            aoe: num(r.aoe, def.aoe, 0, 100),
             first: num(r.first, def.first, 0, 1000),
             repeat: num(r.repeat, def.repeat, 0, 1000),
         };
@@ -176,17 +178,23 @@ export function raidPetStats(power) {
     return { hp: 200 + p * 2, atk: 20 + Math.round(p * 0.5) };
 }
 
+/** 보스의 단일 공격은 한 마리에게 공격력의 1.5배, 전체 공격은 모두에게 공격력의 절반이에요. */
+export const RAID_BOSS_SINGLE_MULT = 1.5;
+export const RAID_BOSS_ALL_MULT = 0.5;
+
 /**
  * 전투를 끝까지 돌려요.
+ * - 펫은 배운 기술(레벨 1·10·20) 가운데 하나를 무작위로 써요. 센 기술일수록 데미지가 커요.
+ * - 보스는 턴마다 단일 공격(한 마리에게 세게)이나 전체 공격(모두에게 약하게) 중 하나를 써요.
  * @returns {{ win: boolean, rounds: Array, bossHp: number, bossMaxHp: number, dealt: Record<string, number>, alive: string[], teamMult: number }}
- *   rounds[i] = { hits: [{ by, dmg, crit, mult }], bossHp, boss: [{ target, dmg, faint }] }
+ *   rounds[i] = { hits: [{ by, dmg, crit, mult, skill }], bossHp, bossMove: 'single'|'all'|'', boss: [{ target, dmg, faint }] }
  */
 export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus } = {}) {
     const members = (Array.isArray(membersRaw) ? membersRaw : []).map(sanitizeMember).filter(Boolean).slice(0, RAID_MAX_PARTY);
-    const boss = { type: PET_TYPES[bossRaw && bossRaw.type] ? bossRaw.type : 'grass', hp: int(bossRaw && bossRaw.hp, 1), atk: int(bossRaw && bossRaw.atk), hits: int(bossRaw && bossRaw.hits, 1, RAID_MAX_PARTY) };
+    const boss = { type: PET_TYPES[bossRaw && bossRaw.type] ? bossRaw.type : 'grass', hp: int(bossRaw && bossRaw.hp, 1), atk: int(bossRaw && bossRaw.atk), aoe: int(bossRaw && bossRaw.aoe, 0, 100) };
     const rnd = makeRng(seed);
     const teamMult = 1 + (Math.max(0, members.length - 1) * int(teamBonus, 0, 50)) / 100;
-    const state = members.map((m) => ({ ...m, ...raidPetStats(m.power), mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type) }));
+    const state = members.map((m) => ({ ...m, ...raidPetStats(m.power), mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type), skills: petSkillCount(m.level) }));
     const dealt = {};
     members.forEach((m) => { dealt[m.id] = 0; });
     let bossHp = boss.hp;
@@ -196,24 +204,27 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
         if (!alive.length) break;
         const hits = [];
         for (const m of alive) {
+            const skill = Math.min(m.skills - 1, Math.floor(rnd() * m.skills));
             const crit = rnd() < 0.12;
-            const dmg = Math.max(1, Math.round(m.atk * m.mult * teamMult * (0.85 + rnd() * 0.3) * (crit ? 1.8 : 1)));
+            const dmg = Math.max(1, Math.round(m.atk * PET_SKILL_MULTS[skill] * m.mult * teamMult * (0.85 + rnd() * 0.3) * (crit ? 1.8 : 1)));
             bossHp = Math.max(0, bossHp - dmg);
             dealt[m.id] += dmg;
-            hits.push({ by: m.id, dmg, crit, mult: m.mult });
+            hits.push({ by: m.id, dmg, crit, mult: m.mult, skill });
             if (bossHp <= 0) break;
         }
         const bossHits = [];
+        let bossMove = '';
         if (bossHp > 0) {
-            const targets = alive.slice();
-            for (let k = 0; k < boss.hits && targets.length; k += 1) {
-                const t = targets.splice(Math.floor(rnd() * targets.length), 1)[0];
-                const dmg = Math.max(1, Math.round(boss.atk * t.def * (0.85 + rnd() * 0.3)));
+            bossMove = rnd() * 100 < boss.aoe ? 'all' : 'single';
+            const targets = bossMove === 'all' ? alive : [alive[Math.floor(rnd() * alive.length)]];
+            const power = bossMove === 'all' ? RAID_BOSS_ALL_MULT : RAID_BOSS_SINGLE_MULT;
+            targets.forEach((t) => {
+                const dmg = Math.max(1, Math.round(boss.atk * power * t.def * (0.85 + rnd() * 0.3)));
                 t.hp = Math.max(0, t.hp - dmg);
                 bossHits.push({ target: t.id, dmg, faint: t.hp <= 0 });
-            }
+            });
         }
-        rounds.push({ hits, bossHp, boss: bossHits });
+        rounds.push({ hits, bossHp, bossMove, boss: bossHits });
     }
     return {
         win: bossHp <= 0,
@@ -249,7 +260,7 @@ export function sanitizeRaidParty(raw) {
             id: String(r.id).slice(0, 60),
             seed: int(r.seed),
             stage: int(r.stage, 1, RAID_STAGE_COUNT),
-            boss: { name: cleanText(boss.name, 16), type: PET_TYPES[boss.type] ? boss.type : 'grass', art: String(boss.art || '').replace(/[^a-z0-9_]/g, '').slice(0, 20), hp: int(boss.hp, 1), atk: int(boss.atk), hits: int(boss.hits, 1, RAID_MAX_PARTY), first: int(boss.first), repeat: int(boss.repeat) },
+            boss: { name: cleanText(boss.name, 16), type: PET_TYPES[boss.type] ? boss.type : 'grass', art: String(boss.art || '').replace(/[^a-z0-9_]/g, '').slice(0, 20), hp: int(boss.hp, 1), atk: int(boss.atk), hits: int(boss.hits, 1, RAID_MAX_PARTY), aoe: int(boss.aoe, 0, 100), first: int(boss.first), repeat: int(boss.repeat) },
             teamBonus: int(r.teamBonus, 0, 50),
             win: r.win === true,
             startedAt: int(r.startedAt),

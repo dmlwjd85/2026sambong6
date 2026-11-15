@@ -356,27 +356,33 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
             say(l.timeout ? `⏰ 시간 초과! 정답은 ${l.answer}${l.explain ? ` — ${l.explain}` : ''}` : `❌ 땡! 정답은 ${l.answer}${l.explain ? ` — ${l.explain}` : ''}`);
             if (feedback && l.by === me()) feedback.play(l.timeout ? 'timeout' : 'no');
             await p(950);
+            // 보스는 아무나 한 명을 골라 때려요.
+            const victim = f.members.find((m) => m.id === l.target) || actor;
+            const vHero = heroEl(victim.id) || hero;
+            say(`${f.boss.name}이(가) 노려봐요… 누구를 때릴까?`);
+            body.querySelectorAll('.oxb-hero').forEach((h) => pulse(h, 'is-aim', 500));
+            await p(520);
             pulse(bossEl, 'is-lunge', 600);
             sfx.rage();
             await p(300);
             if (l.evade) {
                 sfx.miss();
-                pulse(hero, 'is-dodge', 600);
-                float('MISS', hero, 'is-miss');
-                say(`${f.boss.name}의 공격! ${actor.name}은(는) 신발 덕분에 휙 피했어요!`);
+                pulse(vHero, 'is-dodge', 600);
+                float('MISS', vHero, 'is-miss');
+                say(`${f.boss.name}의 공격! ${victim.name}은(는) 신발 덕분에 휙 피했어요!`);
             } else {
                 sfx.hurt();
-                buzz(l.by === me() ? [80, 40, 120] : 40);
-                pulse(hero, 'is-hurt', 600);
+                buzz(victim.id === me() ? [80, 40, 120] : 40);
+                pulse(vHero, 'is-hurt', 600);
                 flash('is-red');
                 flash('is-shake');
-                float(`-${l.bossDmg}`, hero, 'is-hurt');
-                if (l.guarded > 0) float(`🛡️${l.guarded} 막음`, hero, 'is-guard');
-                say(`${f.boss.name}의 공격! ${actor.name}에게 ${l.bossDmg} 데미지!${l.guarded > 0 ? ` (방패가 ${l.guarded} 막았어요)` : ''}`);
+                float(`-${l.bossDmg}`, vHero, 'is-hurt');
+                if (l.guarded > 0) float(`🛡️${l.guarded} 막음`, vHero, 'is-guard');
+                say(`${f.boss.name}의 공격! ${victim.name}에게 ${l.bossDmg} 데미지!${l.guarded > 0 ? ` (방패가 ${l.guarded} 막았어요)` : ''}`);
             }
             paint(f);
             await p(950);
-            if (l.down && hero) hero.classList.add('is-down');
+            if (l.down && vHero) vHero.classList.add('is-down');
         }
         paint(f);
     }
@@ -627,7 +633,7 @@ export function createOxBossRaid({ stage, body, api, getBank, setMeta, modeTabs,
         const today = p.day === boss.today() ? p.dayRewards : 0;
         return `<div class="oxb-win oxb-intro">
             <p class="oxb-title">⚔️ 주말 보스레이드</p>
-            <p class="oxb-lead">${OXB_MAX_PARTY}명까지 팀을 만들어 차례대로 OX 문제를 풀어요. 맞히면 보스를 공격하고, 틀리면 보스가 나를 때려요. <b>한 명이라도 쓰러지면 게임 오버!</b></p>
+            <p class="oxb-lead">${OXB_MAX_PARTY}명까지 팀을 만들어 차례대로 OX 문제를 풀어요. 맞히면 보스를 공격하고, 틀리면 보스가 우리 팀 아무나 한 명을 때려요. <b>한 명이라도 쓰러지면 게임 오버!</b></p>
             <ul class="oxb-rules">
                 <li>⚡ 빨리 맞힐수록 데미지가 커요(최대 2배)</li>
                 <li>⚔️ 무기는 보너스 데미지 · 🛡️ 방패는 데미지 차감 · 👟 신발은 회피</li>

@@ -184,3 +184,35 @@ describe('최소 인원 설정', () => {
         assert.equal(R.raidMaxParty({ minParty: 5, maxParty: 3 }, 13), 5);
     });
 });
+
+describe('기술과 보스 공격 방식', () => {
+    const pet = (species, level) => ({ phase: 'pet', species, stage: 1, level, exp: 0, enhance: 0, full: 90, fedAt: 1000 });
+    const m = (id, level) => R.raidMemberFromPet(pet('emberkit', level), { id, name: `학생${id}`, now: 1000, today: '2026-11-16' });
+    it('배운 기술만 무작위로 써요(Lv.1 한 가지, Lv.10 두 가지, Lv.20 세 가지)', () => {
+        const used = (level) => {
+            const set = new Set();
+            for (let seed = 1; seed <= 40; seed += 1) R.simulateRaid([m('1', level), m('2', level)], { type: 'grass', hp: 999999, atk: 1, aoe: 0 }, seed).rounds.forEach((rd) => rd.hits.forEach((h) => set.add(h.skill)));
+            return [...set].sort();
+        };
+        assert.deepEqual(used(1), [0]);
+        assert.deepEqual(used(10), [0, 1]);
+        assert.deepEqual(used(25), [0, 1, 2]);
+    });
+    it('보스는 단일 공격과 전체 공격을 섞어 써요', () => {
+        const team = [m('1', 20), m('2', 20), m('3', 20), m('4', 20)];
+        const moves = { single: 0, all: 0 };
+        for (let seed = 1; seed <= 30; seed += 1) {
+            R.simulateRaid(team, { type: 'rock', hp: 999999, atk: 10, aoe: 50 }, seed).rounds.forEach((rd) => {
+                moves[rd.bossMove] += 1;
+                const alive = rd.boss.length;
+                if (rd.bossMove === 'single') assert.equal(alive, 1);
+                else assert.ok(alive >= 2);
+            });
+        }
+        assert.ok(moves.single > 50 && moves.all > 50, JSON.stringify(moves));
+        // 확률 0이면 단일 공격만, 100이면 전체 공격만
+        assert.ok(R.simulateRaid(team, { type: 'rock', hp: 999999, atk: 10, aoe: 0 }, 3).rounds.every((rd) => rd.bossMove === 'single'));
+        assert.ok(R.simulateRaid(team, { type: 'rock', hp: 999999, atk: 10, aoe: 100 }, 3).rounds.every((rd) => rd.bossMove === 'all'));
+        assert.equal(R.sanitizeRaidSettings(null).stages[9].aoe, 50);
+    });
+});

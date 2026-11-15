@@ -6220,6 +6220,16 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 inset 0 0 0 5px #c4a15a,
                 0 14px 28px rgba(0, 0, 0, 0.45);
         }
+        /* 대국 화면: 체스판을 남는 자리(가로·세로 중 작은 쪽)에 꽉 차게 키워요. */
+        #chessBoardWrap { container-type: size; }
+        @supports (width: 1cqw) {
+            #chessBoardWrap .chess-frame {
+                width: min(100cqw, 100cqh);
+                height: min(100cqw, 100cqh);
+                min-width: 0;
+                min-height: 0;
+            }
+        }
         .chess-coord {
             display: grid;
             color: #f8e7b0;

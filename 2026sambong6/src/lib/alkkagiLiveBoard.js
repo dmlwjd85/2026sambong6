@@ -365,7 +365,7 @@ export function createAlkkagiLiveBoard(canvas, opts = {}) {
 
     /* ---------- 입력 ---------- */
     let gst = createAlkkagiGestureState();
-    const CANCEL_DIST = ALKKAGI_CONFIG.radius * 1.1;
+    const CANCEL_DIST = Math.max(17.6, ALKKAGI_CONFIG.radius * 1.1);
 
     function localPoint(e) {
         const rect = canvas.getBoundingClientRect();
@@ -390,7 +390,7 @@ export function createAlkkagiLiveBoard(canvas, opts = {}) {
         const [u, v] = toBoard(px, py);
         let best = null;
         // 움직이는 알도 잡을 수 있게 조금 넓게 봐요.
-        let bestD = (ALKKAGI_CONFIG.radius * 2.1) ** 2;
+        let bestD = Math.max(33.6, ALKKAGI_CONFIG.radius * 2.1) ** 2; // 알이 작아져도 잡는 범위는 그대로
         for (const s of stones) {
             if (!s.alive || s.color !== view.myColor) continue;
             const d = (s.x - u) ** 2 + (s.y - v) ** 2;

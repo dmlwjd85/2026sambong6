@@ -878,7 +878,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     }
 
     let gst = createAlkkagiGestureState();
-    const CANCEL_DIST = ALKKAGI_CONFIG.radius * 1.1; // 알 가까이로 돌아와 놓으면 취소(약 12px)
+    const CANCEL_DIST = Math.max(17.6, ALKKAGI_CONFIG.radius * 1.1); // 알 가까이로 돌아와 놓으면 취소(알이 작아져도 손가락 여유는 그대로)
 
     function insideRelease(e) {
         const x = e.clientX;
@@ -899,7 +899,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         const [px, py] = localPoint(e);
         const [u, v] = toBoard(px, py);
         let best = null;
-        let bestD = (ALKKAGI_CONFIG.radius * 1.9) ** 2;
+        let bestD = Math.max(30, ALKKAGI_CONFIG.radius * 1.9) ** 2; // 알이 작아져도 잡는 범위는 그대로
         for (const s of display.stones) {
             if (!s.alive || s.color !== view.myColor) continue;
             const d = (s.x - u) ** 2 + (s.y - v) ** 2;

@@ -24,7 +24,7 @@ export const ALKKAGI_END_REASONS = Object.freeze(['out', 'forfeit', 'timeout', '
 export const ALKKAGI_CONFIG = Object.freeze({
     width: 400,
     height: 400,
-    radius: 16,
+    radius: 12,
     frictionDecel: 900,
     restitution: 0.88,
 });

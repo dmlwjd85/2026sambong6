@@ -32,7 +32,8 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: 560px;
+    /* 판은 화면 높이에 맞춰 커져요. 종이 폭도 그만큼 넓혀요(작은 화면에서는 예전처럼 560px까지). */
+    max-width: max(560px, min(1100px, calc(100dvh - 230px)));
     margin: 0 auto;
     padding: 6px 14px calc(8px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;

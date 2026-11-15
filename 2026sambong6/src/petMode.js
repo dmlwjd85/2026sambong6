@@ -19,6 +19,7 @@ import {
     PET_SPECIES,
     PET_TYPES,
     bringPetBack,
+    buyPetExpPack,
     buyPetEgg,
     enhancePet,
     evolvePet,
@@ -142,6 +143,7 @@ export function createPetMode(deps) {
             else if (act === 'feed') void feed(t.getAttribute('data-food'));
             else if (act === 'play') void run('펫과 놀기', (p, o) => playWithPet(p, o), { after: (r) => grew(r, '신나게 놀았어요!') });
             else if (act === 'walk') void run('펫 산책 보상', (p, o) => walkPet(p, o), { after: (r) => { show(free() ? '산책을 다녀왔어요! (선생님은 봉을 받지 않아요)' : `산책에서 ${deps.bong(r.gain)}을 벌어 왔어요!`, r.gain > 0 ? 'good' : ''); if (feedback && r.gain > 0) feedback.play('ok'); } });
+            else if (act === 'pack') void pack(Number(t.getAttribute('data-pack')) || 0);
             else if (act === 'enhance') void enhance();
             else if (act === 'evolve') void evolve();
             else if (act === 'back') void run('펫 데려오기', (p, o) => bringPetBack(p, o), { after: () => show('집으로 돌아왔어요! 이제 잘 챙겨 줘요.', 'good') });
@@ -251,6 +253,7 @@ export function createPetMode(deps) {
             raid: ((deps.settings && deps.settings()) || {}).raid, // 탐험 설정은 그대로 둬요
             slotRules: [{ level: val('s2-level'), price: val('s2-price') }, { level: val('s3-level'), price: val('s3-price') }],
             walk: { min: val('walk-min'), max: val('walk-max'), step: val('walk-step'), cap: val('walk-cap') },
+            expPacks: [0, 1, 2].map((i) => ({ price: val(`pack${i}-price`), exp: val(`pack${i}-exp`) })),
         });
         try {
             await deps.saveSettings(next);
@@ -293,6 +296,17 @@ export function createPetMode(deps) {
         const f = PET_FOODS[foodId];
         if (!f) return;
         await run(`펫 먹이: ${f.name}`, (p, o) => feedPet(p, { ...o, food: foodId }), { after: (r) => grew(r, `${f.emoji} 냠냠!`) });
+    }
+
+    /** 경험치 팩 사기 */
+    async function pack(index) {
+        const pk = settings().expPacks[index];
+        if (!pk) return;
+        if (!free()) {
+            const ok = await deps.confirm(`경험치 팩을 살까요?\n${deps.bong(pk.price)}을 내고 경험치 ${pk.exp}을 받아요.`);
+            if (!ok) return;
+        }
+        await run('펫 경험치 팩', (p, o) => buyPetExpPack(p, { ...o, index, packs: settings().expPacks }), { after: (r) => grew(r, '📦 경험치 팩!') });
     }
 
     async function enhance() {
@@ -429,6 +443,8 @@ export function createPetMode(deps) {
                 <label class="pet-set-row"><span>기본 범위</span>${num('walk-min', w.min, 0, 100)} ~ ${num('walk-max', w.max, 0, 100)} 봉</label>
                 <label class="pet-set-row"><span>능력치 보너스</span>전투력 ${num('walk-step', w.step, 10, 1000)} 마다 최대 +1봉</label>
                 <label class="pet-set-row"><span>하루 상한</span>${num('walk-cap', w.cap, 0, 500)} 봉</label>
+                <p class="pet-sub">경험치 팩</p>
+                ${cfg.expPacks.map((pk, i) => `<label class="pet-set-row"><span>${i + 1}번 팩</span>${num(`pack${i}-price`, pk.price, 1, 5000)} 봉 → 경험치 ${num(`pack${i}-exp`, pk.exp, 1, 100000)}</label>`).join('')}
                 <p class="pet-note">지금 설정: 갓 태어난 펫 ${baby.min}~${baby.max}봉 · 다 키운 펫(전투력 ${PET_MAX_POWER}) ${grown.min}~${grown.max}봉. 최소는 전투력 ${w.step * 2}마다 +1이에요.</p>
                 <button type="button" class="pet-btn is-main" data-p="settings-save">설정 저장</button>
             </div>
@@ -518,6 +534,10 @@ export function createPetMode(deps) {
                 : (nextEvo ? `<p class="pet-note">Lv.${nextEvo}이 되면 진화할 수 있어요.</p>` : '<p class="pet-note">마지막 단계까지 진화했어요!</p>')}
             <p class="pet-sub">먹이 주기 ${v.fullNow > 90 ? '<em>(배가 불러요. 조금 있다가 줘요)</em>' : ''}</p>
             <div class="pet-foods">${foods}</div>
+            ${v.level >= PET_MAX_LEVEL ? '' : `<p class="pet-sub">경험치 팩</p>
+            <div class="pet-foods">${settings().expPacks.map((pk, i) => `<button type="button" class="pet-btn is-food is-pack" data-p="pack" data-pack="${i}"${myBong() < pk.price ? ' disabled' : ''}>
+                <b>📦 경험치 +${pk.exp}</b><i>${esc(deps.bong(pk.price))}</i>
+            </button>`).join('')}</div>`}
             <div class="pet-actions">
                 <button type="button" class="pet-btn" data-p="play"${v.canPlay ? '' : ' disabled'}><b>🎾 놀아 주기</b><i>${v.playsLeft <= 0 ? `오늘 ${PET_PLAY_PER_DAY}번 다 놀았어요` : v.playWaitMs > 0 ? `${waitText(v.playWaitMs)} 뒤에 또 놀 수 있어요 · 오늘 ${v.playsLeft}번 남음` : `공짜 · 경험치 +${PET_PLAY_EXP} · 4시간에 한 번 · 오늘 ${v.playsLeft}/${PET_PLAY_PER_DAY}번 남음`}</i></button>
                 <button type="button" class="pet-btn" data-p="walk"${v.walked || v.fullNow < 30 ? ' disabled' : ''}><b>🐾 산책 보내기</b><i>${v.walked ? '오늘은 다녀왔어요' : v.fullNow < 30 ? '배고파서 못 가요' : `하루 한 번 · ${v.walkRange.min === v.walkRange.max ? esc(deps.bong(v.walkRange.max)) : `${v.walkRange.min}~${esc(deps.bong(v.walkRange.max))}`} 벌어 와요`}</i></button>

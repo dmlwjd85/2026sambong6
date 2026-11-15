@@ -224,7 +224,10 @@ export function createPetRaidView(ctx) {
                 <span class="raid-fx-pet type-${m.type}" data-id="${esc(m.id)}" style="--c:${TYPE_COLOR[m.type]}">
                     ${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, eager: true })}
                     <b>${esc(m.name)}</b>
+                    <em data-dmg></em>
                 </span>`).join('')}</div>
+            <p class="raid-fx-phase"></p>
+            <div class="raid-fx-feed" aria-hidden="true"></div>
             <p class="raid-fx-banner" aria-live="polite"></p>`;
         host.appendChild(el);
         let skipped = false;
@@ -241,15 +244,20 @@ export function createPetRaidView(ctx) {
             const b = el.getBoundingClientRect();
             return { x: a.left - b.left + a.width / 2, y: a.top - b.top + a.height / 2 };
         };
-        const float = (text, x, y, cls) => {
+        const pop = (node, cls, ms = 400) => { if (!node) return; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); setTimeout(() => node.classList.remove(cls), ms); };
+        /** 떠오르는 숫자. who 를 주면 누가 때렸는지 이름표가 같이 떠요. */
+        const float = (text, x, y, cls, who = '') => {
             if (skipped) return;
             const n = document.createElement('span');
             n.className = `raid-fx-num ${cls || ''}`;
-            n.textContent = text;
-            n.style.left = `${x + (Math.random() * 50 - 25)}px`;
-            n.style.top = `${y + (Math.random() * 30 - 15)}px`;
+            if (who) { const w = document.createElement('small'); w.textContent = who; n.appendChild(w); }
+            const b = document.createElement('b');
+            b.textContent = text;
+            n.appendChild(b);
+            n.style.left = `${x}px`;
+            n.style.top = `${y}px`;
             layer.appendChild(n);
-            setTimeout(() => n.remove(), 900);
+            setTimeout(() => n.remove(), 1250);
         };
         const setHp = (hp) => {
             hpBar.style.width = `${Math.max(0, (hp / sim.bossMaxHp) * 100)}%`;
@@ -261,26 +269,43 @@ export function createPetRaidView(ctx) {
             await pause(ms);
             banner.className = 'raid-fx-banner';
         };
+        const phase = el.querySelector('.raid-fx-phase');
+        const feed = el.querySelector('.raid-fx-feed');
+        const nameOf = {};
+        const total = {};
+        run.members.forEach((m) => { nameOf[m.id] = m.name; total[m.id] = 0; });
+        /** 오른쪽 위 기록: 누가 얼마를 때렸는지 최근 4줄 */
+        const log = (who, dmg, cls) => {
+            const row = document.createElement('p');
+            row.className = `raid-fx-feed-row ${cls || ''}`;
+            const a = document.createElement('b'); a.textContent = who;
+            const d = document.createElement('i'); d.textContent = dmg;
+            row.append(a, d);
+            feed.prepend(row);
+            while (feed.children.length > 4) feed.lastChild.remove();
+        };
 
         try {
             await pause(250);
             await say(`${run.members.length}마리 출격!`, '', 900);
             let hp = sim.bossMaxHp;
+            let slot = 0;
             for (let r = 0; r < sim.rounds.length; r += 1) {
                 const round = sim.rounds[r];
                 if (skipped) break;
-                // 우리 팀 공격: 차례로 속성 빛줄기를 쏴요.
-                const gap = Math.max(40, Math.min(110, 520 / round.hits.length));
+                // 우리 팀 공격: 차례로 속성 빛줄기를 쏴요. 숫자는 자리를 바꿔 가며 띄워 겹치지 않게 해요.
+                phase.textContent = `${r + 1}턴 · 우리 팀 공격!`;
+                phase.className = 'raid-fx-phase is-team';
+                const gap = Math.max(130, Math.min(220, 1900 / round.hits.length));
                 const bc = center(bossEl);
+                const br = bossEl.getBoundingClientRect();
                 round.hits.forEach((h, i) => {
                     setTimeout(() => {
                         if (skipped) return;
                         const pe = petEl(h.by);
                         if (!pe) return;
                         const pc = center(pe);
-                        pe.classList.remove('is-attack');
-                        void pe.offsetWidth;
-                        pe.classList.add('is-attack');
+                        pop(pe, 'is-attack', 320);
                         const shot = document.createElement('i');
                         shot.className = `raid-fx-shot${h.crit ? ' is-crit' : ''}`;
                         shot.style.setProperty('--c', pe.style.getPropertyValue('--c'));
@@ -290,55 +315,80 @@ export function createPetRaidView(ctx) {
                         const anim = shot.animate([
                             { transform: 'translate(-50%, -50%) scale(0.6)', opacity: 1 },
                             { transform: `translate(calc(-50% + ${bc.x - pc.x}px), calc(-50% + ${bc.y - pc.y}px)) scale(${h.crit ? 1.9 : 1.2})`, opacity: 1 },
-                        ], { duration: 230, easing: 'cubic-bezier(.5,0,.9,.5)' });
+                        ], { duration: 210, easing: 'cubic-bezier(.5,0,.9,.5)' });
                         anim.onfinish = () => {
                             shot.remove();
+                            if (skipped) return;
                             hp = Math.max(0, hp - h.dmg);
                             setHp(hp);
-                            bossEl.classList.remove('is-hit');
-                            void bossEl.offsetWidth;
-                            bossEl.classList.add('is-hit');
+                            // 보스가 맞는 모션: 하얗게 번쩍이며 뒤로 밀려요(치명타는 더 크게).
+                            pop(bossEl, h.crit ? 'is-hit-crit' : 'is-hit', h.crit ? 420 : 260);
+                            const hx = bc.x + (Math.random() * 0.5 - 0.25) * br.width;
+                            const hy = bc.y + (Math.random() * 0.4 - 0.2) * br.height;
                             const burst = document.createElement('i');
                             burst.className = `raid-fx-burst${h.crit ? ' is-crit' : ''}`;
                             burst.style.setProperty('--c', pe.style.getPropertyValue('--c'));
-                            burst.style.left = `${bc.x + (Math.random() * 70 - 35)}px`;
-                            burst.style.top = `${bc.y + (Math.random() * 70 - 35)}px`;
+                            burst.style.left = `${hx}px`;
+                            burst.style.top = `${hy}px`;
                             layer.appendChild(burst);
                             setTimeout(() => burst.remove(), 420);
-                            float(`${h.crit ? '치명타! ' : ''}${h.dmg.toLocaleString()}`, bc.x, bc.y - 30, h.crit ? 'is-crit' : h.mult > 1 ? 'is-strong' : h.mult < 1 ? 'is-weak' : '');
-                            if (h.crit) { el.classList.remove('is-shake'); void el.offsetWidth; el.classList.add('is-shake'); }
+                            const cut = document.createElement('i');
+                            cut.className = `raid-fx-cut${h.crit ? ' is-crit' : ''}`;
+                            cut.style.left = `${hx}px`;
+                            cut.style.top = `${hy}px`;
+                            cut.style.setProperty('--r', `${Math.floor(Math.random() * 120 - 60)}deg`);
+                            layer.appendChild(cut);
+                            setTimeout(() => cut.remove(), 300);
+                            // 누가 얼마를 때렸는지: 보스 양옆으로 번갈아 띄워요.
+                            const col = slot % 4;
+                            slot += 1;
+                            const fx = bc.x + (col < 2 ? -1 : 1) * br.width * (col % 2 ? 0.42 : 0.24);
+                            const fy = bc.y - br.height * 0.18 + (col % 2) * 34;
+                            const cls = h.crit ? 'is-crit' : h.mult > 1 ? 'is-strong' : h.mult < 1 ? 'is-weak' : '';
+                            float(`${h.crit ? '💥' : ''}${h.dmg.toLocaleString()}`, fx, fy, cls, nameOf[h.by] || '');
+                            log(nameOf[h.by] || '', `${h.crit ? '치명타 ' : ''}${h.dmg.toLocaleString()}`, cls);
+                            total[h.by] = (total[h.by] || 0) + h.dmg;
+                            const sum = pe.querySelector('[data-dmg]');
+                            if (sum) { sum.textContent = total[h.by].toLocaleString(); pop(sum, 'is-up', 300); }
+                            if (h.crit) pop(el, 'is-shake', 320);
                         };
                     }, i * gap);
                 });
-                await pause(round.hits.length * gap + 330);
+                await pause(round.hits.length * gap + 420);
                 setHp(round.bossHp);
                 hp = round.bossHp;
-                // 보스 반격: 충격파와 함께 몇 마리를 때려요.
+                // 보스의 공격: 몸을 웅크렸다가 덮치고, 화면이 빨갛게 번쩍여요.
                 if (round.boss.length && !skipped) {
-                    bossEl.classList.remove('is-roar');
-                    void bossEl.offsetWidth;
-                    bossEl.classList.add('is-roar');
-                    const wave = document.createElement('i');
-                    wave.className = 'raid-fx-wave';
-                    wave.style.left = `${bc.x}px`;
-                    wave.style.top = `${bc.y}px`;
-                    layer.appendChild(wave);
-                    setTimeout(() => wave.remove(), 600);
-                    await pause(230);
+                    phase.textContent = `${run.boss.name}의 반격!`;
+                    phase.className = 'raid-fx-phase is-boss';
+                    pop(bossEl, 'is-windup', 380);
+                    await pause(360);
+                    pop(bossEl, 'is-strike', 520);
+                    await pause(170);
+                    if (!skipped) {
+                        const red = document.createElement('i');
+                        red.className = 'raid-fx-red';
+                        el.appendChild(red);
+                        setTimeout(() => red.remove(), 620);
+                        const claw = document.createElement('i');
+                        claw.className = 'raid-fx-claw';
+                        const tr = el.querySelector('.raid-fx-team').getBoundingClientRect();
+                        const er = el.getBoundingClientRect();
+                        claw.style.top = `${tr.top - er.top + tr.height / 2}px`;
+                        layer.appendChild(claw);
+                        setTimeout(() => claw.remove(), 480);
+                        pop(el, 'is-quake', 420);
+                        try { if (navigator.vibrate) navigator.vibrate([40, 30, 80]); } catch (_) { /* 진동 없는 기기 */ }
+                    }
                     round.boss.forEach((h) => {
                         const pe = petEl(h.target);
                         if (!pe) return;
                         const pc = center(pe);
-                        pe.classList.remove('is-hurt');
-                        void pe.offsetWidth;
-                        pe.classList.add('is-hurt');
-                        float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 26, 'is-hurt');
-                        if (h.faint) pe.classList.add('is-faint');
+                        pop(pe, 'is-hurt', 460);
+                        float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, 'is-hurt');
+                        if (h.faint) { pe.classList.add('is-faint'); log(nameOf[h.target] || '', '쓰러짐', 'is-hurt'); }
                     });
-                    el.classList.remove('is-shake');
-                    void el.offsetWidth;
-                    el.classList.add('is-shake');
-                    await pause(360);
+                    await pause(560);
                 }
             }
             // 건너뛰었으면 마지막 모습으로 맞춰요.

@@ -77,6 +77,8 @@ export const PET_DEFAULT_SETTINGS = Object.freeze({
     slotRules: Object.freeze([Object.freeze({ level: 35, price: 50 }), Object.freeze({ level: 60, price: 100 })]),
     /** 산책 보상: 기본 최소·최대 봉, 전투력 step마다 최대 +1(전투력은 최대 1000), 하루 상한 cap */
     walk: Object.freeze({ min: 1, max: 3, step: 150, cap: 15 }),
+    /** 경험치 팩: 봉으로 사서 바로 경험치를 줘요(비쌀수록 조금 이득) */
+    expPacks: Object.freeze([Object.freeze({ price: 50, exp: 50 }), Object.freeze({ price: 100, exp: 110 }), Object.freeze({ price: 500, exp: 600 })]),
 });
 
 export function sanitizePetSettings(raw) {
@@ -97,7 +99,12 @@ export function sanitizePetSettings(raw) {
     const cap = Math.max(max, num(w.cap, d.walk.cap, 0, 500));
     // 탐험(보스 레이드) 설정은 petRaid.js 의 sanitizeRaidSettings 가 다듬어요. 여기서는 그대로 넘겨요.
     const raid = src.raid && typeof src.raid === 'object' && !Array.isArray(src.raid) ? src.raid : null;
-    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, ...(raid ? { raid } : {}) };
+    const packs = Array.isArray(src.expPacks) ? src.expPacks : [];
+    const expPacks = d.expPacks.map((def, i) => {
+        const r = packs[i] && typeof packs[i] === 'object' ? packs[i] : {};
+        return { price: num(r.price, def.price, 1, 5000), exp: num(r.exp, def.exp, 1, 100000) };
+    });
+    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, expPacks, ...(raid ? { raid } : {}) };
 }
 
 export function emptyPet() {
@@ -341,6 +348,19 @@ export function feedPet(pet, { food, bong = 0, now = 0, today = '' } = {}) {
     return done(grown.pet, { cost: f.price, levelUps: grown.ups, exp: f.exp });
 }
 
+/** 경험치 팩 사기: packs 는 설정의 expPacks, index 는 몇 번째 팩인지 */
+export function buyPetExpPack(pet, { index = 0, packs = PET_DEFAULT_SETTINGS.expPacks, bong = 0, now = 0, today = '' } = {}) {
+    const p = sanitizePet(pet);
+    if (p.phase !== 'pet') return fail(p, 'no_pet');
+    const pack = Array.isArray(packs) ? packs[int(index, 0, 99)] : null;
+    if (!pack || !(pack.price > 0) || !(pack.exp > 0)) return fail(p, 'bad_pack');
+    if (petView(p, now, today).away) return fail(p, 'away');
+    if (p.level >= PET_MAX_LEVEL) return fail(p, 'max_level');
+    if (Number(bong) < pack.price) return fail(p, 'no_bong');
+    const grown = addExp(p, pack.exp);
+    return done(grown.pet, { cost: pack.price, levelUps: grown.ups, exp: pack.exp });
+}
+
 /** 놀아 주기(공짜, 4시간에 한 번·하루 5번까지) */
 export function playWithPet(pet, { now = 0, today = '' } = {}) {
     const p = sanitizePet(pet);
@@ -427,6 +447,8 @@ export const PET_ERROR_TEXT = Object.freeze({
     full: '배가 불러서 더 못 먹어요. 조금 있다가 줘요.',
     play_limit: '오늘은 충분히 놀았어요. 내일 또 놀아요.',
     play_wait: '방금 놀아서 쉬는 중이에요. 조금 있다가 또 놀아요.',
+    bad_pack: '그런 경험치 팩은 없어요.',
+    max_level: '이미 최고 레벨이에요.',
     not_ready: '아직 진화할 수 없어요.',
     max_enhance: '강화를 끝까지 했어요.',
     walked: '오늘은 이미 산책을 다녀왔어요.',

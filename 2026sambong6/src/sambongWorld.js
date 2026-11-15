@@ -1376,7 +1376,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.59';
+        const APP_VERSION = 'v1.60';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10531,6 +10531,10 @@ ${subjectLine}
         window.openOxQuiz = function() {
             if (oxQuizUi) void oxQuizUi.open();
         };
+        /** 주말 보스레이드(OX 릴레이)를 바로 열어요. */
+        window.openOxBossRaid = function() {
+            if (oxQuizUi) void oxQuizUi.open('boss');
+        };
         window.closeOxQuiz = function() {
             if (oxQuizUi) oxQuizUi.close();
         };
@@ -10611,6 +10615,7 @@ ${subjectLine}
                 }
             });
             if (challengeSub === 'ox') window.openOxQuiz();
+            else if (challengeSub === 'raid') window.openOxBossRaid();
             else window.closeOxQuiz();
             if (challengeSub === 'pet') _petMode.open();
             else _petMode.close();

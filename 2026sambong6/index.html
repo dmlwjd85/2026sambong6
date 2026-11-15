@@ -1731,7 +1731,7 @@
                     </button>
                     <button type="button" id="challengeSub-raid" onclick="window.switchChallengeSub('raid')" class="app-sub-item">
                         <span class="app-sub-icon"><img src="nav/nav-raid.webp" alt="" width="192" height="192"></span>
-                        <span>퀴즈레이드</span>
+                        <span>보스레이드</span>
                     </button>
                     <button type="button" id="challengeSub-ox" onclick="window.switchChallengeSub('ox')" class="app-sub-item">
                         <span class="app-sub-icon"><img src="nav/nav-oxquiz.jpg" alt="" width="192" height="192"></span>
@@ -1825,6 +1825,13 @@
                 </div>
 
                 <div id="challengePane-raid" class="hidden space-y-3">
+                    <div class="rounded-2xl border-2 border-indigo-300 bg-gradient-to-b from-indigo-700 to-indigo-950 p-4 text-center shadow-lg">
+                        <h3 class="text-lg font-black text-amber-200">⚔️ 주말 보스레이드</h3>
+                        <p class="text-[11px] text-indigo-100 mt-1">최대 5명이 릴레이로 OX 퀴즈를 풀어 보스를 잡아요. 문제는 OX 퀴즈 문제 은행에서 나와요.</p>
+                        <button type="button" onclick="window.openOxBossRaid()" class="ox-go mt-3 w-full">보스레이드 열기</button>
+                    </div>
+                    <!-- 예전 퀴즈 레이드(객관식·주관식)는 쓰지 않아 숨겼어요. 주말 보스레이드는 OX 퀴즈만 써요. -->
+                    <div id="legacyQuizRaid" class="hidden space-y-3">
                     <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-3 rounded-2xl border border-purple-500 shadow-lg">
                         <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
                             <div class="flex-1">
@@ -1913,7 +1920,8 @@
                             <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 퀴즈)</button>
                         </div>
                     </div>
-                </div>
+                                    </div>
+</div>
             </div>
         </section>
 

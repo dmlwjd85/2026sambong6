@@ -298,3 +298,22 @@ describe('전투력', () => {
         assert.equal(P.petPower(null), 0);
     });
 });
+
+it('경험치 팩: 봉을 내고 경험치를 받아요(마스터가 값·경험치를 고쳐요)', async () => {
+    const { buyPetExpPack, sanitizePetSettings, PET_MAX_LEVEL } = await import('./petGame.js');
+    const cfg = sanitizePetSettings(null);
+    assert.deepEqual(cfg.expPacks, [{ price: 50, exp: 50 }, { price: 100, exp: 110 }, { price: 500, exp: 600 }]);
+    const pet = { phase: 'pet', species: 'emberkit', stage: 1, level: 1, exp: 0, enhance: 0, full: 90, fedAt: 1000 };
+    assert.equal(buyPetExpPack(pet, { index: 0, packs: cfg.expPacks, bong: 49, now: 1000 }).error, 'no_bong');
+    const r = buyPetExpPack(pet, { index: 2, packs: cfg.expPacks, bong: 500, now: 1000 });
+    assert.equal(r.ok, true);
+    assert.equal(r.cost, 500);
+    assert.equal(r.exp, 600);
+    assert.ok(r.levelUps > 0 && r.pet.level > 1);
+    assert.equal(buyPetExpPack(pet, { index: 7, packs: cfg.expPacks, bong: 999 }).error, 'bad_pack');
+    assert.equal(buyPetExpPack({ ...pet, level: PET_MAX_LEVEL }, { index: 0, packs: cfg.expPacks, bong: 999, now: 1000 }).error, 'max_level');
+    assert.equal(buyPetExpPack({ phase: 'egg', taps: 1 }, { index: 0, bong: 999 }).error, 'no_pet');
+    const custom = sanitizePetSettings({ expPacks: [{ price: 30, exp: 40 }] });
+    assert.deepEqual(custom.expPacks[0], { price: 30, exp: 40 });
+    assert.deepEqual(custom.expPacks[1], { price: 100, exp: 110 });
+});

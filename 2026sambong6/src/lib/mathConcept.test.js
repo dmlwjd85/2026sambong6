@@ -2,9 +2,11 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { MATH_UNITS, longDivisionSteps, normalizeMathParams, parseBlockGrid, parseGraphItems, renderMathConcept, simplifyFraction } from './mathConcept.js';
 
-describe('6학년 수학 개념 그림', () => {
-    it('열두 단원의 모든 개념이 기본값으로 그려져요', () => {
-        assert.equal(MATH_UNITS.length, 12);
+describe('수학 개념 그림(1~6학년)', () => {
+    it('모든 단원의 모든 개념이 기본값으로 그려져요', () => {
+        assert.equal(MATH_UNITS.filter((u) => u.grade === 6).length, 12);
+        [1, 2, 3, 4, 5, 6].forEach((g) => [1, 2].forEach((t) => assert.ok(MATH_UNITS.filter((u) => u.grade === g && u.term === t).length >= 5, `${g}-${t}`)));
+        assert.equal(new Set(MATH_UNITS.map((u) => u.id)).size, MATH_UNITS.length);
         let count = 0;
         MATH_UNITS.forEach((u) => u.concepts.forEach((c) => {
             const r = renderMathConcept(u.id, c.id, {});
@@ -36,7 +38,7 @@ describe('6학년 수학 개념 그림', () => {
         }));
     });
     it('입력값을 범위 안으로 다듬어요', () => {
-        const c = MATH_UNITS[0].concepts[0];
+        const c = MATH_UNITS.find((u) => u.id === '6-1-1').concepts[0];
         assert.deepEqual(normalizeMathParams(c, { a: 99, b: 'x' }), { a: 9, b: 4 });
         assert.deepEqual(normalizeMathParams(c, { a: -3, b: 2.6 }), { a: 1, b: 3 });
     });
@@ -96,5 +98,18 @@ describe('그림으로 그릴 수 있는 값으로 맞추기', () => {
     it('소수 칸은 정해진 자릿수까지만', () => {
         assert.equal(normalizeMathParams(concept('6-1-3', 'decdivnat'), { a: 8.6449, b: 4 }).a, 8.64);
         assert.equal(normalizeMathParams(concept('6-2-2', 'decdivdec'), { a: 1.44, b: 0.66 }).b, 0.7);
+    });
+    it('1~5학년: 그림이 되는 값으로 맞추고 계산이 맞아요', () => {
+        assert.equal(normalizeMathParams(concept('3-1-3', 'share'), { a: 13, b: 3 }).a, 12);
+        assert.equal(normalizeMathParams(concept('1-1-3', 'add9'), { a: 8, b: 8 }).b, 1);
+        assert.deepEqual(normalizeMathParams(concept('2-1-3', 'sub'), { a: 20, b: 45 }), { a: 45, b: 20 });
+        assert.match(renderMathConcept('3-1-1', 'sub', { a: 524, b: 187 }).caption, /524 − 187 = 337/);
+        assert.match(renderMathConcept('4-2-3', 'add', { a: 1.25, b: 0.48 }).caption, /= 1\.73/);
+        assert.match(renderMathConcept('4-1-3', 'area3', { a: 236, b: 24 }).caption, /= 5664$/);
+        assert.match(renderMathConcept('3-2-2', 'long', { a: 86, b: 4 }).caption, /86 ÷ 4 = 21 … 2/);
+        assert.match(renderMathConcept('5-1-2', 'gcdlcm', { a: 12, b: 18 }).caption, /최대공약수 6.*최소공배수 36/);
+        assert.match(renderMathConcept('5-1-5', 'add', { a: 1, b: 2, c: 1, d: 3 }).caption, /= 5\/6$/);
+        assert.match(renderMathConcept('4-1-1', 'big', { n: 25480000 }).caption, /이천오백사십팔만/);
+        assert.match(renderMathConcept('5-2-1', 'round', { n: 2463, place: '100', kind: 'round' }).caption, /2463 → 2500$/);
     });
 });

@@ -7,6 +7,8 @@
  * steps: 단계별 설명 문장. 그림 안의 data-step="n" 조각이 n번째 단계에 나타나요(화면에서만 숨기고, 저장한 그림은 모두 보여요).
  */
 
+import { buildLowerUnits } from './mathConceptLower.js';
+
 export const MATH_W = 800;
 export const MATH_H = 520;
 const FONT = "'Pretendard','Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif";
@@ -268,8 +270,8 @@ export function longDivisionSteps(dividendText, divisor, maxExtra = 3) {
 }
 
 /** 세로셈 그리기. base: 문제를 쓰는 단계 번호. 계산 한 번이 한 단계씩이고, 마지막에 소수점을 찍어요. */
-function drawLongDivision(dividendText, divisor, x0, y0, { cw = 38, rh: rhMax = 44, base = 1 } = {}) {
-    const ld = longDivisionSteps(dividendText, divisor);
+function drawLongDivision(dividendText, divisor, x0, y0, { cw = 38, rh: rhMax = 44, base = 1, maxExtra = 3 } = {}) {
+    const ld = longDivisionSteps(dividendText, divisor, maxExtra);
     const { digits, point, steps } = ld;
     const active = steps.filter((s) => s.q > 0);
     // 계산 줄이 많으면 줄 간격과 글자를 줄여 그림 안에 넣어요.
@@ -797,7 +799,10 @@ function snapFracDivFrac(p) {
 const PI_OPT = [['3.14', '3.14'], ['3.1', '3.1'], ['3', '3']];
 const POLY_OPT = [3, 4, 5, 6, 7, 8].map((n) => [String(n), `${POLY_NAMES[n]}각형`]);
 
+const KIT = { C, PALETTE, MATH_W, MATH_H, text, line, rect, poly, frac, fracResult, simplifyFraction, S, P, numText, textWidth, r2, gcd, lcm, isoCube, drawLongDivision, parseGraphItems };
+
 export const MATH_UNITS = Object.freeze([
+    ...buildLowerUnits(KIT),
     { id: '6-1-1', grade: 6, term: 1, no: 1, name: '분수의 나눗셈', concepts: [
         { id: 'natdiv', name: '(자연수) ÷ (자연수)', params: [P.int('a', '나누어지는 수', 1, 9, 3), P.int('b', '나누는 수', 2, 9, 4)], draw: drawNatDiv },
         { id: 'fracdivnat', name: '(분수) ÷ (자연수)', params: [P.int('n', '분자', 1, 11, 3), P.int('d', '분모', 2, 12, 4), P.int('k', '나누는 수', 2, 6, 2)], snap: (p) => ({ n: Math.min(p.n, p.d - 1) }), draw: drawFracDivNat },

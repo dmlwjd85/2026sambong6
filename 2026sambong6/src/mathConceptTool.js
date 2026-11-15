@@ -15,7 +15,8 @@ const STEP_MS = 2800;
 
 export function createMathConceptTool({ root, toast = () => {} } = {}) {
     const host = () => (typeof root === 'function' ? root() : root);
-    const st = { unit: MATH_UNITS[0].id, concept: MATH_UNITS[0].concepts[0].id, params: {}, bound: false, step: 0, playing: false, timer: 0, speak: false };
+    const FIRST = MATH_UNITS.find((u) => u.grade === 6) || MATH_UNITS[0];
+    const st = { unit: FIRST.id, concept: FIRST.concepts[0].id, params: {}, bound: false, step: 0, playing: false, timer: 0, speak: false };
     try {
         const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
         if (saved && saved.unit) { st.unit = String(saved.unit); st.concept = String(saved.concept || ''); st.params = saved.params && typeof saved.params === 'object' ? saved.params : {}; st.speak = saved.speak === true; }

@@ -2232,6 +2232,10 @@
                     <span class="app-tool-icon"><img src="nav/tool-notes.webp" alt="" width="192" height="192"></span>
                     <span>학급게시판</span>
                 </button>
+                <button type="button" class="app-tool-item" data-tool="mathviz" data-student="1" onclick="window.switchClassTool('mathviz')">
+                    <span class="app-tool-icon"><img src="nav/tool-mathviz.svg" alt="" width="192" height="192"></span>
+                    <span>수학 개념</span>
+                </button>
                 <button type="button" class="app-tool-item" data-tool="openlesson" onclick="window.switchClassTool('openlesson')">
                     <span class="app-tool-icon"><img src="nav/tool-openlesson.webp" alt="" width="192" height="192"></span>
                     <span>공개수업</span>
@@ -2892,6 +2896,11 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- 수학 개념: 6학년 단원별 개념 그림을 숫자에 맞춰 그려 줍니다(mathConceptTool.js). -->
+                <div class="classtool-pane hidden glass-panel p-3 rounded-xl mb-4 border border-sky-500/50 bg-slate-900/80" data-tool="mathviz" data-student="1">
+                    <div id="mathVizRoot"></div>
                 </div>
 
                 <!-- 공개수업: 수업 아이디어를 전체화면으로 넘기며 봅니다. 새 수업은 openLessons.js에 추가합니다. -->

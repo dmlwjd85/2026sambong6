@@ -326,6 +326,7 @@ import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { createChessTutorial } from './chessTutorial.js';
 import { createMindMode } from './mindMode.js';
 import { createPetMode } from './petMode.js';
+import { createMathConceptTool } from './mathConceptTool.js';
 import { createRaidCallBanner } from './raidCallBanner.js';
 import { raidMaxParty, sanitizeRaidSettings } from './lib/petRaid.js';
 import { isOxbOpen, sanitizeOxbSettings } from './lib/oxBossRaid.js';
@@ -1379,7 +1380,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.65';
+        const APP_VERSION = 'v1.66';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -12420,6 +12421,7 @@ ${subjectLine}
             } else if (typeof window.closeChalkboard === 'function') {
                 window.closeChalkboard({ skipWindow: true, fromShare: true });
             }
+            if (classtoolSub === 'mathviz') _mathViz.open();
             if (classtoolSub === 'thermo') renderLearningThermometerPanel();
             if (classtoolSub === 'lottery') {
                 renderLotteryParticipantList();
@@ -12512,6 +12514,9 @@ ${subjectLine}
             window.closeClassToolFullscreen();
         });
 
+        // 수업도구 「수학 개념」: 6학년 단원별 개념 그림
+        const _mathViz = createMathConceptTool({ root: () => document.getElementById('mathVizRoot'), toast: (t) => { if (typeof window.showToast === 'function') window.showToast(t); } });
+
         const CLASSTOOL_TITLES = {
             timetable: '시간표',
             thermo: '학습 온도계',
@@ -12527,6 +12532,7 @@ ${subjectLine}
             openlesson: '공개수업',
             rps: '가위바위보',
             boardgames: '보드게임',
+            mathviz: '수학 개념 그림',
         };
 
         window.switchClassTool = function(toolId) {

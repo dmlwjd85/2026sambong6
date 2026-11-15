@@ -37,7 +37,7 @@ describe('기능 잠금해제 카탈로그', () => {
         assert.deepEqual(MASTER_ONLY_CLASS_TOOLS, ['thermo', 'martial', 'vote', 'morning', 'openlesson', 'rps']);
         assert.equal(isMasterOnlyClassTool('openlesson'), true);
         assert.equal(isMasterOnlyClassTool('timer'), false);
-        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet', 'classboard', 'boardgames']);
+        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet', 'classboard', 'boardgames', 'mathviz']);
         assert.equal(isClassWideClassTool('padlet'), true);
         assert.equal(isClassWideClassTool('classboard'), true);
         assert.equal(isClassWideClassTool('boardgames'), true);

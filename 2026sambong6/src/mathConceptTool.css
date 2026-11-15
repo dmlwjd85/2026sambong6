@@ -1,0 +1,42 @@
+/* 수업도구 「수학 개념」 */
+.mathviz { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 0.9rem; align-items: start; color: #e2e8f0; }
+.mathviz-side { display: flex; flex-direction: column; gap: 0.5rem; }
+.mathviz-terms { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+.mathviz-term, .mathviz-unit, .mathviz-chip, .mathviz-btn, .mathviz-reset {
+    min-height: 44px; border-radius: 0.75rem; border: 2px solid #334155; background: #0f172a; color: #e2e8f0; font-weight: 800; cursor: pointer;
+}
+.mathviz-term { font-size: 12px; }
+.mathviz-term.is-on { background: #1d4ed8; border-color: #93c5fd; color: #fff; }
+.mathviz-units { display: flex; flex-direction: column; gap: 0.35rem; }
+.mathviz-unit { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem; text-align: left; font-size: 13px; }
+.mathviz-unit b { flex: 0 0 1.6rem; height: 1.6rem; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #334155; font-size: 12px; }
+.mathviz-unit.is-on { background: #172554; border-color: #60a5fa; color: #fff; }
+.mathviz-unit.is-on b { background: #3b82f6; }
+.mathviz-main { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+.mathviz-concepts { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mathviz-chip { padding: 0 0.9rem; font-size: 13px; }
+.mathviz-chip.is-on { background: #b45309; border-color: #fde68a; color: #fff; }
+.mathviz-params { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.8rem; padding: 0.6rem 0.7rem; border-radius: 0.9rem; background: rgba(15, 23, 42, 0.7); border: 1px solid #334155; }
+.mathviz-field { display: flex; flex-direction: column; gap: 0.2rem; font-size: 11px; font-weight: 800; color: #bae6fd; }
+.mathviz-field.is-wide { flex: 1 1 16rem; }
+.mathviz-field input, .mathviz-field select { min-height: 40px; padding: 0 0.5rem; border-radius: 0.6rem; border: 2px solid #475569; background: #020617; color: #fff; font-size: 16px; font-weight: 800; }
+.mathviz-field input[type="number"] { width: 5.2rem; text-align: center; }
+.mathviz-field.is-wide input { width: 100%; }
+.mathviz-stepper { display: flex; align-items: center; gap: 0.2rem; }
+.mathviz-stepper button { width: 40px; height: 40px; border-radius: 0.6rem; border: 2px solid #475569; background: #1e293b; color: #fff; font-size: 18px; font-weight: 900; cursor: pointer; }
+.mathviz-reset { min-height: 40px; padding: 0 0.8rem; font-size: 12px; color: #cbd5e1; }
+.mathviz-stage { border-radius: 0.9rem; overflow: hidden; background: #fff; border: 3px solid #cbd5e1; line-height: 0; }
+.mathviz-stage svg { display: block; width: 100%; height: auto; }
+.mathviz-stage:fullscreen { display: flex; align-items: center; justify-content: center; border: 0; border-radius: 0; background: #fff; }
+.mathviz-stage:fullscreen svg { width: 100vw; height: 100vh; }
+.mathviz-stage.is-zoom { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; border-radius: 0; }
+.mathviz-caption { margin: 0; font-size: 13px; font-weight: 700; color: #fde68a; line-height: 1.45; }
+.mathviz-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mathviz-btn { padding: 0 0.9rem; font-size: 13px; }
+.mathviz-btn.is-main { background: #15803d; border-color: #86efac; color: #fff; }
+.mathviz-note { margin: 0; font-size: 11px; color: #94a3b8; }
+@media (max-width: 760px) {
+    .mathviz { grid-template-columns: minmax(0, 1fr); }
+    .mathviz-units { flex-direction: row; flex-wrap: wrap; }
+    .mathviz-unit { flex: 1 1 46%; font-size: 12px; }
+}

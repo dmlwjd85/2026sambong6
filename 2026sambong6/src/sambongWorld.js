@@ -262,6 +262,7 @@ import {
     closeBoardRoom,
     collectBoardRoomVacateActions,
     continueBoardRoom,
+    startBoardRoom,
     createBoardRoom,
     decideBoardRoomCreate,
     deleteWaitingBoardRoom,
@@ -321,6 +322,7 @@ import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
 import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey, isAlkkagiLiveOver } from './lib/alkkagiLiveGame.js';
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { createChessTutorial } from './chessTutorial.js';
+import { createMindMode } from './mindMode.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
 import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
@@ -12541,6 +12543,33 @@ ${subjectLine}
             },
         });
 
+        // 이심전심(더 마인드 규칙): 2~4명 협동 카드 게임. 방은 공통 방을 쓰고 판 화면은 mindMode.js가 맡아요.
+        const _mind = createMindMode({
+            selfId: () => boardGameSelfId(),
+            mutateRoom: (roomId, mutator, opts) => enqueueBoardGameWrite(() => mutateBoardRoom(roomId, mutator, opts)),
+            applyRoomGame: (room, opts) => applyBoardRoomGame(room, opts),
+            continueRoom: (room, opts) => continueBoardRoom(room, opts),
+            closeRoom: (room, opts) => closeBoardRoom(room, opts),
+            deleteRoom: async (roomId) => { await deleteBoardRoomDoc(roomId); },
+            markLeft: (room) => rememberLeftBoardRoomKey(boardRoomInstanceKey(room)),
+            confirm: (text) => window.customConfirm(text),
+            toLobby: () => {
+                _boardGameActiveId = '';
+                _boardGameType = 'mind';
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+            },
+        });
+        function renderMindPlay(room) {
+            showBoardGameView('play');
+            _mind.render(room);
+        }
+        /** 방장이 정원이 차기 전에 시작해요(이심전심: 2~3명으로도 할 수 있어요). */
+        window.startBoardGameRoomNow = async function (roomId) {
+            const started = await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (cur) => startBoardRoom(cur, { hostId: boardGameSelfId(), now: Date.now() })));
+            if (started) enterBoardGameTable(roomId);
+        };
+
         // 체스 배우기: 방·Firestore 없이 이 기기에서만 도는 단원별 연습 화면이에요(chessTutorial.js).
         const _chessLearn = createChessTutorial({
             toLobby: () => {
@@ -13053,9 +13082,11 @@ ${subjectLine}
             if (_alkLive.isAi()) return 'alkkagiLive';
             const room = currentBoardGameRoom();
             if (room && room.gameType === 'chess') return 'chess';
+            if (room && room.gameType === 'mind') return 'mind';
             if (room && room.gameType === 'alkkagiLive') return 'alkkagiLive';
             if (room && room.gameType === 'alkkagi') return 'alkkagi';
             if (_boardGameType === 'alkkagi') return 'alkkagi';
+            if (_boardGameType === 'mind') return 'mind';
             return _boardGameType === 'chess' ? 'chess' : 'gomoku';
         }
 
@@ -13088,6 +13119,10 @@ ${subjectLine}
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
+            const mindPlay = document.getElementById('boardgameMindPlayView');
+            const mindOn = _boardGameView === 'play' && kind === 'mind';
+            if (mindPlay) mindPlay.classList.toggle('hidden', !mindOn);
+            if (!mindOn && _mind.isActive()) _mind.stop();
             const chessLearn = document.getElementById('boardgameChessLearnView');
             if (chessLearn) chessLearn.classList.toggle('hidden', _boardGameView !== 'learn');
             if (_boardGameView !== 'learn') _chessLearn.close();
@@ -13265,6 +13300,8 @@ ${subjectLine}
             const me = boardGameSelfId();
             if (!me || !window.playerState || window.playerState.isGuest) return;
             if (room.id === 'alkkagi-local') return;
+            // 이심전심은 한 팀으로 하는 게임이라 승패 전적을 세지 않아요.
+            if (room.gameType === 'mind') return;
             const type = room.gameType === 'chess' ? 'chess' : (room.gameType === 'alkkagi' || room.gameType === 'alkkagiLive' ? 'alkkagi' : 'gomoku');
             let result = '';
             let key = '';
@@ -13337,6 +13374,7 @@ ${subjectLine}
         function boardGameTypeLabel(type) {
             if (type === 'chess') return '체스';
             if (type === 'alkkagi') return '알까기';
+            if (type === 'mind') return '이심전심';
             return '오목';
         }
 
@@ -13375,6 +13413,7 @@ ${subjectLine}
                 }
                 _boardPlaySeenId = room.id;
                 if (room.gameType === 'chess') renderChessPlay(room);
+                else if (room.gameType === 'mind') renderMindPlay(room);
                 else if (room.gameType === 'alkkagiLive') renderAlkkagiLivePlay(room);
                 else if (room.gameType === 'alkkagi') renderAlkkagiPlay(room);
                 else renderGomokuPlay(room);
@@ -13391,13 +13430,16 @@ ${subjectLine}
         function syncBoardGameLobbyChrome() {
             const chess = _boardGameType === 'chess';
             const alk = _boardGameType === 'alkkagi';
+            const mind = _boardGameType === 'mind';
             const kicker = document.querySelector('#boardgameLobbyView .boardgame-kicker');
             const title = document.querySelector('#boardgameLobbyView .boardgame-title');
             const lead = document.getElementById('boardgameLobbyLead');
-            if (kicker) kicker.textContent = alk ? 'ALKKAGI LOBBY' : (chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY');
-            if (title) title.textContent = alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
+            if (kicker) kicker.textContent = mind ? 'TEAM CARD GAME' : alk ? 'ALKKAGI LOBBY' : (chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY');
+            if (title) title.textContent = mind ? '이심전심 방' : alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
             if (lead) {
-                lead.textContent = alk
+                lead.textContent = mind
+                    ? '2~4명이 한 팀이 되어, 말 없이 작은 수부터 카드를 내는 협동 게임이에요(더 마인드 규칙). 방을 만들고 친구의 참가 신청을 받아 줘요. 4명이 차면 바로 시작하고, 2~3명이면 방장이 「시작하기」를 눌러요. 하다가 나가면 팀 도전이 끝나요.'
+                    : alk
                     ? (ALKKAGI_LIVE_ENABLED
                         ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 「실시간 방 만들기」는 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 3초 쉬어요. 「실시간 AI」로 AI와도 동시에 쏠 수 있어요. 하다가 나가면 져요.'
                         : '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 하다가 나가면 져요.')
@@ -13427,7 +13469,7 @@ ${subjectLine}
             const alkLiveAiRow = document.getElementById('boardgameAlkLiveAiRow');
             if (alkLiveAiRow) alkLiveAiRow.classList.toggle('hidden', !alk || !ALKKAGI_LIVE_ENABLED);
             document.querySelectorAll('#boardgameLobbyView .boardgame-ai-row[aria-label="AI 난이도"]').forEach((row) => {
-                row.classList.toggle('hidden', alk);
+                row.classList.toggle('hidden', alk || mind);
             });
         }
 
@@ -13435,7 +13477,7 @@ ${subjectLine}
             syncBoardGameLobbyChrome();
             const recEl = document.getElementById('boardgameMyRecord');
             const label = boardGameTypeLabel(_boardGameType);
-            if (recEl) recEl.textContent = `내 ${label} 전적 ${myBoardGameRecordText(_boardGameType)}`;
+            if (recEl) recEl.textContent = _boardGameType === 'mind' ? '한 팀으로 하는 게임이라 승패 전적은 세지 않아요.' : `내 ${label} 전적 ${myBoardGameRecordText(_boardGameType)}`;
             const box = document.getElementById('boardgameRoomList');
             if (!box) return;
             const me = boardGameSelfId();
@@ -13447,7 +13489,9 @@ ${subjectLine}
                     .sort((a, b) => b.updatedAt - a.updatedAt)
                 : listLobbyBoardRooms(_boardGameRooms, { gameType: _boardGameType, now });
             if (!rooms.length) {
-                box.innerHTML = _boardGameType === 'alkkagi'
+                box.innerHTML = _boardGameType === 'mind'
+                    ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」로 시작하고 친구를 기다려요.</p>'
+                    : _boardGameType === 'alkkagi'
                     ? (ALKKAGI_LIVE_ENABLED
                         ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「실시간 방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>'
                         : '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」, 「한 화면 둘이서」, 「AI와 하기」로 시작해요.</p>')
@@ -13467,7 +13511,11 @@ ${subjectLine}
                     action = `<button type="button" class="boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
                 } else if (host && room.status === 'waiting') {
                     // 내가 만든 대기 방(오목·체스·알까기)은 여기서 바로 지울 수 있어요.
-                    action = `<div class="boardgame-room-actions"><span class="boardgame-room-meta">방장</span><button type="button" class="boardgame-mini-btn boardgame-room-delete" data-delete-room="${escapeBoardGameText(room.id)}">방 지우기</button></div>`;
+                    // 이심전심은 2~3명으로도 할 수 있어서, 두 명 이상 모이면 방장이 바로 시작할 수 있어요.
+                    const startNow = room.gameType === 'mind' && room.members.length >= room.minPlayers
+                        ? `<button type="button" class="boardgame-primary-btn" data-start-room="${escapeBoardGameText(room.id)}">시작하기 (${room.members.length}명)</button>`
+                        : '';
+                    action = `<div class="boardgame-room-actions"><span class="boardgame-room-meta">방장</span>${startNow}<button type="button" class="boardgame-mini-btn boardgame-room-delete" data-delete-room="${escapeBoardGameText(room.id)}">방 지우기</button></div>`;
                 } else if (pending) {
                     action = `<span class="boardgame-room-meta">승인 대기</span>`;
                 } else if (rejected) {
@@ -13488,7 +13536,7 @@ ${subjectLine}
                 return `<article class="boardgame-room-card" data-room-id="${escapeBoardGameText(room.id)}">
                     <div>
                         <p class="boardgame-room-title">${escapeBoardGameText(room.hostName)}의 방${room.gameType === 'alkkagiLive' ? ' <span class="boardgame-room-live">실시간</span>' : ''}</p>
-                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left} · 방장 ${escapeBoardGameText(boardGameRecordText(lookupBoardGameRecords(room.hostId), room.gameType === 'alkkagiLive' ? 'alkkagi' : room.gameType))}</p>
+                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left} · ${room.gameType === 'mind' ? escapeBoardGameText(room.members.map((m) => m.name).join(', ')) : `방장 ${escapeBoardGameText(boardGameRecordText(lookupBoardGameRecords(room.hostId), room.gameType === 'alkkagiLive' ? 'alkkagi' : room.gameType))}`}</p>
                         <span class="boardgame-room-status${room.status === 'playing' ? ' is-playing' : ''}">${status}</span>
                     </div>
                     <div>${action}</div>
@@ -13497,6 +13545,9 @@ ${subjectLine}
             }).join('');
             box.querySelectorAll('[data-join]').forEach((btn) => {
                 btn.addEventListener('click', () => { void window.requestJoinBoardGameRoom(btn.getAttribute('data-join')); });
+            });
+            box.querySelectorAll('[data-start-room]').forEach((btn) => {
+                btn.addEventListener('click', () => { btn.disabled = true; void window.startBoardGameRoomNow(btn.getAttribute('data-start-room')); });
             });
             box.querySelectorAll('[data-enter]').forEach((btn) => {
                 btn.addEventListener('click', () => enterBoardGameTable(btn.getAttribute('data-enter')));
@@ -14453,6 +14504,7 @@ ${subjectLine}
             if (room && getBoardGameDef(room.gameType)) _boardGameType = room.gameType === 'alkkagiLive' ? 'alkkagi' : room.gameType;
             showBoardGameView('play');
             if (room && room.gameType === 'chess') renderChessPlay(room);
+            else if (room && room.gameType === 'mind') renderMindPlay(room);
             else if (room && room.gameType === 'alkkagiLive') renderAlkkagiLivePlay(room);
             else if (room && room.gameType === 'alkkagi') renderAlkkagiPlay(room);
             else if (room) renderGomokuPlay(room);
@@ -15691,6 +15743,7 @@ ${subjectLine}
         }
 
         window.leaveBoardGameTable = async function () {
+            if (_mind.isActive()) { await _mind.leave(); return; }
             if (_alkLive.isAi()) { await _alkLive.leave(); return; }
             const liveRoom = currentBoardGameRoom();
             if (liveRoom && liveRoom.gameType === 'alkkagiLive' && !_alkLocal) {

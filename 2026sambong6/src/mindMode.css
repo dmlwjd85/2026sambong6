@@ -1,0 +1,249 @@
+/* 이심전심 판 화면(#boardgameMindPlayView): 짙은 남색 탁자 위에 숫자 카드 */
+.boardgame-panel:has(> #boardgameMindPlayView:not(.hidden)) {
+    background:
+        radial-gradient(circle at 50% 38%, rgba(99, 102, 241, 0.28), transparent 55%),
+        linear-gradient(170deg, #0f172a 0%, #020617 60%, #111827 100%);
+}
+#boardgameMindPlayView {
+    position: relative;
+    height: 100%;
+    color: #e0e7ff;
+}
+#boardgameMindPlayView .boardgame-mini-btn {
+    background: rgba(30, 41, 59, 0.9);
+    border-color: rgba(165, 180, 252, 0.5);
+    color: #e0e7ff;
+}
+#boardgameMindPlayView .boardgame-primary-btn {
+    background: linear-gradient(180deg, #a5b4fc, #6366f1);
+    border-color: #c7d2fe;
+    color: #0f172a;
+}
+#boardgameMindPlayView button:disabled { opacity: 0.45; cursor: default; }
+
+.mind-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    min-height: 0;
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+}
+.mind-top { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.mind-title {
+    flex: 1;
+    text-align: center;
+    font-family: 'Black Han Sans', sans-serif;
+    font-size: 1.3rem;
+    letter-spacing: 0.08em;
+    color: #eef2ff;
+}
+.mind-stats { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.4rem; flex-shrink: 0; }
+.mind-stat {
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid rgba(165, 180, 252, 0.4);
+    background: rgba(15, 23, 42, 0.75);
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.mind-stat b { font-size: 15px; color: #fff; }
+.mind-lives { color: #fb7185; letter-spacing: 0.1em; }
+
+/* 친구들 */
+.mind-mates { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; flex-shrink: 0; }
+.mind-mate {
+    flex: 1 1 30%;
+    min-width: 0;
+    max-width: 240px;
+    padding: 0.45rem 0.6rem;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(165, 180, 252, 0.35);
+    background: rgba(15, 23, 42, 0.7);
+}
+.mind-mate.is-empty { opacity: 0.6; }
+.mind-mate-name {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 13px;
+    font-weight: 900;
+    color: #fff;
+    min-width: 0;
+}
+.mind-mate-name span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mind-badge {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-style: normal;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+}
+.mind-badge.is-ready { background: #22c55e; color: #052e16; }
+.mind-badge.is-star { background: #fde047; color: #422006; }
+.mind-backs { display: flex; align-items: center; margin-top: 0.3rem; min-height: 26px; }
+.mind-back {
+    width: 16px;
+    height: 24px;
+    margin-right: -8px;
+    border-radius: 4px;
+    border: 1px solid #c7d2fe;
+    background: repeating-linear-gradient(135deg, #4f46e5 0 4px, #312e81 4px 8px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.mind-count { margin-left: 14px; font-size: 11px; font-weight: 800; color: #a5b4fc; }
+.mind-none { font-size: 11px; font-weight: 800; color: #94a3b8; }
+
+/* 탁자 */
+.mind-table {
+    position: relative;
+    flex: 1;
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 0.6rem;
+    border-radius: 1.2rem;
+    border: 1px solid rgba(165, 180, 252, 0.3);
+    background: radial-gradient(ellipse at center, rgba(49, 46, 129, 0.55), rgba(15, 23, 42, 0.4) 70%);
+}
+.mind-pile { position: relative; display: flex; align-items: center; justify-content: center; height: clamp(110px, 24vh, 170px); width: 100%; }
+.mind-pile-empty { font-size: 13px; font-weight: 800; color: #a5b4fc; text-align: center; }
+.mind-card {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.7rem;
+    border: 2px solid #c7d2fe;
+    background: linear-gradient(160deg, #ffffff, #e0e7ff);
+    color: #1e1b4b;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    font-variant-numeric: tabular-nums;
+}
+.mind-card b { font-family: 'Black Han Sans', sans-serif; font-weight: 400; line-height: 1; }
+.mind-card em { font-style: normal; font-size: 10px; font-weight: 900; color: #4338ca; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mind-pile-card {
+    position: absolute;
+    width: clamp(64px, 16vw, 96px);
+    height: clamp(92px, 23vw, 136px);
+    transform: translateX(calc(var(--i) * 34%)) rotate(calc(var(--i) * 4deg)) scale(0.86);
+    opacity: 0.72;
+}
+.mind-pile-card b { font-size: clamp(26px, 7vw, 40px); }
+.mind-pile-card.is-top {
+    transform: none;
+    opacity: 1;
+    z-index: 2;
+    border-color: #fde047;
+    animation: mind-drop 0.28s cubic-bezier(.2, .9, .3, 1.3) both;
+}
+.mind-pile-card.is-top b { font-size: clamp(34px, 9vw, 54px); }
+@keyframes mind-drop { from { transform: translateY(40%) scale(1.25); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.mind-event {
+    max-width: 100%;
+    padding: 0.35rem 0.8rem;
+    border-radius: 0.8rem;
+    background: rgba(15, 23, 42, 0.8);
+    font-size: clamp(12px, 2vw, 14px);
+    font-weight: 800;
+    line-height: 1.45;
+    text-align: center;
+    color: #c7d2fe;
+    word-break: keep-all;
+}
+.mind-event.is-miss { color: #fecaca; border: 1px solid rgba(248, 113, 113, 0.6); }
+.mind-event.is-good { color: #bbf7d0; border: 1px solid rgba(74, 222, 128, 0.5); }
+
+.mind-focus, .mind-result { display: flex; flex-direction: column; align-items: center; gap: 0.45rem; text-align: center; }
+.mind-focus-level, .mind-result-title { font-family: 'Black Han Sans', sans-serif; font-size: clamp(30px, 8vw, 48px); color: #fff; line-height: 1.1; }
+.mind-focus-text, .mind-result-line { font-size: 14px; font-weight: 800; color: #c7d2fe; line-height: 1.45; word-break: keep-all; }
+.mind-focus-reward { font-size: 12px; font-weight: 800; color: #fde047; }
+.mind-ready-btn { min-width: 11rem; font-size: 15px; }
+.mind-result.is-won .mind-result-title { color: #fde047; }
+.mind-result-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 0.3rem; }
+
+/* 내 카드 */
+.mind-hand {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0;
+}
+.mind-hand-card { width: clamp(46px, 11.5vw, 64px); height: clamp(64px, 16vw, 90px); }
+.mind-hand-card b { font-size: clamp(20px, 5vw, 28px); }
+.mind-hand-card.is-low {
+    width: clamp(58px, 14.5vw, 80px);
+    height: clamp(80px, 20vw, 112px);
+    border-color: #fde047;
+    box-shadow: 0 0 0 3px rgba(253, 224, 71, 0.35), 0 6px 14px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+}
+.mind-hand-card.is-low b { font-size: clamp(26px, 6.5vw, 36px); }
+.mind-hand-card.is-low:not(:disabled):active { transform: translateY(-6px); }
+#boardgameMindPlayView .mind-hand-card.is-low:disabled { opacity: 1; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45); border-color: #c7d2fe; }
+.mind-tip { flex-shrink: 0; text-align: center; font-size: 12px; font-weight: 800; color: #a5b4fc; word-break: keep-all; }
+
+.mind-actions { flex-shrink: 0; display: flex; justify-content: center; min-height: 44px; }
+.mind-star-btn { border-color: #fde047 !important; color: #fde047 !important; }
+.mind-star-vote {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.9rem;
+    border: 1px solid #fde047;
+    background: rgba(66, 32, 6, 0.6);
+    font-size: 12px;
+    font-weight: 800;
+    color: #fef9c3;
+}
+
+/* 규칙 창 */
+.mind-rules {
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    display: grid;
+    place-items: center;
+    padding: 0.8rem;
+    background: rgba(2, 6, 23, 0.8);
+}
+.mind-rules-card {
+    max-width: 520px;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 1rem 1.1rem;
+    border-radius: 1.1rem;
+    border: 1px solid #a5b4fc;
+    background: #0f172a;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+.mind-rules-card h3 { font-size: 1.1rem; font-weight: 900; color: #fff; text-align: center; }
+.mind-rules-card ul { display: flex; flex-direction: column; gap: 0.45rem; padding-left: 1.1rem; list-style: disc; font-size: 13px; line-height: 1.5; color: #e0e7ff; word-break: keep-all; }
+.mind-rules-card b { color: #fde047; }
+
+/* 반응(oxQuizFeedback): 큰 O/X와 글자는 빼고 색 번짐·소리·진동만 써요. */
+#boardgameMindPlayView .ox-fx-mark, #boardgameMindPlayView .ox-fx-label { display: none; }
+.mind-body.ox-shake .mind-table { animation: ox-shake 0.42s ease-in-out; }
+
+@media (prefers-reduced-motion: reduce) {
+    .mind-pile-card.is-top, .mind-body.ox-shake .mind-table { animation: none; }
+}

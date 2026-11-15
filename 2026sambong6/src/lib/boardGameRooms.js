@@ -17,6 +17,7 @@ import { alkkagiGameToDoc, emptyAlkkagiGame, sanitizeAlkkagiGame } from './alkka
 import { alkkagiLiveGameToDoc, emptyAlkkagiLiveGame, sanitizeAlkkagiLiveGame } from './alkkagiLiveGame.js';
 import { emptyChessGame, chessGameToDoc, sanitizeChessGame } from './chessGame.js';
 import { emptyGomokuGame, gomokuGameToDoc, sanitizeGomokuGame } from './gomokuGame.js';
+import { emptyMindGame, mindGameToDoc, sanitizeMindGame, startMindGame } from './mindGame.js';
 
 /** 10분 무활동이면 방을 자동 종료합니다. */
 export const BOARD_ROOM_IDLE_TTL_MS = 10 * 60 * 1000;
@@ -66,6 +67,14 @@ export const BOARD_GAME_CATALOG = Object.freeze({
         label: '실시간 알까기',
         minPlayers: 2,
         maxPlayers: 2,
+        timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
+    }),
+    // 이심전심(더 마인드 규칙): 2~4명이 한 팀. 차례·턴 타이머가 없어요. 4명이 차면 바로 시작하고, 2~3명이면 방장이 시작해요.
+    mind: Object.freeze({
+        id: 'mind',
+        label: '이심전심',
+        minPlayers: 2,
+        maxPlayers: 4,
         timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
     }),
 });
@@ -257,7 +266,14 @@ function emptyGameForType(gameType, now) {
     if (gameType === 'chess') return emptyChessGame({ now });
     if (gameType === 'alkkagi') return emptyAlkkagiGame({ now });
     if (gameType === 'alkkagiLive') return emptyAlkkagiLiveGame({ now });
+    if (gameType === 'mind') return emptyMindGame({ now });
     return null;
+}
+
+/** 판을 시작할 때의 새 game. 이심전심은 참가자에게 카드를 나눠 줘야 해서 방을 봐요. */
+function newGameForRoom(room, now) {
+    if (room.gameType === 'mind') return startMindGame({ players: room.members.map((m) => m.id), now });
+    return emptyGameForType(room.gameType, now);
 }
 
 function sanitizeGameForType(gameType, raw, now) {
@@ -265,6 +281,7 @@ function sanitizeGameForType(gameType, raw, now) {
     if (gameType === 'chess') return sanitizeChessGame(raw, { now });
     if (gameType === 'alkkagi') return sanitizeAlkkagiGame(raw, { now });
     if (gameType === 'alkkagiLive') return sanitizeAlkkagiLiveGame(raw, { now });
+    if (gameType === 'mind') return sanitizeMindGame(raw, { now });
     return raw && typeof raw === 'object' ? raw : null;
 }
 
@@ -893,7 +910,7 @@ export function startBoardRoom(room, { hostId, now, auto = false } = {}) {
     if (!auto && !isRoomHost(r, hostId)) return { ok: false, error: 'host_only', room: r };
     if (!canStartBoardRoom(r) && r.status !== 'waiting') return { ok: false, error: 'cannot_start', room: r };
     if (r.members.length < r.minPlayers) return { ok: false, error: 'need_players', room: r };
-    const game = emptyGameForType(r.gameType, t);
+    const game = newGameForRoom(r, t);
     if (game && typeof game === 'object') game.turnStartedAt = t;
     return {
         ok: true,
@@ -933,7 +950,7 @@ export function continueBoardRoom(room, { actorId, now } = {}) {
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     if (r.status !== 'finished') return { ok: false, error: 'not_finished', room: r };
     if (!isRoomMember(r, actorId)) return { ok: false, error: 'member_only', room: r };
-    const game = emptyGameForType(r.gameType, t);
+    const game = newGameForRoom(r, t);
     if (game && typeof game === 'object') game.turnStartedAt = t;
     return {
         ok: true,
@@ -1002,7 +1019,7 @@ export function boardRoomToDoc(room) {
     const r = sanitizeBoardRoom(room);
     const game = r.gameType === 'gomoku'
         ? gomokuGameToDoc(r.game)
-        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : (r.gameType === 'alkkagiLive' ? alkkagiLiveGameToDoc(r.game) : r.game)));
+        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : (r.gameType === 'alkkagiLive' ? alkkagiLiveGameToDoc(r.game) : (r.gameType === 'mind' ? mindGameToDoc(r.game) : r.game))));
     return { ...r, game, participantIds: boardRoomParticipantIds(r), memberUids: boardRoomMemberUids(r) };
 }
 

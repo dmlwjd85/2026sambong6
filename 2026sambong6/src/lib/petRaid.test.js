@@ -1,0 +1,172 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import * as R from './petRaid.js';
+import { sanitizePet } from './petGame.js';
+
+const T0 = new Date(2026, 10, 16, 9).getTime();
+const DAY = '2026-11-16';
+const SP = ['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake'];
+const member = (i, power = 300, species = SP[i % 7]) => ({ id: String(i + 1), name: `학생${i + 1}`, species, stage: 2, level: 10, enhance: 0, power });
+const team = (n, power) => Array.from({ length: n }, (_, i) => member(i, power));
+const winRate = (n, power, stage, tries = 60) => {
+    let w = 0;
+    for (let s = 1; s <= tries; s += 1) w += R.simulateRaid(team(n, power), R.RAID_DEFAULT_STAGES[stage - 1], s * 7919).win ? 1 : 0;
+    return w / tries;
+};
+
+describe('탐험 설정', () => {
+    it('기본 스테이지는 10개이고, 뒤로 갈수록 세고 보상이 커요', () => {
+        const s = R.sanitizeRaidSettings(null);
+        assert.equal(s.stages.length, 10);
+        for (let i = 1; i < 10; i += 1) {
+            assert.ok(s.stages[i].hp > s.stages[i - 1].hp);
+            assert.ok(s.stages[i].first >= s.stages[i - 1].first);
+        }
+        assert.ok(new Set(s.stages.map((x) => x.type)).size >= 6, '보스 속성이 다양해요');
+        assert.equal(s.dailyRewards, 3);
+        // 보상을 너무 많이 주지 않아요: 첫 보상을 다 모아도 110봉 안쪽
+        assert.ok(s.stages.reduce((sum, x) => sum + x.first, 0) <= 110);
+    });
+
+    it('마스터가 고친 값은 범위 안으로 맞추고, 빈 값은 기본값을 써요', () => {
+        const s = R.sanitizeRaidSettings({ stages: [{ name: ' <b>대왕</b> ', type: 'ice', hp: 50, atk: -3, first: 9999, repeat: '' }], dailyRewards: 200, maxParty: 5, teamBonus: 99 });
+        assert.equal(s.stages[0].name, 'b대왕/b');
+        assert.equal(s.stages[0].type, 'ice');
+        assert.equal(s.stages[0].hp, 100);
+        assert.equal(s.stages[0].atk, 0);
+        assert.equal(s.stages[0].first, 1000);
+        assert.equal(s.stages[0].repeat, 1);
+        assert.equal(s.stages[1].name, R.RAID_DEFAULT_STAGES[1].name);
+        assert.equal(s.dailyRewards, 99);
+        assert.equal(s.teamBonus, 50);
+    });
+
+    it('한 팀 최대 인원은 학급 인원에 맞추고 13명을 넘지 않아요', () => {
+        assert.equal(R.raidMaxParty(null, 13), 13);
+        assert.equal(R.raidMaxParty(null, 25), 13);
+        assert.equal(R.raidMaxParty(null, 8), 8);
+        assert.equal(R.raidMaxParty(null, 1), 2);
+        assert.equal(R.raidMaxParty({ maxParty: 5 }, 25), 5);
+    });
+});
+
+describe('탐험 전투', () => {
+    it('속성 상성: 유리하면 1.5배, 불리하면 0.75배', () => {
+        assert.equal(R.raidTypeMult('water', 'fire'), 1.5);
+        assert.equal(R.raidTypeMult('fire', 'water'), 0.75);
+        assert.equal(R.raidTypeMult('fire', 'electric'), 1);
+    });
+
+    it('같은 팀·같은 씨앗이면 어디서 돌려도 결과가 똑같아요', () => {
+        const a = R.simulateRaid(team(4, 400), R.RAID_DEFAULT_STAGES[3], 12345);
+        const b = R.simulateRaid(JSON.parse(JSON.stringify(team(4, 400))), { ...R.RAID_DEFAULT_STAGES[3] }, 12345);
+        assert.deepEqual(a, b);
+        assert.notDeepEqual(a.rounds, R.simulateRaid(team(4, 400), R.RAID_DEFAULT_STAGES[3], 54321).rounds);
+    });
+
+    it('사람이 많을수록 유리해요', () => {
+        assert.ok(winRate(2, 400, 5) < 0.2);
+        assert.ok(winRate(6, 400, 5) > 0.9);
+        const two = R.simulateRaid(team(2, 400), R.RAID_DEFAULT_STAGES[4], 7);
+        const six = R.simulateRaid(team(6, 400), R.RAID_DEFAULT_STAGES[4], 7);
+        assert.ok(six.teamMult > two.teamMult);
+    });
+
+    it('난이도: 갓 태어난 두 마리가 1스테이지를 깨고, 마지막 보스는 잘 키운 여럿이 모여야 해요', () => {
+        assert.equal(winRate(2, 115, 1), 1);
+        assert.equal(winRate(2, 115, 3), 0);
+        assert.equal(winRate(6, 950, 10), 0);
+        assert.ok(winRate(13, 950, 10) > 0.9);
+    });
+
+    it('전투 기록: 라운드마다 공격과 보스 반격이 있고, 보스 체력은 줄기만 해요', () => {
+        const r = R.simulateRaid(team(5, 500), R.RAID_DEFAULT_STAGES[5], 99);
+        assert.ok(r.rounds.length >= 2 && r.rounds.length <= R.RAID_MAX_ROUNDS);
+        let hp = r.bossMaxHp;
+        r.rounds.forEach((round) => {
+            assert.ok(round.hits.length >= 1);
+            assert.ok(round.bossHp <= hp);
+            hp = round.bossHp;
+            round.boss.forEach((h) => assert.ok(h.dmg > 0));
+        });
+        assert.equal(Object.values(r.dealt).reduce((a, b) => a + b, 0) >= r.bossMaxHp - r.bossHp, true);
+    });
+});
+
+describe('탐험 방', () => {
+    const pet = (extra = {}) => sanitizePet({ phase: 'pet', species: 'emberkit', stage: 2, level: 12, enhance: 1, full: 80, fedAt: T0, ...extra });
+
+    it('대표 펫으로 팀원이 되고, 가출한 펫·알은 못 가요', () => {
+        const m = R.raidMemberFromPet(pet(), { id: '3', name: '세찬', now: T0, today: DAY });
+        assert.equal(m.type, 'fire');
+        assert.equal(m.power, 200 + 180 + 20);
+        assert.equal(R.raidMemberFromPet(pet({ full: 0, fedAt: T0 - 100 * 3600000 }), { id: '3', now: T0 }), null);
+        assert.equal(R.raidMemberFromPet({ phase: 'egg' }, { id: '3', now: T0 }), null);
+    });
+
+    it('방 만들기 → 참가 → 출발 → 다시 모으기', () => {
+        const made = R.createRaidParty({ member: member(0), stage: 1, unlocked: 1, now: T0 });
+        assert.equal(made.ok, true);
+        assert.equal(R.createRaidParty({ member: member(0), stage: 2, unlocked: 1 }).error, 'locked_stage');
+        assert.equal(R.startRaid(made.party, { id: '1', seed: 5, now: T0 }).error, 'need_party');
+        let party = R.joinRaidParty(made.party, { member: member(1), max: 13, now: T0 }).party;
+        // 같은 사람이 다시 들어오면 정보만 바뀌어요
+        party = R.joinRaidParty(party, { member: { ...member(1), power: 500 }, max: 13, now: T0 }).party;
+        assert.equal(party.members.length, 2);
+        assert.equal(party.members[1].power, 500);
+        assert.equal(R.joinRaidParty(party, { member: member(2), max: 2, now: T0 }).error, 'full');
+        assert.equal(R.joinRaidParty(party, { member: member(2), max: 13, now: T0 + R.RAID_PARTY_TTL_MS + 1 }).error, 'stale');
+        assert.equal(R.startRaid(party, { id: '2', seed: 5, now: T0 }).error, 'leader_only');
+        const started = R.startRaid(party, { id: '1', seed: 5, now: T0 + 1000 });
+        assert.equal(started.party.status, 'fight');
+        assert.equal(started.party.run.win, started.sim.win);
+        assert.equal(R.joinRaidParty(started.party, { member: member(2), now: T0 }).error, 'fighting');
+        // 문서로 갔다 와도 같은 전투가 다시 나와요
+        const back = R.sanitizeRaidParty(JSON.parse(JSON.stringify(started.party)));
+        assert.deepEqual(R.replayRaidRun(back.run), started.sim);
+        const again = R.reopenRaidParty(back, { id: '1', now: T0 + 2000 }).party;
+        assert.equal(again.status, 'open');
+        assert.equal(again.run.id, started.party.run.id);
+        assert.equal(R.leaveRaidParty(again, { id: '2' }).party.members.length, 1);
+        assert.equal(R.leaveRaidParty(again, { id: '1' }).party, null);
+    });
+});
+
+describe('탐험 보상', () => {
+    const run = (extra = {}) => ({ id: 'r1', stage: 2, win: true, boss: { first: 4, repeat: 1 }, members: [member(0), member(1)], ...extra });
+
+    it('첫 클리어는 첫 보상, 그다음은 반복 보상(하루 3번), 도전은 계속할 수 있어요', () => {
+        let r = R.claimRaidReward(null, run(), { id: '1', today: DAY });
+        assert.equal(r.bong, 4);
+        assert.equal(r.first, true);
+        assert.deepEqual(r.progress.firsts, [2]);
+        assert.equal(R.claimRaidReward(r.progress, run(), { id: '1', today: DAY }).error, 'claimed');
+        let p = r.progress;
+        for (let i = 2; i <= 4; i += 1) {
+            r = R.claimRaidReward(p, run({ id: `r${i}` }), { id: '1', today: DAY });
+            assert.equal(r.bong, 1);
+            p = r.progress;
+        }
+        r = R.claimRaidReward(p, run({ id: 'r5' }), { id: '1', today: DAY });
+        assert.equal(r.ok, true);
+        assert.equal(r.bong, 0);
+        assert.equal(r.limited, true);
+        assert.ok(r.exp > 0);
+        // 다음 날에는 다시 받아요
+        assert.equal(R.claimRaidReward(r.progress, run({ id: 'r6' }), { id: '1', today: '2026-11-17' }).bong, 1);
+    });
+
+    it('지면 봉은 없고, 팀원이 아니면 못 받아요', () => {
+        const lose = R.claimRaidReward(null, run({ win: false }), { id: '1', today: DAY });
+        assert.equal(lose.bong, 0);
+        assert.deepEqual(lose.progress.firsts, []);
+        assert.equal(R.claimRaidReward(null, run(), { id: '9', today: DAY }).error, 'not_member');
+    });
+
+    it('앞 스테이지를 깨야 다음이 열려요', () => {
+        assert.equal(R.raidUnlockedStage(null), 1);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 2] }), 3);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 3] }), 2);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), 10);
+    });
+});

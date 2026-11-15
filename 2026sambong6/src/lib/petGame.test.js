@@ -97,13 +97,18 @@ describe('펫: 먹이·배고픔·가출', () => {
 });
 
 describe('펫: 놀기·레벨·진화', () => {
-    it('놀아 주기는 하루 3번, 다음 날 다시 할 수 있어요', () => {
-        let p = pet();
-        for (let i = 0; i < 3; i += 1) p = P.playWithPet(p, { now: T0, today: DAY }).pet;
-        assert.equal(P.playWithPet(p, { now: T0, today: DAY }).error, 'play_limit');
-        assert.equal(P.petView(p, T0, DAY).playsLeft, 0);
-        assert.equal(P.petView(p, T0, '2026-11-17').playsLeft, 3);
-        assert.equal(P.playWithPet(p, { now: T0, today: '2026-11-17' }).ok, true);
+    it('놀아 주기는 4시간에 한 번, 하루 5번까지예요', () => {
+        let p = P.playWithPet(pet(), { now: T0, today: DAY }).pet;
+        assert.equal(P.playWithPet(p, { now: T0 + 3 * H, today: DAY }).error, 'play_wait');
+        assert.equal(P.petView(p, T0 + 3 * H, DAY).playWaitMs, H);
+        assert.equal(P.petView(p, T0 + 3 * H, DAY).canPlay, false);
+        // 9시에 시작해 4시간마다: 9·13·17·21시 (네 번) — 다섯 번째는 다음 날 1시라 날짜가 바뀌어요
+        for (let i = 1; i <= 3; i += 1) p = P.playWithPet(p, { now: T0 + i * 4 * H, today: DAY }).pet;
+        assert.equal(P.petView(p, T0 + 16 * H, DAY).playsLeft, 1);
+        p = P.playWithPet(p, { now: T0 + 16 * H, today: DAY }).pet;
+        assert.equal(P.playWithPet(p, { now: T0 + 30 * H, today: DAY }).error, 'play_limit');
+        assert.equal(P.petView(p, T0 + 30 * H, '2026-11-17').playsLeft, 5);
+        assert.equal(P.playWithPet(p, { now: T0 + 30 * H, today: '2026-11-17' }).ok, true);
     });
 
     it('레벨 10·20에서 진화하고 이름이 바뀌어요(직접 지은 이름은 그대로)', () => {
@@ -150,7 +155,7 @@ describe('펫: 강화·산책·랭킹', () => {
     it('산책은 하루 한 번이고, 능력치에 따라 정해진 범위에서 랜덤으로 벌어 와요', () => {
         // 갓 태어난 펫(전투력 60): 1~3봉
         assert.deepEqual(P.petWalkRange(pet()), { min: 1, max: 3 });
-        // 다 키운 펫(전투력 600): 4~9봉
+        // 다 키운 펫(전투력 950): 4~9봉
         assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 })), { min: 4, max: 9 });
         assert.equal(P.walkPet(pet(), { now: T0, today: DAY, rnd: () => 0 }).gain, 1);
         const r = P.walkPet(pet(), { now: T0, today: DAY, rnd: () => 0.999 });
@@ -168,10 +173,10 @@ describe('펫: 강화·산책·랭킹', () => {
 
     it('산책 보상은 마스터 설정을 따라요(상한 포함)', () => {
         const walk = { min: 2, max: 5, step: 50, cap: 8 };
-        assert.deepEqual(P.petWalkRange(pet(), walk), { min: 2, max: 6 });
+        assert.deepEqual(P.petWalkRange(pet(), walk), { min: 3, max: 7 });
         assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 }), walk), { min: 8, max: 8 });
-        assert.equal(P.petView(pet(), T0, DAY, { walk }).walkRange.max, 6);
-        assert.equal(P.walkPet(pet(), { now: T0, today: DAY, walk, rnd: () => 0.999 }).gain, 6);
+        assert.equal(P.petView(pet(), T0, DAY, { walk }).walkRange.max, 7);
+        assert.equal(P.walkPet(pet(), { now: T0, today: DAY, walk, rnd: () => 0.999 }).gain, 7);
     });
 
     it('놓아주면 도감에 남고 새 알을 살 수 있어요', () => {
@@ -189,7 +194,7 @@ describe('펫: 강화·산책·랭킹', () => {
             { id: '4', name: '네모' },
         ], T0, DAY);
         assert.deepEqual(rows.map((r) => [r.rank, r.owner]), [[1, '두리'], [2, '하나']]);
-        assert.equal(rows[0].view.power, 2 * 50 + 12 * 10 + 2 * 15);
+        assert.equal(rows[0].view.power, 2 * 100 + 12 * 15 + 2 * 20);
     });
 
     it('이상한 저장값은 안전한 모양으로 고쳐요', () => {
@@ -209,7 +214,7 @@ describe('펫 설정(마스터)', () => {
     it('기본값: 두 번째 칸 Lv.35·50봉, 세 번째 칸 Lv.60·100봉', () => {
         const d = P.sanitizePetSettings(null);
         assert.deepEqual(d.slotRules, [{ level: 35, price: 50 }, { level: 60, price: 100 }]);
-        assert.deepEqual(d.walk, { min: 1, max: 3, step: 100, cap: 15 });
+        assert.deepEqual(d.walk, { min: 1, max: 3, step: 150, cap: 15 });
     });
 
     it('이상한 값은 범위 안으로 고치고, 빈 값은 기본값을 써요', () => {
@@ -282,5 +287,14 @@ describe('펫 칸(슬롯)', () => {
         const gone = P.petBoxWith(box, 1, P.releasePet(P.petBoxSlot(box, 1)).pet);
         assert.equal(P.petBoxMain(gone).species, 'snowbun');
         assert.equal(P.petBoxMainIndex(P.sanitizePetBox(null)), -1);
+    });
+});
+
+describe('전투력', () => {
+    it('최대 1000이에요(3단계·Lv.30·+10·색다름·희귀)', () => {
+        assert.equal(P.petPower(pet({ species: 'stardrake', stage: 3, level: 30, enhance: 10, shiny: true })), 1000);
+        assert.equal(P.petPower(pet({ stage: 3, level: 30, enhance: 10 })), 950);
+        assert.equal(P.petPower(pet()), 115);
+        assert.equal(P.petPower(null), 0);
     });
 });

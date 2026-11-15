@@ -7025,3 +7025,13 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
     letter-spacing: 0.05em;
     pointer-events: none;
 }
+
+        /* 광장 카드: 대표 펫이 캐릭터 옆에 서 있어요. 겹쳐 그리기만 해서 카드 배치는 바뀌지 않아요. */
+        .plaza-card-figure { position: relative; }
+        .plaza-card-pet {
+            position: absolute; left: -2px; bottom: 0; width: 26px; height: 26px; z-index: 30;
+            pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+        }
+        .plaza-card-pet .pet-art { position: relative; display: block; width: 100%; height: 100%; }
+        .plaza-card-pet img, .plaza-card-pet svg { width: 100%; height: 100%; object-fit: contain; display: block; }
+        @media (min-width: 640px) { .plaza-card-pet { width: 34px; height: 34px; } }

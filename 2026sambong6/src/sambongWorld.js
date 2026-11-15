@@ -326,6 +326,8 @@ import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { createChessTutorial } from './chessTutorial.js';
 import { createMindMode } from './mindMode.js';
 import { createPetMode } from './petMode.js';
+import { petBoxMain, sanitizePetBox } from './lib/petGame.js';
+import { petArtHtml } from './lib/petArt.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
 import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
 import {
@@ -1374,7 +1376,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.56';
+        const APP_VERSION = 'v1.57';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10482,6 +10484,15 @@ ${subjectLine}
             if (oxQuizUi) oxQuizUi.close();
         };
 
+        /** 광장 카드: 고른 대표 펫이 캐릭터 옆에 서 있어요(겹쳐 그리기만 해서 카드 배치는 그대로예요). */
+        function plazaPetHtml(data) {
+            try {
+                const p = data && data.pet ? petBoxMain(sanitizePetBox(data.pet)) : null;
+                if (!p || p.phase !== 'pet' || p.away) return '';
+                return `<span class="plaza-card-pet" title="${escapeHtmlAttr(p.name || '')}">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny })}</span>`;
+            } catch (_) { return ''; }
+        }
+
         // 메이트 펫: 봉으로 알을 사서 키우는 게임. 학생 문서의 pet 칸에 저장해요(petMode.js).
         const _petMode = createPetMode({
             state: () => window.playerState,
@@ -10513,6 +10524,20 @@ ${subjectLine}
             // 마스터가 고치는 펫 설정(칸 늘리기 조건·산책 보상). settings/global 의 petSettings 에 둬요.
             settings: () => (window.globalSettings && window.globalSettings.petSettings) || null,
             isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
+            selfName: () => { const id = String(localStorage.getItem('sambong_student_id') || ''); return id === 'gm' ? '선생님' : id === 'gm_a' ? '선생님(A)' : displayStudentName(id, id); },
+            // 탐험(보스 레이드): 방 하나가 문서 하나예요(petRaids/{방장 학번}).
+            classSize: () => getActiveStudentIds().length,
+            raidWatch: (cb) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'petRaids'), (snap) => {
+                cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+            }, (err) => { console.warn('petRaids', err); cb([]); }),
+            raidTx: (partyId, mutator) => runTransaction(db, async (tx) => {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'petRaids', String(partyId));
+                const snap = await tx.get(ref);
+                const r = mutator(snap.exists() ? { ...snap.data(), id: snap.id } : null);
+                if (!r || !r.ok) return r || { ok: false, error: 'unknown' };
+                if (r.party === null) { if (snap.exists()) tx.delete(ref); } else tx.set(ref, r.party);
+                return r;
+            }),
             saveSettings: async (petSettings) => {
                 if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 고칠 수 있어요');
                 await setDoc(getGlobalSettingsDocRef(), { petSettings }, { merge: true });
@@ -10537,6 +10562,7 @@ ${subjectLine}
             if (challengeSub === 'ox') window.openOxQuiz();
             else window.closeOxQuiz();
             if (challengeSub === 'pet') _petMode.open();
+            else _petMode.close();
             if (challengeSub === 'goldenbell') {
                 if (window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                     window.renderGoldenBellMasterLive();
@@ -23327,6 +23353,7 @@ ${subjectLine}
                                 <div class="plaza-card-face text-3xl sm:text-4xl flex items-end justify-center z-10 ${lv.info.anim}">
                                     <div class="relative inline-block leading-none">${face}${creditStamp}</div>
                                 </div>
+                                ${plazaPetHtml(displayData)}
                                 <div class="plaza-card-lv text-[8px] font-bold ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             </div>
                             <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>

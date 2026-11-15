@@ -10,6 +10,7 @@ import {
     PET_HATCH_TAPS,
     PET_MAX_ENHANCE,
     PET_MAX_LEVEL,
+    PET_MAX_POWER,
     PET_MAX_SLOTS,
     PET_NAME_MAX,
     PET_PLAY_EXP,
@@ -42,6 +43,7 @@ import {
 } from './lib/petGame.js';
 import { petArtHtml, petEggHtml, petEggSvg, petSvg } from './lib/petArt.js';
 import { createOxFeedback } from './lib/oxQuizFeedback.js';
+import { createPetRaidView } from './petRaidView.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -79,6 +81,27 @@ export function createPetMode(deps) {
     const settings = () => sanitizePetSettings(deps.settings ? deps.settings() : null);
     const myLevel = () => (free() ? 100 : Math.floor(Number(deps.level ? deps.level() : 0)) || 0);
 
+    /** 탐험(보스 레이드) 탭. 방 목록은 탐험 탭을 볼 때만 받아요. */
+    const raid = createPetRaidView({
+        root,
+        deps,
+        now,
+        today,
+        free,
+        isRaidTab: () => tab === 'raid' && isOpen(),
+        feedback: () => feedback,
+        render: () => {
+            if (tab !== 'raid') return;
+            // 마스터가 탐험 설정 칸에 적는 중이면 다시 그리지 않아요.
+            const el = root();
+            const a = document.activeElement;
+            if (el && a && a.closest && a.closest('.raid-admin') && el.contains(a)) return;
+            render();
+        },
+    });
+
+    function isOpen() { const el = root(); return !!(el && !el.classList.contains('hidden')); }
+
     function bind() {
         const el = root();
         if (!el || bound) return;
@@ -108,7 +131,8 @@ export function createPetMode(deps) {
             const t = e.target.closest('[data-p]');
             if (!t || !el.contains(t) || t.disabled) return;
             const act = t.getAttribute('data-p');
-            if (act === 'tab') { tab = t.getAttribute('data-tab') || 'mine'; render(); }
+            if (raid.handle(act, t)) return;
+            if (act === 'tab') { tab = t.getAttribute('data-tab') || 'mine'; if (tab === 'raid') raid.start(); else raid.stop(); render(); if (tab === 'raid') void raid.maybePlay(); }
             else if (act === 'slot') { slot = Math.max(0, Math.min(PET_MAX_SLOTS - 1, Number(t.getAttribute('data-slot')) || 0)); fx = null; render(); }
             else if (act === 'expand') void expand();
             else if (act === 'main') void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, slot), () => show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'));
@@ -124,6 +148,7 @@ export function createPetMode(deps) {
             else if (act === 'rename') void rename();
             else if (act === 'release') void release();
         });
+        el.addEventListener('change', (e) => raid.onChange(e));
     }
 
     function show(text, kind = '') {
@@ -223,6 +248,7 @@ export function createPetMode(deps) {
         if (!el || !deps.isAdmin || !deps.isAdmin() || !deps.saveSettings) return;
         const val = (name) => { const i = el.querySelector(`[data-pet-set="${name}"]`); return i ? i.value : ''; };
         const next = sanitizePetSettings({
+            raid: ((deps.settings && deps.settings()) || {}).raid, // 탐험 설정은 그대로 둬요
             slotRules: [{ level: val('s2-level'), price: val('s2-price') }, { level: val('s3-level'), price: val('s3-price') }],
             walk: { min: val('walk-min'), max: val('walk-max'), step: val('walk-step'), cap: val('walk-cap') },
         });
@@ -318,12 +344,13 @@ export function createPetMode(deps) {
             <span class="pet-bar-num">${text}</span>
         </div>`;
 
+    const waitText = (ms) => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ''}` : `${m}분`; };
     const typeBadge = (typeId) => `<span class="pet-type type-${typeId}">${PET_TYPES[typeId].emoji} ${esc(PET_TYPES[typeId].name)}</span>`;
     const dexNo = (id) => String(Object.keys(PET_SPECIES).indexOf(id) + 1).padStart(3, '0');
     const ground = '<span class="pet-ground" aria-hidden="true"></span>';
 
     function tabsHtml() {
-        return `<div class="pet-tabs" role="tablist">${[['mine', '🐾 내 펫'], ['class', '🏆 반 펫'], ['dex', '📖 도감']].map(([k, l]) => (
+        return `<div class="pet-tabs" role="tablist">${[['mine', '🐾 내 펫'], ['raid', '⚔️ 탐험'], ['class', '🏆 반 펫'], ['dex', '📖 도감']].map(([k, l]) => (
             `<button type="button" class="pet-tab${tab === k ? ' is-on' : ''}" data-p="tab" data-tab="${k}" role="tab" aria-selected="${tab === k}">${l}</button>`
         )).join('')}<span class="pet-wallet">${free() ? '선생님은 <b>무료</b>' : `내 봉 <b>${esc(deps.bong(myBong()))}</b>`}</span></div>`;
     }
@@ -390,8 +417,8 @@ export function createPetMode(deps) {
         const num = (name, value, min, max) => `<input type="number" inputmode="numeric" class="pet-set-input" data-pet-set="${name}" value="${value}" min="${min}" max="${max}">`;
         const w = cfg.walk;
         const baby = { min: Math.min(w.cap, w.min), max: Math.min(w.cap, w.max) };
-        const grown = { max: Math.min(w.cap, w.max + Math.floor(600 / w.step)), min: 0 };
-        grown.min = Math.min(grown.max, w.min + Math.floor(600 / (w.step * 2)));
+        const grown = { max: Math.min(w.cap, w.max + Math.floor(PET_MAX_POWER / w.step)), min: 0 };
+        grown.min = Math.min(grown.max, w.min + Math.floor(PET_MAX_POWER / (w.step * 2)));
         return `<details class="pet-admin">
             <summary>⚙️ 마스터 설정 (선생님만 보여요)</summary>
             <div class="pet-admin-body">
@@ -402,7 +429,7 @@ export function createPetMode(deps) {
                 <label class="pet-set-row"><span>기본 범위</span>${num('walk-min', w.min, 0, 100)} ~ ${num('walk-max', w.max, 0, 100)} 봉</label>
                 <label class="pet-set-row"><span>능력치 보너스</span>전투력 ${num('walk-step', w.step, 10, 1000)} 마다 최대 +1봉</label>
                 <label class="pet-set-row"><span>하루 상한</span>${num('walk-cap', w.cap, 0, 500)} 봉</label>
-                <p class="pet-note">지금 설정: 갓 태어난 펫 ${baby.min}~${baby.max}봉 · 다 키운 펫(전투력 600) ${grown.min}~${grown.max}봉. 최소는 전투력 ${w.step * 2}마다 +1이에요.</p>
+                <p class="pet-note">지금 설정: 갓 태어난 펫 ${baby.min}~${baby.max}봉 · 다 키운 펫(전투력 ${PET_MAX_POWER}) ${grown.min}~${grown.max}봉. 최소는 전투력 ${w.step * 2}마다 +1이에요.</p>
                 <button type="button" class="pet-btn is-main" data-p="settings-save">설정 저장</button>
             </div>
         </details>`;
@@ -492,7 +519,7 @@ export function createPetMode(deps) {
             <p class="pet-sub">먹이 주기 ${v.fullNow > 90 ? '<em>(배가 불러요. 조금 있다가 줘요)</em>' : ''}</p>
             <div class="pet-foods">${foods}</div>
             <div class="pet-actions">
-                <button type="button" class="pet-btn" data-p="play"${v.playsLeft > 0 ? '' : ' disabled'}><b>🎾 놀아 주기</b><i>공짜 · 경험치 +${PET_PLAY_EXP} · 오늘 ${v.playsLeft}/${PET_PLAY_PER_DAY}번 남음</i></button>
+                <button type="button" class="pet-btn" data-p="play"${v.canPlay ? '' : ' disabled'}><b>🎾 놀아 주기</b><i>${v.playsLeft <= 0 ? `오늘 ${PET_PLAY_PER_DAY}번 다 놀았어요` : v.playWaitMs > 0 ? `${waitText(v.playWaitMs)} 뒤에 또 놀 수 있어요 · 오늘 ${v.playsLeft}번 남음` : `공짜 · 경험치 +${PET_PLAY_EXP} · 4시간에 한 번 · 오늘 ${v.playsLeft}/${PET_PLAY_PER_DAY}번 남음`}</i></button>
                 <button type="button" class="pet-btn" data-p="walk"${v.walked || v.fullNow < 30 ? ' disabled' : ''}><b>🐾 산책 보내기</b><i>${v.walked ? '오늘은 다녀왔어요' : v.fullNow < 30 ? '배고파서 못 가요' : `하루 한 번 · ${v.walkRange.min === v.walkRange.max ? esc(deps.bong(v.walkRange.max)) : `${v.walkRange.min}~${esc(deps.bong(v.walkRange.max))}`} 벌어 와요`}</i></button>
                 <button type="button" class="pet-btn" data-p="enhance"${maxEnh || myBong() < v.enhanceCost ? ' disabled' : ''}><b>🔨 강화 ${maxEnh ? '끝!' : `+${v.enhance} → +${v.enhance + 1}`}</b><i>${maxEnh ? '끝까지 강화했어요' : `${esc(deps.bong(v.enhanceCost))} · 성공 ${Math.round(v.enhanceChance * 100)}%`}</i></button>
             </div>
@@ -526,7 +553,7 @@ export function createPetMode(deps) {
                 </span>
                 <span class="pet-rank-power"><small>전투력</small>${r.view.power}</span>
             </div>`;
-        }).join('')}</div><p class="pet-note">전투력 = 단계·레벨·강화를 합친 점수예요.</p>`;
+        }).join('')}</div><p class="pet-note">전투력 = 단계·레벨·강화를 합친 점수예요. 가장 높으면 ${PET_MAX_POWER}이에요.</p>`;
     }
 
     function dexHtml() {
@@ -551,27 +578,30 @@ export function createPetMode(deps) {
         bind();
         const el = root();
         if (!el) return;
+        if (raid.isPlaying()) return; // 전투 연출 중에는 화면을 갈아엎지 않아요
         let body = el.querySelector('[data-ox-body]');
         if (!body) {
             el.innerHTML = '<div class="pet-body" data-ox-body></div>';
             body = el.querySelector('[data-ox-body]');
         }
         body.className = `pet-body is-tab-${tab}`;
-        body.innerHTML = `${tabsHtml()}${tab === 'class' ? classHtml() : tab === 'dex' ? dexHtml() : mineHtml()}`;
+        body.innerHTML = `${tabsHtml()}${tab === 'class' ? classHtml() : tab === 'dex' ? dexHtml() : tab === 'raid' ? raid.html() : mineHtml()}`;
     }
 
     /** 펫 화면을 열 때 불러요. 보는 동안 1분마다 배고픔을 다시 계산해요. */
     function open() {
         render();
+        if (tab === 'raid') { raid.start(); void raid.maybePlay(); }
         if (!timer) {
             timer = setInterval(() => {
                 const el = root();
                 if (!el || el.classList.contains('hidden') || !el.offsetParent) return;
                 // 마스터가 설정 칸에 적는 중이면 다시 그리지 않아요.
                 if (!busy && !fx && !(el.querySelector('.pet-admin[open]'))) render();
+                if (tab === 'raid') void raid.maybePlay();
             }, 60000);
         }
     }
 
-    return { open, render, showsClass: () => tab === 'class' && !busy, isOpen: () => { const el = root(); return !!(el && !el.classList.contains('hidden')); } };
+    return { open, render, showsClass: () => tab === 'class' && !busy, isOpen, close: () => raid.stop() };
 }

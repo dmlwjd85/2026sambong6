@@ -5,7 +5,7 @@
  * 흐름
  * - 알 사기(30봉) → 품어 주기(10번 쓰다듬기) → 부화(일곱 종 가운데 하나, 드물게 색이 다른 펫)
  * - 먹이(1~3봉)로 배를 채우고 경험치를 올려요. 배가 거의 차 있으면 못 먹여요(하루에 올릴 수 있는 양이 정해져요).
- * - 놀아 주기는 공짜, 하루 3번. 레벨 10·20에서 진화해요(최고 레벨 30).
+ * - 놀아 주기는 공짜, 4시간에 한 번·하루 5번까지. 레벨 10·20에서 진화해요(최고 레벨 30).
  * - 강화(+10까지)는 봉을 내고 확률로 성공해요. 실패해도 펫은 그대로예요.
  * - 산책은 하루 한 번, 펫이 봉을 조금 벌어 와요(단계·레벨·강화에 따라).
  * - 배가 텅 빈 채로 3일이 지나면 가출해요. 10봉을 내면 다시 데려와요(레벨·강화는 그대로).
@@ -17,7 +17,9 @@ export const PET_HATCH_TAPS = 10;
 export const PET_MAX_LEVEL = 30;
 export const PET_EVOLVE_LEVELS = Object.freeze([10, 20]); // 1단계→2단계, 2단계→3단계
 export const PET_MAX_ENHANCE = 10;
-export const PET_PLAY_PER_DAY = 3;
+export const PET_PLAY_PER_DAY = 5;
+/** 놀아 주기는 한 번 하면 이만큼 기다려야 다시 할 수 있어요(4시간). */
+export const PET_PLAY_COOLDOWN_MS = 4 * 3600000;
 export const PET_PLAY_EXP = 8;
 /** 포만감은 한 시간에 이만큼 줄어요(가득 찬 뒤 약 하루면 비어요). */
 export const PET_HUNGER_PER_HOUR = 4;
@@ -73,8 +75,8 @@ export const PET_MAX_SLOTS = 3;
 export const PET_DEFAULT_SETTINGS = Object.freeze({
     /** 칸 늘리기: [두 번째 칸, 세 번째 칸] — 필요한 내 레벨과 값(봉) */
     slotRules: Object.freeze([Object.freeze({ level: 35, price: 50 }), Object.freeze({ level: 60, price: 100 })]),
-    /** 산책 보상: 기본 최소·최대 봉, 전투력 step마다 최대 +1, 하루 상한 cap */
-    walk: Object.freeze({ min: 1, max: 3, step: 100, cap: 15 }),
+    /** 산책 보상: 기본 최소·최대 봉, 전투력 step마다 최대 +1(전투력은 최대 1000), 하루 상한 cap */
+    walk: Object.freeze({ min: 1, max: 3, step: 150, cap: 15 }),
 });
 
 export function sanitizePetSettings(raw) {
@@ -93,7 +95,9 @@ export function sanitizePetSettings(raw) {
     const min = num(w.min, d.walk.min, 0, 100);
     const max = Math.max(min, num(w.max, d.walk.max, 0, 100));
     const cap = Math.max(max, num(w.cap, d.walk.cap, 0, 500));
-    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap } };
+    // 탐험(보스 레이드) 설정은 petRaid.js 의 sanitizeRaidSettings 가 다듬어요. 여기서는 그대로 넘겨요.
+    const raid = src.raid && typeof src.raid === 'object' && !Array.isArray(src.raid) ? src.raid : null;
+    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, ...(raid ? { raid } : {}) };
 }
 
 export function emptyPet() {
@@ -142,6 +146,7 @@ export function sanitizePet(raw) {
         fedAt: int(src.fedAt),
         playDate: String(src.playDate || '').slice(0, 10),
         playCount: int(src.playCount, 0, PET_PLAY_PER_DAY),
+        playAt: int(src.playAt),
         walkDate: String(src.walkDate || '').slice(0, 10),
         bornAt: int(src.bornAt),
         earned: int(src.earned, 0, 1e7),
@@ -160,11 +165,17 @@ export function petSpeciesName(pet) {
     return sp ? sp.names[p.stage - 1] : '';
 }
 
-/** 전투력(랭킹 기준): 단계·레벨·강화를 합쳐요. */
+/** 전투력의 최댓값 */
+export const PET_MAX_POWER = 1000;
+
+/**
+ * 전투력(랭킹·탐험 기준): 단계·레벨·강화를 합쳐요. 최대 1000이에요.
+ * 단계 100씩(300) + 레벨 15씩(450) + 강화 20씩(200) + 색다름 20 + 희귀 30 = 1000
+ */
 export function petPower(pet) {
-    const p = sanitizePet(pet);
+    const p = pet && pet.phase === 'pet' && PET_SPECIES[pet.species] ? pet : sanitizePet(pet);
     if (p.phase !== 'pet') return 0;
-    return p.stage * 50 + p.level * 10 + p.enhance * 15 + (p.shiny ? 20 : 0) + (PET_SPECIES[p.species].rare ? 30 : 0);
+    return Math.min(PET_MAX_POWER, p.stage * 100 + p.level * 15 + p.enhance * 20 + (p.shiny ? 20 : 0) + (PET_SPECIES[p.species].rare ? 30 : 0));
 }
 
 /**
@@ -182,6 +193,7 @@ export function petView(pet, now = Date.now(), today = '', settings = null) {
     const away = hungryHours >= PET_RUNAWAY_HOURS;
     const mood = away ? 'away' : fullNow >= 60 ? 'happy' : fullNow >= 30 ? 'ok' : fullNow > 0 ? 'hungry' : 'starving';
     const playsLeft = p.playDate === today ? Math.max(0, PET_PLAY_PER_DAY - p.playCount) : PET_PLAY_PER_DAY;
+    const playWaitMs = Math.max(0, p.playAt + PET_PLAY_COOLDOWN_MS - t);
     return {
         ...p,
         fullNow,
@@ -189,6 +201,8 @@ export function petView(pet, now = Date.now(), today = '', settings = null) {
         mood,
         hoursToRunaway: away ? 0 : Math.max(0, PET_RUNAWAY_HOURS - hungryHours),
         playsLeft,
+        playWaitMs,
+        canPlay: !away && playsLeft > 0 && playWaitMs <= 0,
         walked: p.walkDate === today,
         walkRange: petWalkRange(p, settings && settings.walk),
         canEvolve: p.stage < 3 && p.level >= PET_EVOLVE_LEVELS[p.stage - 1],
@@ -252,6 +266,14 @@ function addExp(p, amount) {
     return { pet: { ...p, level, exp }, ups };
 }
 
+/** 펫에게 경험치를 줘요(탐험 보상 등). 가출한 펫·알은 그대로예요. */
+export function grantPetExp(pet, amount) {
+    const p = sanitizePet(pet);
+    if (p.phase !== 'pet') return { pet: p, levelUps: 0 };
+    const grown = addExp(p, amount);
+    return { pet: grown.pet, levelUps: grown.ups };
+}
+
 /** 알 사기 */
 export function buyPetEgg(pet, { bong = 0, now = 0 } = {}) {
     const p = sanitizePet(pet);
@@ -295,6 +317,7 @@ export function warmPetEgg(pet, { now = 0, rnd = Math.random } = {}) {
         fedAt: int(now),
         playDate: '',
         playCount: 0,
+        playAt: 0,
         walkDate: '',
         bornAt: int(now),
         earned: 0,
@@ -318,15 +341,16 @@ export function feedPet(pet, { food, bong = 0, now = 0, today = '' } = {}) {
     return done(grown.pet, { cost: f.price, levelUps: grown.ups, exp: f.exp });
 }
 
-/** 놀아 주기(공짜, 하루 3번) */
+/** 놀아 주기(공짜, 4시간에 한 번·하루 5번까지) */
 export function playWithPet(pet, { now = 0, today = '' } = {}) {
     const p = sanitizePet(pet);
     if (p.phase !== 'pet') return fail(p, 'no_pet');
     const v = petView(p, now, today);
     if (v.away) return fail(p, 'away');
     if (v.playsLeft <= 0) return fail(p, 'play_limit');
+    if (v.playWaitMs > 0) return fail(p, 'play_wait');
     const count = (p.playDate === today ? p.playCount : 0) + 1;
-    const grown = addExp({ ...p, playDate: today, playCount: count }, PET_PLAY_EXP);
+    const grown = addExp({ ...p, playDate: today, playCount: count, playAt: int(now) }, PET_PLAY_EXP);
     return done(grown.pet, { levelUps: grown.ups, exp: PET_PLAY_EXP });
 }
 
@@ -402,6 +426,7 @@ export const PET_ERROR_TEXT = Object.freeze({
     away: '펫이 가출했어요. 먼저 데려와요.',
     full: '배가 불러서 더 못 먹어요. 조금 있다가 줘요.',
     play_limit: '오늘은 충분히 놀았어요. 내일 또 놀아요.',
+    play_wait: '방금 놀아서 쉬는 중이에요. 조금 있다가 또 놀아요.',
     not_ready: '아직 진화할 수 없어요.',
     max_enhance: '강화를 끝까지 했어요.',
     walked: '오늘은 이미 산책을 다녀왔어요.',
@@ -437,22 +462,41 @@ export function rankClassPets(students, now = Date.now(), today = '') {
 
 const stripDex = (p) => { const { dex, ...rest } = p; return rest; };
 
+/**
+ * 탐험(보스 레이드) 진행 기록: 깬 스테이지(firsts: 첫 보상을 받은 스테이지 번호),
+ * 오늘 보상 받은 횟수(day·dayRewards), 이미 보상을 받은 탐험 번호(claimed, 최근 30개).
+ */
+export function sanitizeRaidProgress(raw) {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const firsts = [];
+    (Array.isArray(src.firsts) ? src.firsts : []).forEach((n) => {
+        const v = int(n, 0, 99);
+        if (v >= 1 && !firsts.includes(v)) firsts.push(v);
+    });
+    return {
+        firsts: firsts.sort((a, b) => a - b).slice(0, 40),
+        day: String(src.day || '').slice(0, 10),
+        dayRewards: int(src.dayRewards, 0, 999),
+        claimed: (Array.isArray(src.claimed) ? src.claimed : []).map((x) => String(x || '').slice(0, 60)).filter(Boolean).slice(-30),
+    };
+}
+
 export function sanitizePetBox(raw) {
     const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     if (int(src.v) >= 2 && Array.isArray(src.list)) {
         const slots = int(src.slots, 1, PET_MAX_SLOTS);
         const list = [];
         for (let i = 0; i < slots; i += 1) list.push(stripDex(sanitizePet(src.list[i])));
-        return { v: 2, slots, main: int(src.main, 0, slots - 1), list, dex: sanitizeDex(src.dex) };
+        return { v: 2, slots, main: int(src.main, 0, slots - 1), list, dex: sanitizeDex(src.dex), raid: sanitizeRaidProgress(src.raid) };
     }
     const one = sanitizePet(src);
-    return { v: 2, slots: 1, main: 0, list: [stripDex(one)], dex: one.dex };
+    return { v: 2, slots: 1, main: 0, list: [stripDex(one)], dex: one.dex, raid: sanitizeRaidProgress(src.raid) };
 }
 
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex } };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() } };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */

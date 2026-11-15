@@ -10,6 +10,7 @@ import {
     PET_HATCH_TAPS,
     PET_MAX_ENHANCE,
     PET_MAX_LEVEL,
+    PET_MAX_SLOTS,
     PET_NAME_MAX,
     PET_PLAY_EXP,
     PET_PLAY_PER_DAY,
@@ -20,14 +21,22 @@ import {
     buyPetEgg,
     enhancePet,
     evolvePet,
+    expandPetBox,
     feedPet,
+    petBoxMainIndex,
+    petBoxSlot,
+    petBoxToDoc,
+    petBoxWith,
     petErrorText,
+    petNextSlotRule,
     petView,
     playWithPet,
     rankClassPets,
     releasePet,
     renamePet,
-    sanitizePet,
+    sanitizePetBox,
+    sanitizePetSettings,
+    setPetBoxMain,
     walkPet,
     warmPetEgg,
 } from './lib/petGame.js';
@@ -46,7 +55,8 @@ const MOOD_TEXT = Object.freeze({
 /**
  * deps: { state() → playerState, canPlay() → boolean, today() → 'YYYY-MM-DD',
  *   applyBong(delta), save(opts) → Promise<boolean>, students() → [{id, name, pet}],
- *   selfId(), bong(v) → '12봉', confirm(text), prompt(text), toast(text) }
+ *   selfId(), bong(v) → '12봉', confirm(text), prompt(text), toast(text),
+ *   level() → 내 레벨(칸 늘리기 조건), settings() → 마스터 설정(petSettings), isAdmin(), saveSettings(settings) → Promise }
  */
 export function createPetMode(deps) {
     const root = () => document.getElementById('challengePane-pet');
@@ -56,11 +66,18 @@ export function createPetMode(deps) {
     let feedback = null;
     let fx = null; // { text, kind, at } 잠깐 띄우는 글자
     let timer = 0;
+    let slot = 0; // 보고 있는 칸(0~2). 아직 안 열린 칸이면 '칸 늘리기' 화면이에요.
 
     const now = () => Date.now();
     const today = () => deps.today();
-    const myPet = () => sanitizePet(deps.state() && deps.state().pet);
-    const myBong = () => Number(deps.state() && deps.state().bong) || 0;
+    const myBox = () => sanitizePetBox(deps.state() && deps.state().pet);
+    /** 보고 있는 칸의 펫(안 열린 칸이면 빈 펫) */
+    const myPet = () => petBoxSlot(myBox(), slot) || { v: 1, phase: 'none', dex: myBox().dex };
+    /** 선생님(마스터)은 봉·레벨 조건 없이 키워요. 봉을 쓰지도 벌지도 않아요. */
+    const free = () => !!(deps.isAdmin && deps.isAdmin());
+    const myBong = () => (free() ? 1e9 : Number(deps.state() && deps.state().bong) || 0);
+    const settings = () => sanitizePetSettings(deps.settings ? deps.settings() : null);
+    const myLevel = () => (free() ? 100 : Math.floor(Number(deps.level ? deps.level() : 0)) || 0);
 
     function bind() {
         const el = root();
@@ -92,11 +109,15 @@ export function createPetMode(deps) {
             if (!t || !el.contains(t) || t.disabled) return;
             const act = t.getAttribute('data-p');
             if (act === 'tab') { tab = t.getAttribute('data-tab') || 'mine'; render(); }
+            else if (act === 'slot') { slot = Math.max(0, Math.min(PET_MAX_SLOTS - 1, Number(t.getAttribute('data-slot')) || 0)); fx = null; render(); }
+            else if (act === 'expand') void expand();
+            else if (act === 'main') void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, slot), () => show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'));
+            else if (act === 'settings-save') void saveSettings();
             else if (act === 'buy') void run('펫 알 사기', (p, o) => buyPetEgg(p, o));
             else if (act === 'warm') void warm();
             else if (act === 'feed') void feed(t.getAttribute('data-food'));
             else if (act === 'play') void run('펫과 놀기', (p, o) => playWithPet(p, o), { after: (r) => grew(r, '신나게 놀았어요!') });
-            else if (act === 'walk') void run('펫 산책 보상', (p, o) => walkPet(p, o), { after: (r) => { show(`산책에서 ${deps.bong(r.gain)}을 벌어 왔어요!`, 'good'); if (feedback) feedback.play('ok'); } });
+            else if (act === 'walk') void run('펫 산책 보상', (p, o) => walkPet(p, o), { after: (r) => { show(free() ? '산책을 다녀왔어요! (선생님은 봉을 받지 않아요)' : `산책에서 ${deps.bong(r.gain)}을 벌어 왔어요!`, r.gain > 0 ? 'good' : ''); if (feedback && r.gain > 0) feedback.play('ok'); } });
             else if (act === 'enhance') void enhance();
             else if (act === 'evolve') void evolve();
             else if (act === 'back') void run('펫 데려오기', (p, o) => bringPetBack(p, o), { after: () => show('집으로 돌아왔어요! 이제 잘 챙겨 줘요.', 'good') });
@@ -126,13 +147,17 @@ export function createPetMode(deps) {
      */
     async function run(label, fn, { after = null, rnd = Math.random } = {}) {
         if (busy) return null;
-        if (!deps.canPlay()) { deps.toast('학생으로 들어와야 펫을 키울 수 있어요.'); return null; }
+        if (!deps.canPlay()) { deps.toast('로그인해야 펫을 키울 수 있어요.'); return null; }
         const st = deps.state();
-        const r = fn(st.pet, { bong: myBong(), now: now(), today: today(), rnd });
+        const box = myBox();
+        const cur = petBoxSlot(box, slot);
+        if (!cur) return null;
+        const r = fn(cur, { bong: myBong(), now: now(), today: today(), rnd, walk: settings().walk });
         if (!r.ok) { deps.toast(petErrorText(r.error)); return null; }
+        if (free()) { r.cost = 0; r.gain = 0; }
         busy = true;
         try {
-            st.pet = r.pet;
+            st.pet = petBoxToDoc(petBoxWith(box, slot, r.pet));
             if (r.cost || r.gain) deps.applyBong((r.gain || 0) - (r.cost || 0));
             render();
             const saved = await deps.save({
@@ -153,14 +178,74 @@ export function createPetMode(deps) {
         }
     }
 
+    /** 상자(칸·대표 펫) 쪽 일을 적용하고 저장해요. fn(box) → { ok, error, box, cost } */
+    async function runBox(label, fn, after = null) {
+        if (busy) return null;
+        if (!deps.canPlay()) { deps.toast('로그인해야 펫을 키울 수 있어요.'); return null; }
+        const st = deps.state();
+        const r = fn(myBox());
+        if (!r.ok) { deps.toast(petErrorText(r.error)); return null; }
+        if (free()) r.cost = 0;
+        busy = true;
+        try {
+            st.pet = petBoxToDoc(r.box);
+            if (r.cost) deps.applyBong(-r.cost);
+            render();
+            const saved = await deps.save({
+                ...(r.cost > 0 ? { allowBongDecrease: true, maxBongDecrease: r.cost, requireServerBongBalance: true } : {}),
+                operationLabel: label,
+            });
+            if (!saved) { deps.toast('저장하지 못했어요. 잠시 뒤 다시 해 봐요.'); render(); return null; }
+            if (after) after(r);
+            else render();
+            return r;
+        } finally {
+            busy = false;
+        }
+    }
+
+    /** 칸 늘리기 */
+    async function expand() {
+        const rule = petNextSlotRule(myBox(), settings());
+        if (!rule) return;
+        const ok = await deps.confirm(free() ? '펫 칸을 하나 더 열까요?' : `펫 칸을 하나 더 열까요?\n${deps.bong(rule.price)}이 들어요. 열면 알을 하나 더 키울 수 있어요.`);
+        if (!ok) return;
+        await runBox('펫 칸 늘리기', (b) => expandPetBox(b, { bong: myBong(), level: myLevel(), settings: settings() }), (r) => {
+            slot = r.box.slots - 1;
+            show('새 칸이 열렸어요! 알을 사서 키워 봐요.', 'good');
+            if (feedback) feedback.play('ok');
+        });
+    }
+
+    /** 마스터: 칸 늘리기 조건과 산책 보상을 저장해요. */
+    async function saveSettings() {
+        const el = root();
+        if (!el || !deps.isAdmin || !deps.isAdmin() || !deps.saveSettings) return;
+        const val = (name) => { const i = el.querySelector(`[data-pet-set="${name}"]`); return i ? i.value : ''; };
+        const next = sanitizePetSettings({
+            slotRules: [{ level: val('s2-level'), price: val('s2-price') }, { level: val('s3-level'), price: val('s3-price') }],
+            walk: { min: val('walk-min'), max: val('walk-max'), step: val('walk-step'), cap: val('walk-cap') },
+        });
+        try {
+            await deps.saveSettings(next);
+            deps.toast('펫 설정을 저장했어요.');
+        } catch (e) {
+            deps.toast(`저장하지 못했어요: ${e && e.message ? e.message : e}`);
+        }
+        render();
+    }
+
     /** 알 품기: 부화할 때만 저장해요(그 전에는 이 화면에서만 세요). */
     async function warm() {
         if (busy || !deps.canPlay()) return;
         const st = deps.state();
-        const r = warmPetEgg(st.pet, { now: now(), rnd: Math.random });
+        const box = myBox();
+        const cur = petBoxSlot(box, slot);
+        if (!cur) return;
+        const r = warmPetEgg(cur, { now: now(), rnd: Math.random });
         if (!r.ok) return;
         if (!r.hatched) {
-            st.pet = r.pet;
+            st.pet = petBoxToDoc(petBoxWith(box, slot, r.pet));
             try { if (navigator.vibrate) navigator.vibrate(12); } catch (_) { /* 진동 없는 기기 */ }
             render();
             const egg = root() && root().querySelector('.pet-egg-btn');
@@ -185,7 +270,7 @@ export function createPetMode(deps) {
     }
 
     async function enhance() {
-        const v = petView(myPet(), now(), today());
+        const v = petView(myPet(), now(), today(), settings());
         if (v.phase !== 'pet') return;
         const ok = await deps.confirm(`강화 +${v.enhance} → +${v.enhance + 1}\n${deps.bong(v.enhanceCost)}이 들고, 성공 확률은 ${Math.round(v.enhanceChance * 100)}%예요.\n실패해도 펫은 그대로지만 봉은 돌아오지 않아요. 할까요?`);
         if (!ok) return;
@@ -240,11 +325,87 @@ export function createPetMode(deps) {
     function tabsHtml() {
         return `<div class="pet-tabs" role="tablist">${[['mine', '🐾 내 펫'], ['class', '🏆 반 펫'], ['dex', '📖 도감']].map(([k, l]) => (
             `<button type="button" class="pet-tab${tab === k ? ' is-on' : ''}" data-p="tab" data-tab="${k}" role="tab" aria-selected="${tab === k}">${l}</button>`
-        )).join('')}<span class="pet-wallet">내 봉 <b>${esc(deps.bong(myBong()))}</b></span></div>`;
+        )).join('')}<span class="pet-wallet">${free() ? '선생님은 <b>무료</b>' : `내 봉 <b>${esc(deps.bong(myBong()))}</b>`}</span></div>`;
     }
 
     function fxHtml() {
         return fx ? `<p class="pet-fx ${fx.kind ? `is-${fx.kind}` : ''}" role="status">${esc(fx.text)}</p>` : '';
+    }
+
+    /** 칸 고르기 줄: 열린 칸은 펫·알·빈칸, 잠긴 칸은 자물쇠 */
+    function slotBarHtml() {
+        const box = myBox();
+        const mainIdx = petBoxMainIndex(box);
+        const rules = settings().slotRules;
+        const cells = [];
+        for (let i = 0; i < PET_MAX_SLOTS; i += 1) {
+            const on = slot === i ? ' is-on' : '';
+            if (i < box.slots) {
+                const p = box.list[i];
+                const art = p.phase === 'pet' ? petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })
+                    : p.phase === 'egg' ? petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS, eager: false })
+                        : '<span class="pet-slot-plus" aria-hidden="true">＋</span>';
+                const label = p.phase === 'pet' ? `${esc(p.name)} <em>Lv.${p.level}</em>` : p.phase === 'egg' ? '알' : '빈 칸';
+                cells.push(`<button type="button" class="pet-slot${on}${p.phase === 'pet' ? ` type-${PET_SPECIES[p.species].type}` : ''}" data-p="slot" data-slot="${i}" aria-pressed="${slot === i}">
+                    ${mainIdx === i ? '<span class="pet-slot-main" title="대표 펫">⭐</span>' : ''}
+                    <span class="pet-slot-art">${art}</span><span class="pet-slot-label">${label}</span>
+                </button>`);
+            } else {
+                const rule = rules[i - 1];
+                cells.push(`<button type="button" class="pet-slot is-locked${on}" data-p="slot" data-slot="${i}" aria-pressed="${slot === i}">
+                    <span class="pet-slot-art"><span class="pet-slot-lock" aria-hidden="true">🔒</span></span>
+                    <span class="pet-slot-label">Lv.${rule.level} · ${esc(deps.bong(rule.price))}</span>
+                </button>`);
+            }
+        }
+        return `<div class="pet-slots" role="group" aria-label="펫 칸">${cells.join('')}</div>`;
+    }
+
+    /** 아직 안 열린 칸을 골랐을 때 */
+    function lockedHtml() {
+        const box = myBox();
+        const rules = settings().slotRules;
+        const rule = rules[slot - 1];
+        const isNext = slot === box.slots;
+        const lvOk = myLevel() >= rule.level;
+        const bongOk = myBong() >= rule.price;
+        return `<div class="pet-card pet-locked">
+            <div class="pet-stage is-locked"><span class="pet-away-note">🔒</span>${fxHtml()}</div>
+            <h3 class="pet-title">${slot + 1}번째 펫 칸</h3>
+            <p class="pet-lead">칸을 열면 펫을 한 마리 더 키울 수 있어요.</p>
+            <p class="pet-chips">
+                <span class="pet-chip${lvOk ? ' is-ok' : ' is-no'}">내 레벨 ${rule.level} 이상 ${lvOk ? '✓' : `(지금 Lv.${myLevel()})`}</span>
+                <span class="pet-chip${bongOk ? ' is-ok' : ' is-no'}">${esc(deps.bong(rule.price))} ${bongOk ? '✓' : '모자라요'}</span>
+            </p>
+            ${isNext
+                ? `<button type="button" class="pet-btn is-main" data-p="expand"${lvOk && bongOk ? '' : ' disabled'}>🔓 칸 열기 · ${esc(deps.bong(rule.price))}</button>`
+                : '<p class="pet-note">앞 칸을 먼저 열어야 해요.</p>'}
+        </div>`;
+    }
+
+    /** 마스터 설정(칸 늘리기 조건·산책 보상) */
+    function adminHtml() {
+        if (!deps.isAdmin || !deps.isAdmin()) return '';
+        const cfg = settings();
+        const num = (name, value, min, max) => `<input type="number" inputmode="numeric" class="pet-set-input" data-pet-set="${name}" value="${value}" min="${min}" max="${max}">`;
+        const w = cfg.walk;
+        const baby = { min: Math.min(w.cap, w.min), max: Math.min(w.cap, w.max) };
+        const grown = { max: Math.min(w.cap, w.max + Math.floor(600 / w.step)), min: 0 };
+        grown.min = Math.min(grown.max, w.min + Math.floor(600 / (w.step * 2)));
+        return `<details class="pet-admin">
+            <summary>⚙️ 마스터 설정 (선생님만 보여요)</summary>
+            <div class="pet-admin-body">
+                <p class="pet-sub">칸 늘리기</p>
+                <label class="pet-set-row"><span>2번째 칸</span>내 레벨 ${num('s2-level', cfg.slotRules[0].level, 1, 100)} 이상 · ${num('s2-price', cfg.slotRules[0].price, 0, 5000)} 봉</label>
+                <label class="pet-set-row"><span>3번째 칸</span>내 레벨 ${num('s3-level', cfg.slotRules[1].level, 1, 100)} 이상 · ${num('s3-price', cfg.slotRules[1].price, 0, 5000)} 봉</label>
+                <p class="pet-sub">산책으로 벌어 오는 봉 (하루 한 번, 범위 안에서 랜덤)</p>
+                <label class="pet-set-row"><span>기본 범위</span>${num('walk-min', w.min, 0, 100)} ~ ${num('walk-max', w.max, 0, 100)} 봉</label>
+                <label class="pet-set-row"><span>능력치 보너스</span>전투력 ${num('walk-step', w.step, 10, 1000)} 마다 최대 +1봉</label>
+                <label class="pet-set-row"><span>하루 상한</span>${num('walk-cap', w.cap, 0, 500)} 봉</label>
+                <p class="pet-note">지금 설정: 갓 태어난 펫 ${baby.min}~${baby.max}봉 · 다 키운 펫(전투력 600) ${grown.min}~${grown.max}봉. 최소는 전투력 ${w.step * 2}마다 +1이에요.</p>
+                <button type="button" class="pet-btn is-main" data-p="settings-save">설정 저장</button>
+            </div>
+        </details>`;
     }
 
     function noneHtml() {
@@ -285,7 +446,10 @@ export function createPetMode(deps) {
                 <span class="pet-chip is-lv">Lv.${v.level}</span>
                 ${v.enhance ? `<span class="pet-chip is-enh">+${v.enhance}</span>` : ''}
                 <span class="pet-chip">전투력 ${v.power}</span>
-            </p>`;
+            </p>
+            ${petBoxMainIndex(myBox()) === slot
+                ? '<p class="pet-main-row"><span class="pet-chip is-main">⭐ 대표 펫</span><i>광장 카드와 반 펫 랭킹에 보여요</i></p>'
+                : '<p class="pet-main-row"><button type="button" class="pet-mini-btn" data-p="main">⭐ 대표 펫으로 정하기</button></p>'}`;
         if (v.away) {
             const can = myBong() >= PET_RETURN_PRICE;
             return `<div class="pet-card type-${sp.type}">
@@ -329,7 +493,7 @@ export function createPetMode(deps) {
             <div class="pet-foods">${foods}</div>
             <div class="pet-actions">
                 <button type="button" class="pet-btn" data-p="play"${v.playsLeft > 0 ? '' : ' disabled'}><b>🎾 놀아 주기</b><i>공짜 · 경험치 +${PET_PLAY_EXP} · 오늘 ${v.playsLeft}/${PET_PLAY_PER_DAY}번 남음</i></button>
-                <button type="button" class="pet-btn" data-p="walk"${v.walked || v.fullNow < 30 ? ' disabled' : ''}><b>🐾 산책 보내기</b><i>${v.walked ? '오늘은 다녀왔어요' : v.fullNow < 30 ? '배고파서 못 가요' : `하루 한 번 · ${esc(deps.bong(v.walkBong))} 벌어 와요`}</i></button>
+                <button type="button" class="pet-btn" data-p="walk"${v.walked || v.fullNow < 30 ? ' disabled' : ''}><b>🐾 산책 보내기</b><i>${v.walked ? '오늘은 다녀왔어요' : v.fullNow < 30 ? '배고파서 못 가요' : `하루 한 번 · ${v.walkRange.min === v.walkRange.max ? esc(deps.bong(v.walkRange.max)) : `${v.walkRange.min}~${esc(deps.bong(v.walkRange.max))}`} 벌어 와요`}</i></button>
                 <button type="button" class="pet-btn" data-p="enhance"${maxEnh || myBong() < v.enhanceCost ? ' disabled' : ''}><b>🔨 강화 ${maxEnh ? '끝!' : `+${v.enhance} → +${v.enhance + 1}`}</b><i>${maxEnh ? '끝까지 강화했어요' : `${esc(deps.bong(v.enhanceCost))} · 성공 ${Math.round(v.enhanceChance * 100)}%`}</i></button>
             </div>
             <p class="pet-note">지금까지 벌어 온 봉 ${esc(deps.bong(v.earned))} · 배가 텅 빈 채 3일이 지나면 가출해요.</p>
@@ -338,11 +502,11 @@ export function createPetMode(deps) {
     }
 
     function mineHtml() {
-        if (!deps.canPlay()) return '<div class="pet-card"><p class="pet-lead">학생으로 들어오면 펫을 키울 수 있어요. 「반 펫」에서 친구들 펫을 구경해요.</p></div>';
+        if (!deps.canPlay()) return '<div class="pet-card"><p class="pet-lead">로그인하면 펫을 키울 수 있어요. 「반 펫」에서 친구들 펫을 구경해요.</p></div>';
+        if (slot >= myBox().slots) return `${slotBarHtml()}${lockedHtml()}${adminHtml()}`;
         const p = myPet();
-        if (p.phase === 'egg') return eggHtml(p);
-        if (p.phase === 'pet') return petHtml(petView(p, now(), today()));
-        return noneHtml();
+        const card = p.phase === 'egg' ? eggHtml(p) : p.phase === 'pet' ? petHtml(petView(p, now(), today(), settings())) : noneHtml();
+        return `${slotBarHtml()}${card}${adminHtml()}`;
     }
 
     function classHtml() {
@@ -366,7 +530,7 @@ export function createPetMode(deps) {
     }
 
     function dexHtml() {
-        const dex = myPet().dex || {};
+        const dex = myBox().dex || {};
         const found = Object.keys(dex).length;
         const total = Object.keys(PET_SPECIES).length;
         return `<div class="pet-dex-head"><b>📖 메이트 도감</b><span>만난 펫 <em>${found}</em> / ${total}종</span><i style="--p:${Math.round((found / total) * 100)}%"></i></div>
@@ -403,7 +567,8 @@ export function createPetMode(deps) {
             timer = setInterval(() => {
                 const el = root();
                 if (!el || el.classList.contains('hidden') || !el.offsetParent) return;
-                if (!busy && !fx) render();
+                // 마스터가 설정 칸에 적는 중이면 다시 그리지 않아요.
+                if (!busy && !fx && !(el.querySelector('.pet-admin[open]'))) render();
             }, 60000);
         }
     }

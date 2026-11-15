@@ -426,3 +426,68 @@
 
 /* 앱 공통 여백이 끼어들지 않게 */
 .pet-body h3, .pet-body p { margin: 0; }
+
+/* ---------- 펫 칸(슬롯)·대표 펫·마스터 설정 ---------- */
+.pet-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
+.pet-slot {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-height: 76px;
+    padding: 0.3rem 0.2rem 0.35rem;
+    border-radius: 0.9rem;
+    border: 2px solid #475569;
+    background: #1e293b;
+    color: #e2e8f0;
+}
+.pet-slot.is-on { border-color: #facc15; box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35); background: #2a2410; }
+.pet-slot.is-locked { border-style: dashed; color: #94a3b8; }
+.pet-slot-art { width: 46px; height: 46px; display: grid; place-items: center; }
+.pet-slot-art .pet-art { width: 100%; height: 100%; display: block; }
+.pet-slot-art .pet-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pet-slot-plus { font-size: 1.5rem; font-weight: 900; color: #64748b; }
+.pet-slot-lock { font-size: 1.4rem; }
+.pet-slot-label { max-width: 100%; font-size: 11px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pet-slot-label em { font-style: normal; color: #93c5fd; }
+.pet-slot-main { position: absolute; top: 2px; right: 4px; font-size: 13px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6)); }
+.pet-stage.is-locked { background: repeating-linear-gradient(135deg, #1e293b 0 14px, #0f172a 14px 28px); }
+.pet-chip.is-ok { background: #14532d; border-color: #4ade80; color: #bbf7d0; }
+.pet-chip.is-no { background: #450a0a; border-color: #f87171; color: #fecaca; }
+.pet-chip.is-main { background: #facc15; border-color: #fff; color: #422006; }
+.pet-main-row { display: flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 32px; }
+.pet-main-row i { font-style: normal; font-size: 11px; font-weight: 700; color: #94a3b8; }
+.pet-mini-btn {
+    min-height: 32px;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    border: 1px solid #facc15;
+    background: rgba(250, 204, 21, 0.12);
+    color: #fde68a;
+    font-size: 12px;
+    font-weight: 900;
+}
+.pet-admin { border-radius: 1rem; border: 1px dashed #a78bfa; background: rgba(76, 29, 149, 0.25); }
+.pet-admin summary { padding: 0.6rem 0.8rem; font-size: 13px; font-weight: 900; color: #ddd6fe; cursor: pointer; }
+.pet-admin-body { display: flex; flex-direction: column; gap: 0.45rem; padding: 0 0.8rem 0.8rem; }
+.pet-set-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; font-size: 12px; font-weight: 700; color: #e2e8f0; }
+.pet-set-row span { flex: 0 0 5.6rem; font-weight: 900; color: #c4b5fd; }
+.pet-set-input {
+    width: 4.2rem;
+    min-height: 40px;
+    padding: 0 0.4rem;
+    border-radius: 0.6rem;
+    border: 1px solid #7c3aed;
+    background: #0f172a;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 900;
+    text-align: center;
+}
+
+.pet-stage.is-locked { display: grid; place-items: center; height: 120px; }
+.pet-stage.is-locked .pet-away-note { position: static; font-size: 2.6rem; }
+.pet-set-row { flex-wrap: nowrap; }
+.pet-set-row span { flex: 0 0 4.8rem; }
+#challengePane-pet .pet-set-input { width: 3.6rem; flex: 0 0 auto; }

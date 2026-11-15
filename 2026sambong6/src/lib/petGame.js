@@ -67,6 +67,35 @@ const int = (v, lo = 0, hi = 1e15) => {
 };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
 
+/* ---------- 마스터가 고칠 수 있는 설정(settings/global 의 petSettings) ---------- */
+
+export const PET_MAX_SLOTS = 3;
+export const PET_DEFAULT_SETTINGS = Object.freeze({
+    /** 칸 늘리기: [두 번째 칸, 세 번째 칸] — 필요한 내 레벨과 값(봉) */
+    slotRules: Object.freeze([Object.freeze({ level: 35, price: 50 }), Object.freeze({ level: 60, price: 100 })]),
+    /** 산책 보상: 기본 최소·최대 봉, 전투력 step마다 최대 +1, 하루 상한 cap */
+    walk: Object.freeze({ min: 1, max: 3, step: 100, cap: 15 }),
+});
+
+export function sanitizePetSettings(raw) {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const d = PET_DEFAULT_SETTINGS;
+    const num = (v, def, lo, hi) => {
+        const n = Math.floor(Number(v));
+        return Number.isFinite(n) && v !== null && v !== '' ? Math.max(lo, Math.min(hi, n)) : def;
+    };
+    const rules = Array.isArray(src.slotRules) ? src.slotRules : [];
+    const slotRules = d.slotRules.map((def, i) => {
+        const r = rules[i] && typeof rules[i] === 'object' ? rules[i] : {};
+        return { level: num(r.level, def.level, 1, 100), price: num(r.price, def.price, 0, 5000) };
+    });
+    const w = src.walk && typeof src.walk === 'object' ? src.walk : {};
+    const min = num(w.min, d.walk.min, 0, 100);
+    const max = Math.max(min, num(w.max, d.walk.max, 0, 100));
+    const cap = Math.max(max, num(w.cap, d.walk.cap, 0, 500));
+    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap } };
+}
+
 export function emptyPet() {
     return { v: 1, phase: 'none', dex: {} };
 }
@@ -142,7 +171,7 @@ export function petPower(pet) {
  * 지금 시각 기준 모습(저장하지 않는 계산값).
  * full: 지금 포만감, away: 가출했는지, mood: happy|ok|hungry|starving|away, canEvolve, walkBong 등
  */
-export function petView(pet, now = Date.now(), today = '') {
+export function petView(pet, now = Date.now(), today = '', settings = null) {
     const p = sanitizePet(pet);
     if (p.phase !== 'pet') return { ...p, away: false, mood: '', fullNow: 0 };
     const t = int(now);
@@ -161,7 +190,7 @@ export function petView(pet, now = Date.now(), today = '') {
         hoursToRunaway: away ? 0 : Math.max(0, PET_RUNAWAY_HOURS - hungryHours),
         playsLeft,
         walked: p.walkDate === today,
-        walkBong: petWalkBong(p),
+        walkRange: petWalkRange(p, settings && settings.walk),
         canEvolve: p.stage < 3 && p.level >= PET_EVOLVE_LEVELS[p.stage - 1],
         expNeed: p.level >= PET_MAX_LEVEL ? 0 : petExpNeed(p.level),
         power: petPower(p),
@@ -170,11 +199,25 @@ export function petView(pet, now = Date.now(), today = '') {
     };
 }
 
-/** 산책 한 번에 벌어 오는 봉 */
-export function petWalkBong(pet) {
+/**
+ * 산책 한 번에 벌어 올 수 있는 봉의 범위. 전투력(단계·레벨·강화)이 높을수록 많이 벌어요.
+ * 최소 = 기본 최소 + 전투력 (2×step)마다 1, 최대 = 기본 최대 + 전투력 step마다 1 (상한 cap).
+ * 이 범위 안에서 그날그날 다르게(랜덤) 벌어 와요. 숫자는 마스터가 고칠 수 있어요(PET_DEFAULT_SETTINGS.walk).
+ */
+export function petWalkRange(pet, walkCfg = null) {
     const p = pet && pet.phase === 'pet' ? pet : sanitizePet(pet);
-    if (p.phase !== 'pet') return 0;
-    return 1 + p.stage + Math.floor(p.level / 10) + Math.floor(p.enhance / 4);
+    if (p.phase !== 'pet') return { min: 0, max: 0 };
+    const w = sanitizePetSettings({ walk: walkCfg }).walk;
+    const power = petPower(p);
+    const max = Math.min(w.cap, w.max + Math.floor(power / w.step));
+    const min = Math.min(max, w.min + Math.floor(power / (w.step * 2)));
+    return { min, max };
+}
+
+/** 범위 안에서 하나를 뽑아요. */
+export function rollPetWalkBong(pet, walkCfg = null, rnd = Math.random) {
+    const { min, max } = petWalkRange(pet, walkCfg);
+    return min + Math.floor(rnd() * (max - min + 1));
 }
 
 export function petEnhanceCost(enhance) {
@@ -314,14 +357,14 @@ export function enhancePet(pet, { bong = 0, now = 0, today = '', rnd = Math.rand
 }
 
 /** 산책: 하루 한 번 봉을 벌어 와요. */
-export function walkPet(pet, { now = 0, today = '' } = {}) {
+export function walkPet(pet, { now = 0, today = '', rnd = Math.random, walk = null } = {}) {
     const p = sanitizePet(pet);
     if (p.phase !== 'pet') return fail(p, 'no_pet');
     const v = petView(p, now, today);
     if (v.away) return fail(p, 'away');
     if (!today || v.walked) return fail(p, 'walked');
     if (v.fullNow < PET_WALK_MIN_FULL) return fail(p, 'too_hungry');
-    const gain = petWalkBong(p);
+    const gain = rollPetWalkBong(p, walk, rnd);
     return done({ ...p, walkDate: today, earned: p.earned + gain }, { gain });
 }
 
@@ -362,6 +405,10 @@ export const PET_ERROR_TEXT = Object.freeze({
     not_ready: '아직 진화할 수 없어요.',
     max_enhance: '강화를 끝까지 했어요.',
     walked: '오늘은 이미 산책을 다녀왔어요.',
+    max_slots: '칸을 끝까지 늘렸어요.',
+    need_level: '내 레벨이 아직 모자라요.',
+    bad_slot: '그 칸은 쓸 수 없어요.',
+    not_pet: '태어난 펫만 대표로 정할 수 있어요.',
     too_hungry: '배가 고파서 산책을 못 가요. 먼저 먹이를 줘요.',
     not_away: '펫이 집에 있어요.',
     bad_name: '이름을 다시 적어 줘요.',
@@ -371,11 +418,97 @@ export function petErrorText(code) {
     return PET_ERROR_TEXT[code] || '할 수 없어요.';
 }
 
-/** 반 펫 랭킹: 전투력 순. students: [{id, name, pet}] */
+/** 반 펫 랭킹: 전투력 순. 학생마다 대표 펫 하나를 봐요. students: [{id, name, pet}] */
 export function rankClassPets(students, now = Date.now(), today = '') {
     return (Array.isArray(students) ? students : [])
-        .map((s) => ({ id: String(s.id), owner: String(s.name || s.id), view: petView(s.pet, now, today) }))
+        .map((s) => ({ id: String(s.id), owner: String(s.name || s.id), view: petView(petBoxMain(sanitizePetBox(s.pet)), now, today) }))
         .filter((r) => r.view.phase === 'pet')
         .sort((a, b) => b.view.power - a.view.power || b.view.level - a.view.level || a.id.localeCompare(b.id))
         .map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+/* ---------- 펫 칸(슬롯) ---------- */
+/*
+ * 학생 문서의 pet 칸은 '펫 상자'예요: { v:2, slots, main, list:[펫…], dex }.
+ * - slots: 열린 칸 수(1~3). list 의 각 칸은 위의 펫 하나(phase none|egg|pet)예요.
+ * - main: 대표 펫 칸 번호. 광장 카드와 반 펫 랭킹에 이 펫이 보여요.
+ * 예전 저장값(펫 하나짜리)은 첫 칸으로 읽어요.
+ */
+
+const stripDex = (p) => { const { dex, ...rest } = p; return rest; };
+
+export function sanitizePetBox(raw) {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    if (int(src.v) >= 2 && Array.isArray(src.list)) {
+        const slots = int(src.slots, 1, PET_MAX_SLOTS);
+        const list = [];
+        for (let i = 0; i < slots; i += 1) list.push(stripDex(sanitizePet(src.list[i])));
+        return { v: 2, slots, main: int(src.main, 0, slots - 1), list, dex: sanitizeDex(src.dex) };
+    }
+    const one = sanitizePet(src);
+    return { v: 2, slots: 1, main: 0, list: [stripDex(one)], dex: one.dex };
+}
+
+/** 저장용(일반 객체) */
+export function petBoxToDoc(box) {
+    const b = sanitizePetBox(box);
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex } };
+}
+
+/** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
+export function petBoxSlot(box, i) {
+    const b = sanitizePetBox(box);
+    const idx = Math.floor(Number(i));
+    if (!(idx >= 0 && idx < b.slots)) return null;
+    return { ...b.list[idx], dex: b.dex };
+}
+
+/** i번째 칸을 바꾼 새 상자(펫에 붙어 온 도감은 상자 도감이 돼요). */
+export function petBoxWith(box, i, pet) {
+    const b = sanitizePetBox(box);
+    const idx = Math.floor(Number(i));
+    if (!(idx >= 0 && idx < b.slots)) return b;
+    const p = sanitizePet(pet);
+    const list = b.list.map((cur, k) => (k === idx ? stripDex(p) : cur));
+    return { ...b, list, dex: { ...b.dex, ...p.dex } };
+}
+
+/** 대표 펫 칸 번호. 고른 칸에 펫이 없으면 태어난 펫이 있는 첫 칸, 하나도 없으면 -1 */
+export function petBoxMainIndex(box) {
+    const b = sanitizePetBox(box);
+    if (b.list[b.main] && b.list[b.main].phase === 'pet') return b.main;
+    return b.list.findIndex((p) => p.phase === 'pet');
+}
+
+/** 대표 펫(없으면 빈 펫) */
+export function petBoxMain(box) {
+    const b = sanitizePetBox(box);
+    const i = petBoxMainIndex(b);
+    return i >= 0 ? { ...b.list[i], dex: b.dex } : { v: 1, phase: 'none', dex: b.dex };
+}
+
+/** 다음 칸을 열 때의 조건({ level, price }). 더 못 늘리면 null */
+export function petNextSlotRule(box, settings = null) {
+    const b = sanitizePetBox(box);
+    if (b.slots >= PET_MAX_SLOTS) return null;
+    return sanitizePetSettings(settings).slotRules[b.slots - 1];
+}
+
+/** 칸 늘리기: 내 레벨이 되고 봉을 내면 한 칸 열려요. */
+export function expandPetBox(box, { bong = 0, level = 0, settings = null } = {}) {
+    const b = sanitizePetBox(box);
+    const rule = petNextSlotRule(b, settings);
+    if (!rule) return { ok: false, error: 'max_slots', box: b, cost: 0 };
+    if (int(level) < rule.level) return { ok: false, error: 'need_level', box: b, cost: 0 };
+    if (Number(bong) < rule.price) return { ok: false, error: 'no_bong', box: b, cost: 0 };
+    return { ok: true, error: '', box: { ...b, slots: b.slots + 1, list: b.list.concat({ v: 1, phase: 'none' }) }, cost: rule.price };
+}
+
+/** 대표 펫 정하기(태어난 펫만) */
+export function setPetBoxMain(box, i) {
+    const b = sanitizePetBox(box);
+    const idx = Math.floor(Number(i));
+    if (!(idx >= 0 && idx < b.slots)) return { ok: false, error: 'bad_slot', box: b };
+    if (b.list[idx].phase !== 'pet') return { ok: false, error: 'not_pet', box: b };
+    return { ok: true, error: '', box: { ...b, main: idx } };
 }

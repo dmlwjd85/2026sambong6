@@ -1374,7 +1374,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.55';
+        const APP_VERSION = 'v1.56';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10489,17 +10489,35 @@ ${subjectLine}
             today: () => getLocalDateStr(),
             applyBong: (delta) => { window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(delta)); updateUI(); },
             save: (opts) => saveDataToCloud(opts),
-            students: () => getActiveStudentIds().map((sid) => {
-                const id = String(sid);
-                const mine = id === String(localStorage.getItem('sambong_student_id') || '');
-                const row = (window.allStudentsData || []).find((s) => String(s.id) === id);
-                return { id, name: displayStudentName(id, id), pet: mine && window.playerState ? window.playerState.pet : (row && row.pet) };
-            }),
+            students: () => {
+                const me = String(localStorage.getItem('sambong_student_id') || '');
+                const rows = getActiveStudentIds().map((sid) => {
+                    const id = String(sid);
+                    const row = (window.allStudentsData || []).find((x) => String(x.id) === id);
+                    return { id, name: displayStudentName(id, id), pet: id === me && window.playerState ? window.playerState.pet : (row && row.pet) };
+                });
+                // 선생님 펫도 반 펫 랭킹에 함께 보여요.
+                [['gm', '선생님', window.gmData], ['gm_a', '선생님(A)', window.gmaData]].forEach(([id, name, data]) => {
+                    const pet = id === me && window.playerState ? window.playerState.pet : (data && data.pet);
+                    if (pet) rows.push({ id, name, pet });
+                });
+                return rows;
+            },
             selfId: () => String(localStorage.getItem('sambong_student_id') || ''),
             bong: (v) => formatBongAmount(v),
             confirm: (text) => window.customConfirm(text),
             prompt: (text) => window.customPrompt(text, 'text'),
             toast: (text) => { if (typeof window.showToast === 'function') window.showToast(text); },
+            // 칸 늘리기 조건에 쓰는 내 레벨(광장 카드의 Lv.과 같아요)
+            level: () => calculateExactLevel(Number(window.playerState && window.playerState.xp) || 0),
+            // 마스터가 고치는 펫 설정(칸 늘리기 조건·산책 보상). settings/global 의 petSettings 에 둬요.
+            settings: () => (window.globalSettings && window.globalSettings.petSettings) || null,
+            isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
+            saveSettings: async (petSettings) => {
+                if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 고칠 수 있어요');
+                await setDoc(getGlobalSettingsDocRef(), { petSettings }, { merge: true });
+                window.globalSettings = { ...(window.globalSettings || {}), petSettings };
+            },
         });
 
         window.refreshPetModeIfOpen = () => { if (challengeSub === 'pet' && _petMode.isOpen() && _petMode.showsClass()) _petMode.render(); };

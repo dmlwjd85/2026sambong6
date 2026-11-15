@@ -147,15 +147,31 @@ describe('펫: 강화·산책·랭킹', () => {
         assert.equal(P.enhancePet(pet(), { bong: 4, now: T0, today: DAY }).error, 'no_bong');
     });
 
-    it('산책은 하루 한 번이고, 클수록 더 벌어 와요', () => {
-        assert.equal(P.petWalkBong(pet()), 2);
-        assert.equal(P.petWalkBong(pet({ stage: 3, level: 30, enhance: 10 })), 9);
-        const r = P.walkPet(pet(), { now: T0, today: DAY });
-        assert.equal(r.gain, 2);
-        assert.equal(r.pet.earned, 2);
+    it('산책은 하루 한 번이고, 능력치에 따라 정해진 범위에서 랜덤으로 벌어 와요', () => {
+        // 갓 태어난 펫(전투력 60): 1~3봉
+        assert.deepEqual(P.petWalkRange(pet()), { min: 1, max: 3 });
+        // 다 키운 펫(전투력 600): 4~9봉
+        assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 })), { min: 4, max: 9 });
+        assert.equal(P.walkPet(pet(), { now: T0, today: DAY, rnd: () => 0 }).gain, 1);
+        const r = P.walkPet(pet(), { now: T0, today: DAY, rnd: () => 0.999 });
+        assert.equal(r.gain, 3);
+        assert.equal(r.pet.earned, 3);
         assert.equal(P.walkPet(r.pet, { now: T0, today: DAY }).error, 'walked');
         assert.equal(P.walkPet(r.pet, { now: T0, today: '2026-11-17' }).ok, true);
         assert.equal(P.walkPet(pet({ full: 20 }), { now: T0, today: DAY }).error, 'too_hungry');
+        const seen = new Set();
+        let x = 3;
+        const rnd = () => { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x80000000; };
+        for (let i = 0; i < 200; i += 1) seen.add(P.rollPetWalkBong(pet({ stage: 3, level: 30, enhance: 10 }), null, rnd));
+        assert.deepEqual([...seen].sort((a, b) => a - b), [4, 5, 6, 7, 8, 9]);
+    });
+
+    it('산책 보상은 마스터 설정을 따라요(상한 포함)', () => {
+        const walk = { min: 2, max: 5, step: 50, cap: 8 };
+        assert.deepEqual(P.petWalkRange(pet(), walk), { min: 2, max: 6 });
+        assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 }), walk), { min: 8, max: 8 });
+        assert.equal(P.petView(pet(), T0, DAY, { walk }).walkRange.max, 6);
+        assert.equal(P.walkPet(pet(), { now: T0, today: DAY, walk, rnd: () => 0.999 }).gain, 6);
     });
 
     it('놓아주면 도감에 남고 새 알을 살 수 있어요', () => {
@@ -186,5 +202,85 @@ describe('펫: 강화·산책·랭킹', () => {
         assert.equal(p.full, 100);
         assert.equal(p.name, 'script');
         assert.ok(P.petErrorText('full').includes('배가'));
+    });
+});
+
+describe('펫 설정(마스터)', () => {
+    it('기본값: 두 번째 칸 Lv.35·50봉, 세 번째 칸 Lv.60·100봉', () => {
+        const d = P.sanitizePetSettings(null);
+        assert.deepEqual(d.slotRules, [{ level: 35, price: 50 }, { level: 60, price: 100 }]);
+        assert.deepEqual(d.walk, { min: 1, max: 3, step: 100, cap: 15 });
+    });
+
+    it('이상한 값은 범위 안으로 고치고, 빈 값은 기본값을 써요', () => {
+        const sset = P.sanitizePetSettings({ slotRules: [{ level: 999, price: -5 }, { level: '', price: 'abc' }], walk: { min: 9, max: 2, step: 1, cap: 0 } });
+        assert.deepEqual(sset.slotRules, [{ level: 100, price: 0 }, { level: 60, price: 100 }]);
+        assert.deepEqual(sset.walk, { min: 9, max: 9, step: 10, cap: 9 });
+    });
+});
+
+describe('펫 칸(슬롯)', () => {
+    it('예전 저장값(펫 하나)은 첫 칸으로 읽어요', () => {
+        const box = P.sanitizePetBox(pet({ level: 7, dex: { emberkit: { stage: 1 } } }));
+        assert.equal(box.slots, 1);
+        assert.equal(box.list[0].level, 7);
+        assert.deepEqual(box.dex, { emberkit: { stage: 1, shiny: false } });
+        assert.equal(P.sanitizePetBox(null).list[0].phase, 'none');
+        // 저장했다가 읽어도 같아요
+        assert.deepEqual(P.sanitizePetBox(JSON.parse(JSON.stringify(P.petBoxToDoc(box)))), box);
+    });
+
+    it('레벨과 봉이 되면 칸이 늘고, 세 칸까지예요', () => {
+        let box = P.sanitizePetBox(null);
+        assert.deepEqual(P.petNextSlotRule(box), { level: 35, price: 50 });
+        assert.equal(P.expandPetBox(box, { bong: 999, level: 34 }).error, 'need_level');
+        assert.equal(P.expandPetBox(box, { bong: 49, level: 35 }).error, 'no_bong');
+        const r1 = P.expandPetBox(box, { bong: 50, level: 35 });
+        assert.equal(r1.cost, 50);
+        assert.equal(r1.box.slots, 2);
+        box = r1.box;
+        assert.equal(P.expandPetBox(box, { bong: 999, level: 59 }).error, 'need_level');
+        const r2 = P.expandPetBox(box, { bong: 100, level: 60 });
+        assert.equal(r2.cost, 100);
+        assert.equal(r2.box.slots, 3);
+        assert.equal(P.expandPetBox(r2.box, { bong: 999, level: 100 }).error, 'max_slots');
+        assert.equal(P.petNextSlotRule(r2.box), null);
+    });
+
+    it('칸 늘리기 조건은 마스터 설정을 따라요', () => {
+        const settings = { slotRules: [{ level: 10, price: 5 }, { level: 20, price: 7 }] };
+        const r = P.expandPetBox(null, { bong: 5, level: 10, settings });
+        assert.equal(r.ok, true);
+        assert.equal(r.cost, 5);
+    });
+
+    it('칸마다 따로 키우고, 도감은 함께 써요', () => {
+        let box = P.expandPetBox(null, { bong: 50, level: 35 }).box;
+        const egg = P.buyPetEgg(P.petBoxSlot(box, 1), { bong: 30 });
+        box = P.petBoxWith(box, 1, egg.pet);
+        assert.equal(box.list[0].phase, 'none');
+        assert.equal(box.list[1].phase, 'egg');
+        box = P.petBoxWith(box, 0, pet({ species: 'snowbun', dex: { snowbun: { stage: 1 } } }));
+        box = P.petBoxWith(box, 1, pet({ species: 'zapowl', stage: 2, level: 12, dex: { ...box.dex, zapowl: { stage: 2 } } }));
+        assert.deepEqual(Object.keys(box.dex).sort(), ['snowbun', 'zapowl']);
+        assert.equal(P.petBoxSlot(box, 2), null);
+        assert.equal(P.petBoxSlot(box, 1).dex.snowbun.stage, 1);
+    });
+
+    it('대표 펫은 태어난 펫만 고를 수 있고, 랭킹에는 대표 펫이 나와요', () => {
+        let box = P.expandPetBox(null, { bong: 50, level: 35 }).box;
+        box = P.petBoxWith(box, 0, pet({ species: 'snowbun', level: 3 }));
+        box = P.petBoxWith(box, 1, { phase: 'egg', taps: 2 });
+        assert.equal(P.setPetBoxMain(box, 1).error, 'not_pet');
+        assert.equal(P.setPetBoxMain(box, 5).error, 'bad_slot');
+        box = P.petBoxWith(box, 1, pet({ species: 'zapowl', stage: 2, level: 12 }));
+        box = P.setPetBoxMain(box, 1).box;
+        assert.equal(P.petBoxMain(box).species, 'zapowl');
+        const rows = P.rankClassPets([{ id: '1', name: '하나', pet: P.petBoxToDoc(box) }, { id: '2', name: '두리', pet: pet({ level: 5 }) }], T0, DAY);
+        assert.deepEqual(rows.map((r) => [r.owner, r.view.species]), [['하나', 'zapowl'], ['두리', 'emberkit']]);
+        // 대표로 고른 칸이 비면 다른 펫을 보여 줘요
+        const gone = P.petBoxWith(box, 1, P.releasePet(P.petBoxSlot(box, 1)).pet);
+        assert.equal(P.petBoxMain(gone).species, 'snowbun');
+        assert.equal(P.petBoxMainIndex(P.sanitizePetBox(null)), -1);
     });
 });

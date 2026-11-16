@@ -106,6 +106,8 @@ export const PET_TYPES = Object.freeze({
     ice: Object.freeze({ name: '얼음', emoji: '❄️' }),
     rock: Object.freeze({ name: '바위', emoji: '🪨' }),
     star: Object.freeze({ name: '별빛', emoji: '⭐' }),
+    /** 격투: 상성이 없어요(누구에게나 보통 데미지를 주고받아요). */
+    fight: Object.freeze({ name: '격투', emoji: '🥊' }),
 });
 
 /** 종: 단계별 이름(1·2·3단계), 알에서 나올 무게(weight) */
@@ -117,6 +119,7 @@ export const PET_SPECIES = Object.freeze({
     snowbun: Object.freeze({ id: 'snowbun', type: 'ice', names: ['눈토', '서리토', '빙설토'], weight: 16 }),
     pebbletle: Object.freeze({ id: 'pebbletle', type: 'rock', names: ['돌북', '바위북', '산악북'], weight: 16 }),
     stardrake: Object.freeze({ id: 'stardrake', type: 'star', names: ['별룡이', '은하룡', '삼봉성룡'], weight: 4, rare: true }),
+    punchroo: Object.freeze({ id: 'punchroo', type: 'fight', names: ['펀치루', '권투루', '챔피루'], weight: 16 }),
 });
 /**
  * 펫마다 공격 기술이 3가지 있어요. 레벨이 오르면 하나씩 배우고, 탐험 전투에서 배운 기술 중 하나를 무작위로 써요.
@@ -132,7 +135,34 @@ export const PET_SKILL_NAMES = Object.freeze({
     snowbun: Object.freeze(['눈뭉치 던지기', '얼음 발차기', '눈보라 대행진']),
     pebbletle: Object.freeze(['조약돌 던지기', '바위 굴리기', '대지 흔들기']),
     stardrake: Object.freeze(['별가루 뿌리기', '혜성 꼬리치기', '은하수 브레스']),
+    punchroo: Object.freeze(['잽 잽', '원투 스트레이트', '챔피언 어퍼컷']),
 });
+/**
+ * 막기 기술: 공격을 받을 때 chance% 확률로 저절로 써요(레벨 5에 배워요).
+ * block: 받는 데미지를 몇 % 줄이는지(100이면 완전히 피해요), counter: 내 공격력의 몇 %로 보스에게 되받아치는지.
+ */
+export const PET_GUARD_LEVEL = 5;
+export const PET_GUARD_SKILLS = Object.freeze({
+    emberkit: Object.freeze({ name: '불꽃 반격', chance: 30, block: 30, counter: 60 }),
+    dropotter: Object.freeze({ name: '물의 장막', chance: 35, block: 60, counter: 0 }),
+    sproutdeer: Object.freeze({ name: '덩굴 방패', chance: 35, block: 50, counter: 20 }),
+    zapowl: Object.freeze({ name: '번개 회피', chance: 25, block: 100, counter: 0 }),
+    snowbun: Object.freeze({ name: '얼음 갑옷', chance: 35, block: 60, counter: 0 }),
+    pebbletle: Object.freeze({ name: '단단한 등껍질', chance: 30, block: 75, counter: 0 }),
+    stardrake: Object.freeze({ name: '별빛 반사', chance: 30, block: 40, counter: 80 }),
+    punchroo: Object.freeze({ name: '가드 올리기', chance: 35, block: 45, counter: 40 }),
+});
+/** 막기 기술(배웠는지 포함) */
+export function petGuardSkill(species, level) {
+    const g = PET_GUARD_SKILLS[species] || PET_GUARD_SKILLS.emberkit;
+    return { ...g, level: PET_GUARD_LEVEL, learned: Number(level) >= PET_GUARD_LEVEL };
+}
+/** 막기 기술 설명 한 줄 */
+export function petGuardText(g) {
+    const what = g.block >= 100 ? '공격을 완전히 피해요' : `받는 데미지 −${g.block}%`;
+    return `${what}${g.counter ? ` · 되받아치기(공격력 ${g.counter}%)` : ''}`;
+}
+
 /** 이 레벨에서 배운 기술 수(1~3) */
 export function petSkillCount(level) {
     return Math.max(1, PET_SKILL_LEVELS.filter((lv) => Number(level) >= lv).length);

@@ -40,9 +40,9 @@ describe('펫: 알 사기와 부화', () => {
         let x = 1;
         const rnd = () => { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x80000000; };
         for (let i = 0; i < 5000; i += 1) { const id = P.rollPetSpecies(rnd); counts[id] = (counts[id] || 0) + 1; }
-        assert.equal(Object.keys(counts).length, 7);
+        assert.equal(Object.keys(counts).length, Object.keys(P.PET_SPECIES).length);
         assert.ok(counts.stardrake < counts.emberkit / 2);
-        assert.equal(P.rollPetSpecies(() => 0.9999), 'stardrake');
+        assert.equal(P.rollPetSpecies(() => 0.9999), 'punchroo');
     });
 });
 

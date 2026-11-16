@@ -46,6 +46,8 @@ import {
     petBoxWith,
     petErrorText,
     petNextSlotRule,
+    petGuardSkill,
+    petGuardText,
     petSkills,
     petView,
     playWithPet,
@@ -781,7 +783,7 @@ export function createPetMode(deps) {
         return `<div class="pet-card pet-shop is-egg-card">
             <div class="pet-stage is-egg">${ground}<span class="pet-sprite is-egg">${petEggHtml({ taps: 0 })}</span>${fxHtml()}</div>
             <h3 class="pet-title">신비한 알</h3>
-            <p class="pet-lead">알을 품으면 일곱 종 가운데 하나가 태어나요. 아주 드물게 별빛 용이나 색이 다른 펫도 나와요!</p>
+            <p class="pet-lead">알을 품으면 여러 종 가운데 하나가 태어나요. 아주 드물게 별빛 용이나 색이 다른 펫도 나와요!</p>
             <div class="pet-lineup">${lineup}</div>
             <button type="button" class="pet-btn is-main" data-p="buy"${can ? '' : ' disabled'}>🥚 알 사기 · ${esc(deps.bong(PET_EGG_PRICE))}</button>
             ${can ? '' : `<p class="pet-note">봉이 ${esc(deps.bong(PET_EGG_PRICE - myBong()))} 모자라요. 퀘스트로 모아 봐요.</p>`}
@@ -859,8 +861,8 @@ export function createPetMode(deps) {
             ${v.canEvolve
                 ? '<button type="button" class="pet-btn is-evolve" data-p="evolve">🌟 진화하기!</button>'
                 : (nextEvo ? `<p class="pet-note">Lv.${nextEvo}이 되면 진화할 수 있어요.</p>` : '<p class="pet-note">마지막 단계까지 진화했어요!</p>')}
-            <p class="pet-sub">기술 <em>(탐험 전투에서 배운 기술 중 하나를 무작위로 써요)</em></p>
-            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}</div>
+            <p class="pet-sub">기술 <em>(공격 기술은 무작위로, 🛡️ 막기 기술은 공격받을 때 확률로 써요)</em></p>
+            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}${(() => { const g = petGuardSkill(v.species, v.level); return `<span class="pet-skill is-guard${g.learned ? ' is-on' : ''} type-${sp.type}"><b>${g.learned ? '🛡️ ' : '🔒 '}${esc(g.name)}</b><i>${g.learned ? `공격받을 때 ${g.chance}% · ${esc(petGuardText(g))}` : `Lv.${g.level}에 배워요 · 공격받을 때 저절로 써요`}</i></span>`; })()}</div>
             <p class="pet-sub">먹이 주기 ${v.fullNow > 90 ? '<em>(배가 불러요. 조금 있다가 줘요)</em>' : ''}</p>
             <div class="pet-foods">${foods}</div>
             ${v.level >= PET_MAX_LEVEL ? '' : `<p class="pet-sub">경험치 팩</p>

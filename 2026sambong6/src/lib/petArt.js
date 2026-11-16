@@ -1,7 +1,7 @@
 /**
  * 메이트 펫 그림(문자열, DOM 없음).
  * 기본 그림은 public/pets/ 의 일러스트(종 × 단계 21장 + 알, WebP)예요. petArtHtml·petEggHtml 이 <img>를 만들어요.
- * 아래 petSvg 는 그림 파일을 못 불러올 때 대신 쓰는 도형 그림이에요. 일곱 종 × 세 단계를 도형으로 그려요.
+ * 아래 petSvg 는 그림 파일을 못 불러올 때 대신 쓰는 도형 그림이에요. 모든 종 × 세 단계를 도형으로 그려요.
  * 모두 이 앱을 위해 새로 만든 몬스터예요. 종마다 귀·꼬리·머리 장식이 다르고, 단계가 오를수록 몸이 커지고 장식이 늘어요.
  * shiny(색이 다른 펫)는 색만 바꿔요. mood에 따라 눈·입이 달라져요.
  */
@@ -14,6 +14,7 @@ const PALETTES = Object.freeze({
     snowbun: { main: '#d0ebff', dark: '#74a9d8', light: '#ffffff', accent: '#66d9e8', glow: '#a5d8ff' },
     pebbletle: { main: '#a9b388', dark: '#6b7445', light: '#f1f3e0', accent: '#8d6e63', glow: '#c5cba3' },
     stardrake: { main: '#9775fa', dark: '#5f3dc4', light: '#f3f0ff', accent: '#ffe066', glow: '#d0bfff' },
+    punchroo: { main: '#d9a066', dark: '#9c6b3c', light: '#fff1dc', accent: '#e03131', glow: '#ffa8a8' },
 });
 
 const SHINY = Object.freeze({
@@ -24,6 +25,7 @@ const SHINY = Object.freeze({
     snowbun: { main: '#e5dbff', dark: '#9775fa', light: '#ffffff', accent: '#ffa8a8', glow: '#d0bfff' },
     pebbletle: { main: '#ffc9c9', dark: '#c92a2a', light: '#fff5f5', accent: '#495057', glow: '#ffa8a8' },
     stardrake: { main: '#343a40', dark: '#111417', light: '#dee2e6', accent: '#ff6b6b', glow: '#868e96' },
+    punchroo: { main: '#868e96', dark: '#495057', light: '#f1f3f5', accent: '#1c7ed6', glow: '#a5d8ff' },
 });
 
 export function petPalette(species, shiny = false) {
@@ -180,6 +182,20 @@ export function petSvg({ species = 'emberkit', stage = 1, shiny = false, mood = 
         back.push(`<path d="M${cx + sw - 4} ${by + 6}l10 3l-9 4Z" fill="${p.main}" ${S}/>`);
         if (st >= 3) [[-0.75, 0.05], [0.3, -0.45], [0.8, 0.0]].forEach(([k, j]) => mid.push(`<ellipse cx="${cx + k * sw}" cy="${sy + j * sh}" rx="6" ry="3.4" fill="#8ecf5a" stroke="${OUT}" stroke-width="1.2"/>`));
         bodyShape = `<ellipse cx="${cx}" cy="${by + 2}" rx="${brx * 0.86}" ry="${bry * 0.8}" fill="${p.light}" ${S}/>`;
+    } else if (species === 'punchroo') {
+        // 격투 캥거루: 긴 귀, 굵은 꼬리, 빨간 권투 장갑 → 머리띠 → 챔피언 벨트와 큰 장갑
+        [-1, 1].forEach((d) => back.push(`<ellipse cx="${cx + d * hr * 0.5}" cy="${hy - hr * 1.05}" rx="${hr * 0.22}" ry="${hr * 0.55}" fill="${p.main}" ${S} transform="rotate(${d * 14} ${cx + d * hr * 0.5} ${hy - hr * 0.7})"/><ellipse cx="${cx + d * hr * 0.5}" cy="${hy - hr * 1.05}" rx="${hr * 0.1}" ry="${hr * 0.36}" fill="${p.light}" transform="rotate(${d * 14} ${cx + d * hr * 0.5} ${hy - hr * 0.7})"/>`));
+        back.push(`<path d="M${cx + brx * 0.5} ${by + bry * 0.6}q${18 + st * 4} 6 ${26 + st * 5} -4" fill="none" stroke="${OUT}" stroke-width="${11 + st}" stroke-linecap="round"/><path d="M${cx + brx * 0.5} ${by + bry * 0.6}q${18 + st * 4} 6 ${26 + st * 5} -4" fill="none" stroke="${p.main}" stroke-width="${7 + st}" stroke-linecap="round"/>`);
+        headShape += `<ellipse cx="${cx}" cy="${hy + hr * 0.34}" rx="${hr * 0.46}" ry="${hr * 0.32}" fill="${p.light}"/>`;
+        mid.push(`<path d="M${cx - brx * 0.42} ${by + bry * 0.05}q${brx * 0.42} ${bry * 0.5} ${brx * 0.84} 0" fill="none" stroke="${p.dark}" stroke-width="1.8" stroke-linecap="round"/>`);
+        const g = 7 + st * 1.6;
+        [-1, 1].forEach((d) => front.push(`<circle cx="${cx + d * (brx + 2)}" cy="${by - bry * 0.35}" r="${g}" fill="${p.accent}" ${S}/><path d="M${cx + d * (brx + 2) - g * 0.5} ${by - bry * 0.35 - g * 0.2}q${g * 0.5} ${-g * 0.5} ${g}" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/><rect x="${cx + d * (brx + 2) - g * 0.55}" y="${by - bry * 0.35 + g * 0.6}" width="${g * 1.1}" height="${g * 0.5}" rx="1.5" fill="#fff" ${S}/>`));
+        if (st >= 2) front.push(`<path d="M${cx - hr * 0.95} ${hy - hr * 0.42}q${hr * 0.95} ${-hr * 0.32} ${hr * 1.9} 0v${hr * 0.22}q${-hr * 0.95} ${-hr * 0.3} ${-hr * 1.9} 0Z" fill="${p.accent}" ${S}/><path d="M${cx + hr * 0.92} ${hy - hr * 0.3}l${8} ${-4}l-2 ${8}Z" fill="${p.accent}" ${S}/>`);
+        if (st >= 3) {
+            mid.push(`<rect x="${cx - brx * 0.95}" y="${by + bry * 0.1}" width="${brx * 1.9}" height="${bry * 0.34}" rx="3" fill="#f59f00" ${S}/><circle cx="${cx}" cy="${by + bry * 0.27}" r="${bry * 0.26}" fill="#ffe066" ${S}/>`);
+            mid.push(star(cx, by + bry * 0.27, bry * 0.16, '#fff3bf'));
+        }
+        front.push(`<ellipse cx="${cx}" cy="${hy + hr * 0.2}" rx="3.2" ry="2.3" fill="${OUT}"/>`);
     } else {
         // 별빛 용: 뿔, 작은 날개, 이마의 별, 별 꼬리 → 큰 날개와 별 무리
         const ws = 0.7 + st * 0.35;
@@ -229,7 +245,7 @@ export function petSilhouetteSvg() {
 
 /* ---------- 일러스트(그림 파일) ---------- */
 
-const ART_SPECIES = Object.freeze(['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake']);
+const ART_SPECIES = Object.freeze(['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake', 'punchroo']);
 
 /** 앱 기준 주소(Vite base). 테스트(node)에서는 상대 경로를 써요. */
 function assetBase() {

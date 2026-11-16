@@ -6,7 +6,7 @@
  * 팀원 화면마다 같은 씨앗으로 같은 전투를 다시 돌려 연출을 보여 준 뒤, 각자 자기 보상을 받아요.
  */
 import './petRaid.css';
-import { PET_SKILL_NAMES, PET_SPECIES, PET_TYPES, grantPetExp, petBoxMainIndex, petBoxToDoc, petBoxWith, petPower, petView, sanitizePetBox } from './lib/petGame.js';
+import { PET_GUARD_SKILLS, PET_SKILL_NAMES, PET_SPECIES, PET_TYPES, grantPetExp, petBoxMainIndex, petBoxToDoc, petBoxWith, petPower, petView, sanitizePetBox } from './lib/petGame.js';
 import { petArtHtml, petImageUrl } from './lib/petArt.js';
 import {
     RAID_MAX_PARTY,
@@ -35,7 +35,7 @@ import {
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const PET_SPECIES_TYPE = (species) => (PET_SPECIES[species] ? PET_SPECIES[species].type : 'fire');
-const TYPE_COLOR = Object.freeze({ fire: '#fb923c', water: '#38bdf8', grass: '#4ade80', electric: '#facc15', ice: '#a5f3fc', rock: '#d6b98c', star: '#c4b5fd' });
+const TYPE_COLOR = Object.freeze({ fire: '#fb923c', water: '#38bdf8', grass: '#4ade80', electric: '#facc15', ice: '#a5f3fc', rock: '#d6b98c', star: '#c4b5fd', fight: '#f87171' });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -302,8 +302,8 @@ export function createPetRaidView(ctx) {
                     <b>${esc(m.name)}</b>
                     <em data-dmg></em>
                 </span>`).join('')}</div>
-            <div class="raid-fx-hpside">${run.members.map((m) => `
-                <p class="raid-fx-hprow${m.id === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.name)}</b><span><i style="width:100%"></i></span><em>${raidPetStats(m.power).hp}</em></p>`).join('')}</div>
+            <div class="raid-fx-meter" aria-label="체력과 데미지">${run.members.map((m) => `
+                <p class="raid-fx-mrow${m.id === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.name)}</b><span class="raid-fx-mbar"><i style="width:100%"></i><em>${raidPetStats(m.power).hp}</em></span><small title="입힌 데미지">⚔️<u data-dealt>0</u></small><small title="막은 데미지">🛡️<u data-blocked>0</u></small></p>`).join('')}</div>
             <p class="raid-fx-phase"></p>
             <div class="raid-fx-feed" aria-hidden="true"></div>
             <p class="raid-fx-banner" aria-live="polite"></p>`;
@@ -323,7 +323,7 @@ export function createPetRaidView(ctx) {
             if (!row) return;
             const ratio = hpOf[id] / (maxHpOf[id] || 1);
             row.querySelector('i').style.width = `${ratio * 100}%`;
-            row.querySelector('em').textContent = hpOf[id] > 0 ? hpOf[id] : '쓰러짐';
+            row.querySelector('em').textContent = hpOf[id] > 0 ? hpOf[id].toLocaleString() : '쓰러짐';
             row.classList.toggle('is-low', ratio > 0 && ratio <= 0.35);
             row.classList.toggle('is-out', hpOf[id] <= 0);
         };
@@ -370,8 +370,19 @@ export function createPetRaidView(ctx) {
         const feed = el.querySelector('.raid-fx-feed');
         const nameOf = {};
         const total = {};
+        const saved = {};
+        /** 아래 미터기: 입힌 데미지(⚔️)·막은 데미지(🛡️) */
+        const setMeter = (id) => {
+            const row = el.querySelector(`[data-hp-id="${CSS.escape(id)}"]`);
+            if (!row) return;
+            const d = row.querySelector('[data-dealt]');
+            const b = row.querySelector('[data-blocked]');
+            if (d && d.textContent !== (total[id] || 0).toLocaleString()) { d.textContent = (total[id] || 0).toLocaleString(); pop(d, 'is-up', 300); }
+            if (b && b.textContent !== (saved[id] || 0).toLocaleString()) { b.textContent = (saved[id] || 0).toLocaleString(); pop(b, 'is-up', 300); }
+        };
         const skillOf = {};
-        run.members.forEach((m) => { nameOf[m.id] = m.name; total[m.id] = 0; skillOf[m.id] = PET_SKILL_NAMES[m.species] || []; });
+        const guardOf = {};
+        run.members.forEach((m) => { nameOf[m.id] = m.name; total[m.id] = 0; skillOf[m.id] = PET_SKILL_NAMES[m.species] || []; guardOf[m.id] = (PET_GUARD_SKILLS[m.species] || {}).name || ''; });
         /** 오른쪽 위 기록: 누가 얼마를 때렸는지 최근 4줄 */
         const log = (who, dmg, cls) => {
             const row = document.createElement('p');
@@ -465,6 +476,7 @@ export function createPetRaidView(ctx) {
                             total[h.by] = (total[h.by] || 0) + h.dmg;
                             const sum = pe.querySelector('[data-dmg]');
                             if (sum) { sum.textContent = total[h.by].toLocaleString(); pop(sum, 'is-up', 300); }
+                            setMeter(h.by);
                             if (h.crit) pop(el, 'is-shake', 320);
                         };
                     }, i * gap);
@@ -521,7 +533,27 @@ export function createPetRaidView(ctx) {
                         const pc = center(pe);
                         pop(pe, 'is-hurt', 460);
                         setMemberHp(h.target, hpOf[h.target] - h.dmg);
-                        float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, all ? 'is-hurt' : 'is-hurt is-big');
+                        if (h.guard) {
+                            // 막기 기술: 방패가 번쩍이고, 막은 만큼·되받아친 만큼을 보여 줘요.
+                            const gName = guardOf[h.target] || '막기';
+                            pop(pe, 'is-guard', 520);
+                            float(h.dmg > 0 ? `-${h.dmg.toLocaleString()}` : 'MISS', pc.x, pc.y - 30, 'is-guard', `🛡️ ${gName} · ${h.blocked.toLocaleString()} 막음`);
+                            saved[h.target] = (saved[h.target] || 0) + h.blocked;
+                            log(`${nameOf[h.target] || ''} ${gName}`, `🛡️${h.blocked.toLocaleString()}`, 'is-guard');
+                            if (h.counter) {
+                                const bc3 = center(bossEl);
+                                hp = Math.max(0, hp - h.counter);
+                                setHp(hp);
+                                pop(bossEl, 'is-hit', 260);
+                                float(`↩${h.counter.toLocaleString()}`, bc3.x - 30, bc3.y - 10, 'is-strong', `${nameOf[h.target] || ''} 반격`);
+                                total[h.target] = (total[h.target] || 0) + h.counter;
+                                const sum2 = pe.querySelector('[data-dmg]');
+                                if (sum2) sum2.textContent = total[h.target].toLocaleString();
+                            }
+                            setMeter(h.target);
+                        } else {
+                            float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, all ? 'is-hurt' : 'is-hurt is-big');
+                        }
                         if (h.faint && h.target === me()) { watching = true; }
                         if (h.faint) { pe.classList.add('is-faint'); log(nameOf[h.target] || '', '쓰러짐', 'is-hurt'); }
                     });
@@ -536,6 +568,8 @@ export function createPetRaidView(ctx) {
                 run.members.forEach((m) => { left[m.id] = maxHpOf[m.id]; });
                 sim.rounds.forEach((rd) => rd.boss.forEach((h) => { left[h.target] = h.faint ? 0 : left[h.target] - h.dmg; }));
                 run.members.forEach((m) => setMemberHp(m.id, left[m.id]));
+                // 미터기도 전투 결과 합계로 맞춰요.
+                run.members.forEach((m) => { total[m.id] = (sim.dealt && sim.dealt[m.id]) || 0; saved[m.id] = (sim.blocked && sim.blocked[m.id]) || 0; setMeter(m.id); const pe = petEl(m.id); const sum = pe && pe.querySelector('[data-dmg]'); if (sum) sum.textContent = total[m.id].toLocaleString(); });
             }
             // 건너뛰었으면 마지막 모습으로 맞춰요.
             setHp(sim.bossHp);

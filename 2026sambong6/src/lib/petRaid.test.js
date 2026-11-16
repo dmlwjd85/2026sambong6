@@ -252,3 +252,25 @@ describe('준비 버튼', () => {
         assert.equal(R.reopenRaidParty(fought, { id: '1', now: 3000 }).party.members.some((x) => x.ready), false);
     });
 });
+
+describe('막기 기술과 격투 펫', () => {
+    const mk = (sp, lv, id) => R.raidMemberFromPet({ phase: 'pet', species: sp, stage: 2, level: lv, exp: 0, enhance: 2, full: 90, fedAt: Date.now() }, { id, name: id, now: Date.now(), today: '2026-11-16' });
+    it('규칙 2에서는 공격받을 때 막기 기술이 발동하고, 예전 전투는 예전대로 다시 돌아가요', () => {
+        const ms = [mk('punchroo', 24, 'a'), mk('dropotter', 15, 'b'), mk('stardrake', 20, 'c')];
+        const boss = R.sanitizeRaidSettings(null).stages[4];
+        const g = R.simulateRaid(ms, boss, 7, { teamBonus: 6, guard: true });
+        const hits = g.rounds.flatMap((r) => r.boss);
+        assert.ok(hits.some((h) => h.guard && h.blocked > 0));
+        hits.filter((h) => h.guard).forEach((h) => assert.equal(h.raw - h.blocked, h.dmg));
+        assert.ok(Object.values(g.blocked).reduce((t, x) => t + x, 0) > 0);
+        const old = R.replayRaidRun({ members: ms, boss, seed: 7, teamBonus: 6 });
+        assert.ok(old.rounds.flatMap((r) => r.boss).every((h) => !h.guard));
+        assert.equal(R.replayRaidRun({ members: ms, boss, seed: 7, teamBonus: 6, rules: 2 }).win, g.win);
+    });
+    it('격투는 상성이 없어요', () => {
+        ['fire', 'water', 'grass', 'electric', 'ice', 'rock', 'star'].forEach((t) => {
+            assert.equal(R.raidTypeMult('fight', t), 1);
+            assert.equal(R.raidTypeMult(t, 'fight'), 1);
+        });
+    });
+});

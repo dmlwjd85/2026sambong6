@@ -9,7 +9,10 @@
  * - 도전은 무제한이에요. 보상은 스테이지 첫 클리어 보상(한 번)과 반복 보상(하루 정해진 횟수까지)이에요.
  * - 스테이지·보상·하루 보상 횟수는 마스터가 고칠 수 있어요(settings/global 의 petSettings.raid).
  */
-import { PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
+import { PET_GUARD_LEVEL, PET_GUARD_SKILLS, PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
+
+/** 전투 규칙 판: 2부터 막기 기술(공격받을 때 발동)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
+export const RAID_RULES = 2;
 
 export const RAID_MIN_PARTY = 2;
 export const RAID_MAX_PARTY = 13;
@@ -27,6 +30,7 @@ export const RAID_STRONG = Object.freeze({
     ice: ['grass', 'star'],
     rock: ['fire', 'electric'],
     star: ['electric'],
+    fight: [], // 격투는 상성이 없어요
 });
 
 /** 공격하는 쪽 속성이 받는 쪽에게 주는 배수 */
@@ -188,16 +192,19 @@ export const RAID_BOSS_ALL_MULT = 0.5;
  * - 펫은 배운 기술(레벨 1·10·20) 가운데 하나를 무작위로 써요. 센 기술일수록 데미지가 커요.
  * - 보스는 턴마다 단일 공격(한 마리에게 세게)이나 전체 공격(모두에게 약하게) 중 하나를 써요.
  * @returns {{ win: boolean, rounds: Array, bossHp: number, bossMaxHp: number, dealt: Record<string, number>, alive: string[], teamMult: number }}
- *   rounds[i] = { hits: [{ by, dmg, crit, mult, skill }], bossHp, bossMove: 'single'|'all'|'', boss: [{ target, dmg, faint }] }
+ *   rounds[i] = { hits: [{ by, dmg, crit, mult, skill }], bossHp, bossMove: 'single'|'all'|'', boss: [{ target, dmg, faint, raw, blocked, guard, counter }] }
+ * - guard(규칙 2): 공격받은 펫이 레벨 5 이상이면 막기 기술이 확률로 발동해 데미지를 줄이고(blocked), 되받아쳐요(counter).
+ *   blocked[id]: 막은 데미지 합계, dealt[id]: 입힌 데미지 합계(되받아치기 포함)
  */
-export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus } = {}) {
+export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false } = {}) {
     const members = (Array.isArray(membersRaw) ? membersRaw : []).map(sanitizeMember).filter(Boolean).slice(0, RAID_MAX_PARTY);
     const boss = { type: PET_TYPES[bossRaw && bossRaw.type] ? bossRaw.type : 'grass', hp: int(bossRaw && bossRaw.hp, 1), atk: int(bossRaw && bossRaw.atk), aoe: int(bossRaw && bossRaw.aoe, 0, 100) };
     const rnd = makeRng(seed);
     const teamMult = 1 + (Math.max(0, members.length - 1) * int(teamBonus, 0, 50)) / 100;
     const state = members.map((m) => ({ ...m, ...raidPetStats(m.power), mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type), skills: petSkillCount(m.level) }));
     const dealt = {};
-    members.forEach((m) => { dealt[m.id] = 0; });
+    const blocked = {};
+    members.forEach((m) => { dealt[m.id] = 0; blocked[m.id] = 0; });
     let bossHp = boss.hp;
     const rounds = [];
     for (let r = 0; r < RAID_MAX_ROUNDS && bossHp > 0; r += 1) {
@@ -219,11 +226,25 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
             bossMove = rnd() * 100 < boss.aoe ? 'all' : 'single';
             const targets = bossMove === 'all' ? alive : [alive[Math.floor(rnd() * alive.length)]];
             const power = bossMove === 'all' ? RAID_BOSS_ALL_MULT : RAID_BOSS_SINGLE_MULT;
-            targets.forEach((t) => {
-                const dmg = Math.max(1, Math.round(boss.atk * power * t.def * (0.85 + rnd() * 0.3)));
+            for (const t of targets) {
+                const raw = Math.max(1, Math.round(boss.atk * power * t.def * (0.85 + rnd() * 0.3)));
+                let dmg = raw;
+                let save = 0;
+                let counter = 0;
+                let used = false;
+                const g = PET_GUARD_SKILLS[t.species];
+                if (guard && g && t.level >= PET_GUARD_LEVEL && rnd() * 100 < g.chance) {
+                    used = true;
+                    save = Math.min(raw, Math.round((raw * g.block) / 100));
+                    dmg = raw - save;
+                    if (g.counter) counter = Math.max(1, Math.round((t.atk * g.counter * t.mult) / 100));
+                }
                 t.hp = Math.max(0, t.hp - dmg);
-                bossHits.push({ target: t.id, dmg, faint: t.hp <= 0 });
-            });
+                blocked[t.id] += save;
+                if (counter) { bossHp = Math.max(0, bossHp - counter); dealt[t.id] += counter; }
+                bossHits.push(used ? { target: t.id, dmg, faint: t.hp <= 0, raw, blocked: save, guard: true, counter } : { target: t.id, dmg, faint: t.hp <= 0 });
+                if (bossHp <= 0) break;
+            }
         }
         rounds.push({ hits, bossHp, bossMove, boss: bossHits });
     }
@@ -233,6 +254,7 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
         bossHp,
         bossMaxHp: boss.hp,
         dealt,
+        blocked,
         alive: state.filter((m) => m.hp > 0).map((m) => m.id),
         teamMult,
     };
@@ -260,6 +282,7 @@ export function sanitizeRaidParty(raw) {
         run = {
             id: String(r.id).slice(0, 60),
             seed: int(r.seed),
+            rules: int(r.rules, 0, 99),
             stage: int(r.stage, 1, RAID_STAGE_COUNT),
             boss: { name: cleanText(boss.name, 16), type: PET_TYPES[boss.type] ? boss.type : 'grass', art: String(boss.art || '').replace(/[^a-z0-9_]/g, '').slice(0, 20), hp: int(boss.hp, 1), atk: int(boss.atk), hits: int(boss.hits, 1, RAID_MAX_PARTY), aoe: int(boss.aoe, 0, 100), first: int(boss.first), repeat: int(boss.repeat) },
             teamBonus: int(r.teamBonus, 0, 50),
@@ -361,8 +384,8 @@ export function startRaid(partyRaw, { id, settings = null, seed = 1, now = 0 } =
     if (party.members.length < cfg.minParty) return bad('need_party', party);
     const boss = { ...cfg.stages[party.stage - 1] };
     const s = int(seed) || 1;
-    const sim = simulateRaid(party.members, boss, s, { teamBonus: cfg.teamBonus });
-    const run = { id: `${party.leaderId}_${int(now)}`, seed: s, stage: party.stage, boss, teamBonus: cfg.teamBonus, win: sim.win, startedAt: int(now), members: party.members.map((m) => { const x = { ...m }; delete x.ready; return x; }) };
+    const sim = simulateRaid(party.members, boss, s, { teamBonus: cfg.teamBonus, guard: true });
+    const run = { id: `${party.leaderId}_${int(now)}`, seed: s, rules: RAID_RULES, stage: party.stage, boss, teamBonus: cfg.teamBonus, win: sim.win, startedAt: int(now), members: party.members.map((m) => { const x = { ...m }; delete x.ready; return x; }) };
     return { ok: true, error: '', party: { ...party, status: 'fight', run, updatedAt: int(now) }, sim };
 }
 
@@ -378,7 +401,7 @@ export function reopenRaidParty(partyRaw, { id, now = 0 } = {}) {
 /** 방에 적힌 전투를 다시 돌려요(모든 기기에서 같은 결과). */
 export function replayRaidRun(run) {
     if (!run) return null;
-    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus });
+    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: int(run.rules) >= 2 });
 }
 
 /* ---------- 보상 ---------- */

@@ -99,7 +99,7 @@
 .raid-fx-boss.is-down { animation: raid-down 1.3s ease-in forwards; }
 @keyframes raid-down { 20% { transform: rotate(-6deg) scale(1.05); filter: brightness(2.5); } 100% { transform: translateY(40px) rotate(14deg) scale(0.4); opacity: 0; filter: brightness(4) blur(4px); } }
 .raid-fx-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
-.raid-fx-team { position: relative; z-index: 3; width: min(96vw, 34rem); display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 0.45rem; padding: 0.5rem 0.4rem calc(1.1rem + env(safe-area-inset-bottom, 0px)); }
+.raid-fx-team { position: relative; z-index: 3; width: min(96vw, 34rem); display: flex; flex-wrap: wrap; justify-content: center; gap: 0.3rem 0.45rem; padding: 0.5rem 0.4rem 0.35rem; order: 5; }
 .raid-fx-pet { position: relative; width: 3.5rem; display: flex; flex-direction: column; align-items: center; transition: opacity 0.4s, filter 0.4s, transform 0.4s; }
 .raid-fx-pet .pet-art { position: relative; width: 3.2rem; height: 3.2rem; display: block; filter: drop-shadow(0 0 6px var(--c)); }
 .raid-fx-pet .pet-art img, .raid-fx-pet .pet-art svg { width: 100%; height: 100%; object-fit: contain; }
@@ -235,3 +235,33 @@
 .raid-petpick-item b { font-size: 12px; font-weight: 900; }
 .raid-petpick-item i { font-style: normal; font-size: 10px; color: #94a3b8; }
 .raid-petpick-item.is-on { border-color: #fbbf24; background: rgba(120, 53, 15, 0.5); }
+
+/* ---------- 아래 미터기: 체력은 막대, 입힌·막은 데미지는 숫자 ---------- */
+.raid-fx-meter { position: relative; z-index: 4; order: 6; width: min(98vw, 64rem); display: grid; grid-template-columns: repeat(auto-fill, minmax(10.6rem, 1fr)); gap: 3px 6px;
+    padding: 0.35rem 0.45rem calc(0.45rem + env(safe-area-inset-bottom, 0px)); background: linear-gradient(180deg, rgba(2, 6, 23, 0.2), rgba(2, 6, 23, 0.85) 30%); pointer-events: none; }
+.raid-fx-mrow { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "n d b" "h h h"; align-items: center; column-gap: 6px; row-gap: 2px;
+    padding: 3px 7px 4px; border-radius: 7px; background: rgba(15, 23, 42, 0.85); border-left: 3px solid #4ade80; font-size: 11px; }
+.raid-fx-mrow b { grid-area: n; font-weight: 800; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.raid-fx-mrow small { font-size: 11px; font-weight: 900; white-space: nowrap; }
+.raid-fx-mrow small u { text-decoration: none; display: inline-block; margin-left: 1px; }
+.raid-fx-mrow small u.is-up { animation: raid-up 0.3s ease-out; }
+.raid-fx-mrow small:nth-of-type(1) { grid-area: d; color: #fde68a; }
+.raid-fx-mrow small:nth-of-type(2) { grid-area: b; color: #93c5fd; }
+.raid-fx-mbar { grid-area: h; position: relative; height: 13px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.raid-fx-mbar i { position: absolute; inset: 0 auto 0 0; display: block; background: linear-gradient(90deg, #16a34a, #4ade80); transition: width 0.3s ease-out; }
+.raid-fx-mbar em { position: relative; display: block; text-align: center; font-style: normal; font-size: 10px; font-weight: 900; line-height: 13px; color: #fff; text-shadow: 0 1px 2px #000; }
+.raid-fx-mrow.is-me { border-left-color: #fbbf24; background: rgba(69, 26, 3, 0.88); }
+.raid-fx-mrow.is-low { border-left-color: #ef4444; }
+.raid-fx-mrow.is-low .raid-fx-mbar i { background: linear-gradient(90deg, #dc2626, #f87171); }
+.raid-fx-mrow.is-out { opacity: 0.55; border-left-color: #64748b; }
+.raid-fx-boss { order: 2; }
+.raid-fx-top { order: 1; }
+/* 막기 기술 */
+.raid-fx-pet.is-guard { animation: raid-guard 0.5s ease-out; }
+@keyframes raid-guard { 0% { filter: drop-shadow(0 0 0 #93c5fd); } 30% { filter: drop-shadow(0 0 14px #60a5fa) brightness(1.4); transform: scale(1.08); } 100% { filter: none; transform: none; } }
+.raid-fx-num.is-guard, .raid-fx-num.is-guard b { color: #93c5fd; }
+.raid-fx-feed-row.is-guard i { color: #93c5fd; }
+@media (orientation: landscape) and (max-height: 520px) {
+    .raid-fx-meter { grid-template-columns: repeat(auto-fill, minmax(9.4rem, 1fr)); }
+    .raid-fx-mbar { height: 10px; } .raid-fx-mbar em { line-height: 10px; font-size: 9px; }
+}

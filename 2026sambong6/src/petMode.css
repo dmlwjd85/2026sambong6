@@ -10,6 +10,7 @@
 #challengePane-pet .type-electric { --t1: #facc15; --t2: #ca8a04; --t3: #713f12; --sky: #fef9c3; }
 #challengePane-pet .type-ice { --t1: #67e8f9; --t2: #0891b2; --t3: #164e63; --sky: #ecfeff; }
 #challengePane-pet .type-rock { --t1: #d6c7a1; --t2: #a16207; --t3: #44403c; --sky: #f5f5f4; }
+#challengePane-pet .type-fight { --t1: #fca5a5; --t2: #dc2626; --t3: #7f1d1d; --sky: #fff1f2; }
 #challengePane-pet .type-star { --t1: #a78bfa; --t2: #7c3aed; --t3: #2e1065; --sky: #ede9fe; }
 
 /* 탭 */
@@ -110,6 +111,7 @@
 .pet-art.is-shiny.sp-zapowl > .pet-img { filter: hue-rotate(115deg) saturate(1.1); }
 .pet-art.is-shiny.sp-snowbun > .pet-img { filter: hue-rotate(70deg) saturate(1.8); }
 .pet-art.is-shiny.sp-pebbletle > .pet-img { filter: sepia(0.35) hue-rotate(-35deg) saturate(1.9); }
+.pet-art.is-shiny.sp-punchroo > .pet-img { filter: hue-rotate(200deg) saturate(1.4); }
 .pet-art.is-shiny.sp-stardrake > .pet-img { filter: saturate(0.3) brightness(0.72) contrast(1.2); }
 .pet-art.is-shiny::after {
     content: '✨';
@@ -557,3 +559,6 @@ button.pet-cage-cell:active { transform: scale(0.97); }
 .pet-shop-buy i { font-style: normal; font-size: 11px; font-weight: 800; color: #fde68a; }
 .pet-shop-buy.is-shiny { border-color: #e879f9; background: linear-gradient(135deg, #4a044e, #1e1b4b); }
 .pet-shop-buy:disabled { opacity: 0.4; }
+
+.pet-skill.is-guard { grid-column: 1 / -1; border-style: solid; border-color: #60a5fa; }
+.pet-skill.is-guard.is-on b { color: #bfdbfe; }

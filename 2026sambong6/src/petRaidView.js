@@ -214,6 +214,8 @@ export function createPetRaidView(ctx) {
     }
 
     async function claim(run) {
+        // 모아 둔 펫 저장(먹이 등)부터 끝내요.
+        if (ctx.flush) await ctx.flush();
         const st = deps.state();
         const first = rewardBox(box(), run);
         if (!first.ok) return null;

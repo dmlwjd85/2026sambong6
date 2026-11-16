@@ -129,6 +129,7 @@ export function createPetMode(deps) {
         free,
         isRaidTab: () => tab === 'raid' && isOpen(),
         feedback: () => feedback,
+        flush: () => flush(),
         render: () => {
             if (tab !== 'raid') return;
             // 마스터가 탐험 설정 칸에 적는 중이면 다시 그리지 않아요.
@@ -171,15 +172,15 @@ export function createPetMode(deps) {
             if (!t || !el.contains(t) || t.disabled) return;
             const act = t.getAttribute('data-p');
             if (raid.handle(act, t)) return;
-            if (act === 'tab') { tab = t.getAttribute('data-tab') || 'mine'; if (tab === 'raid') raid.start(); else raid.stop(); render(); if (tab === 'raid') void raid.maybePlay(); }
+            if (act === 'tab') { void flush(); tab = t.getAttribute('data-tab') || 'mine'; if (tab === 'raid') raid.start(); else raid.stop(); render(); if (tab === 'raid') void raid.maybePlay(); }
             else if (act === 'slot') { talk = null; slot = Math.max(0, Math.min(PET_MAX_SLOTS - 1, Number(t.getAttribute('data-slot')) || 0)); fx = null; render(); }
             else if (act === 'expand') void expand();
-            else if (act === 'main') void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, slot), () => { react('main'); show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'); });
+            else if (act === 'main') { const at = slot; void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, at), () => { react('main'); show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'); }, { batch: true }); }
             else if (act === 'settings-save') void saveSettings();
             else if (act === 'buy') void run('펫 알 사기', (p, o) => buyPetEgg(p, o));
             else if (act === 'warm') void warm();
             else if (act === 'feed') void feed(t.getAttribute('data-food'));
-            else if (act === 'play') void run('펫과 놀기', (p, o) => playWithPet(p, o), { after: (r) => { react('play'); grew(r, '신나게 놀았어요!'); } });
+            else if (act === 'play') void run('펫과 놀기', (p, o) => playWithPet(p, o), { batch: true, after: (r) => { react('play'); grew(r, '신나게 놀았어요!'); } });
             else if (act === 'walk') void run('펫 산책 보상', (p, o) => walkPet(p, o), { after: (r) => { react('walk'); show(free() ? '산책을 다녀왔어요! (선생님은 봉을 받지 않아요)' : `산책에서 ${deps.bong(r.gain)}을 벌어 왔어요!`, r.gain > 0 ? 'good' : ''); if (feedback && r.gain > 0) feedback.play('ok'); } });
             else if (act === 'pack') void pack(Number(t.getAttribute('data-pack')) || 0);
             else if (act === 'enhance') void enhance();
@@ -230,75 +231,144 @@ export function createPetMode(deps) {
     /** 같은 결과를 다시 만들 수 있게 미리 굴려 둔 주사위(서버 값에 다시 적용할 때 같은 운이 나와요) */
     const makeDice = () => { const rolls = Array.from({ length: 12 }, () => Math.random()); return () => { let i = 0; return () => rolls[i++ % rolls.length]; }; };
 
+    /*
+     * 펫 저장 모으기: 먹이·놀이·경험치 팩·강화·이름·대표 펫처럼 자주 하는 일은 바로 저장하지 않고
+     * 화면에만 먼저 보여 준 뒤, 15초 동안 모아서 한 번에 저장해요(8번이 쌓이면 바로).
+     * 저장할 때는 서버의 최신 펫 상자에 모아 둔 일을 순서대로 다시 적용해요. 봉도 같은 저장에서 함께 빠져요.
+     * 화면을 떠나거나 다른 앱으로 가면 바로 저장해요. 실패하면 모아 둔 일을 모두 되돌려요.
+     */
+    const BATCH_MS = 15000;
+    const BATCH_MAX = 8;
+    let queue = [];
+    let queueBefore = null; // 모으기 시작하기 전 펫 상자(되돌리기용)
+    let queueState = null; // 모으기 시작한 playerState
+    let queueTimer = 0;
+    let flushing = null;
+
+    /** 저장 옵션: 모아 둔 일(items)을 서버 상자에 다시 적용해요. */
+    function saveOptsFor(items, label) {
+        const cost = items.reduce((t, x) => t + x.cost, 0);
+        const gain = items.reduce((t, x) => t + x.gain, 0);
+        return {
+            ...(cost > 0 ? { allowBongDecrease: true, maxBongDecrease: cost, requireServerBongBalance: true } : {}),
+            ...(gain > 0 ? { maxBongIncrease: gain } : {}),
+            operationLabel: label,
+            quietFail: true,
+            petAllowLoss: items.some((x) => x.allowLoss),
+            petMutator: (serverPet) => {
+                let box = sanitizePetBox(serverPet);
+                for (const it of items) {
+                    bongAt = it.bong;
+                    const rr = it.mutate(box);
+                    if (!rr || !rr.ok) { bongAt = null; return { ok: false, error: (rr && rr.error) || 'changed' }; }
+                    // 봉이 걸린 일은 서버 값으로 해도 값이 같아야 해요.
+                    if ((rr.cost || 0) !== it.rawCost || (rr.gain || 0) !== it.rawGain) { bongAt = null; return { ok: false, error: 'changed' }; }
+                    box = rr.box;
+                }
+                bongAt = null;
+                return { ok: true, pet: petBoxToDoc(box) };
+            },
+        };
+    }
+
+    /** 저장이 실패했을 때 화면을 되돌리고 알려 줘요. */
+    function failSave(st, before, items, why) {
+        if (deps.state() === st) {
+            st.pet = before;
+            const net = items.reduce((t, x) => t + x.gain - x.cost, 0);
+            if (net) deps.applyBong(-net);
+        }
+        const code = /resource-exhausted|quota/i.test(why) ? 'quota' : why.startsWith('net:') ? '' : why;
+        deps.toast(code ? petErrorText(code) : `저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 봐요.${why ? ` (${why.replace(/^net:/, '').slice(0, 40)})` : ''}`);
+        render();
+    }
+
+    /** 저장 한 번(연결이 잠깐 끊기면 한 번 더) */
+    async function saveItems(items, label) {
+        const opts = saveOptsFor(items, label);
+        let saved = await deps.save(opts);
+        let why = deps.lastSaveError ? deps.lastSaveError() : '';
+        if (!saved && why.startsWith('net:') && !/resource-exhausted|quota/i.test(why)) {
+            await new Promise((ok) => setTimeout(ok, 700));
+            saved = await deps.save(opts);
+            why = deps.lastSaveError ? deps.lastSaveError() : '';
+        }
+        return { saved: !!saved, why };
+    }
+
+    /** 모아 둔 펫 저장을 지금 해요. 저장할 게 없으면 바로 끝나요. */
+    function flush() {
+        if (flushing) return flushing;
+        if (queueTimer) { clearTimeout(queueTimer); queueTimer = 0; }
+        if (!queue.length) return Promise.resolve(true);
+        const items = queue;
+        const before = queueBefore;
+        const st = queueState;
+        queue = [];
+        queueBefore = null;
+        queueState = null;
+        const label = items.length === 1 ? items[0].label : `${items[0].label} 외 ${items.length - 1}건`;
+        flushing = (async () => {
+            busy = true;
+            try {
+                const { saved, why } = await saveItems(items, label);
+                if (!saved) { failSave(st, before, items, why); return false; }
+                return true;
+            } finally {
+                busy = false;
+                flushing = null;
+            }
+        })();
+        return flushing;
+    }
+
+    // 화면을 떠나거나 다른 앱으로 가면 모아 둔 저장을 바로 해요.
+    if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void flush(); });
+        window.addEventListener('pagehide', () => { void flush(); });
+    }
+
     /**
      * 펫 상자를 바꾸고 저장해요. mutate(box) → { ok, error, box, cost, gain, ... }
-     * - 화면에 먼저 보여 주고, 저장할 때는 서버에 있는 최신 상자에 같은 일을 다시 적용해요(다른 기기에서 바뀐 펫을 덮어쓰지 않아요).
-     * - 저장에 실패하면 화면을 원래대로 되돌리고, 연결 문제면 한 번 더 해 봐요.
+     * batch: true 이면 모았다가 저장해요(결과는 화면에 바로 보여 줘요). 아니면 모아 둔 것과 함께 바로 저장해요.
      */
-    async function commit(label, mutate, { after = null, allowLoss = false } = {}) {
+    async function commit(label, mutate, { after = null, allowLoss = false, batch = false } = {}) {
         if (busy) return null;
         if (!deps.canPlay()) { deps.toast('로그인해야 펫을 키울 수 있어요.'); return null; }
         const st = deps.state();
+        // 모으는 중에 화면 상태가 통째로 바뀌었으면(서버에서 새로 받음) 모아 둔 것부터 저장해요.
+        if (queue.length && queueState !== st) { await flush(); if (busy) return null; }
         const before = petBoxToDoc(myBox());
         bongAt = null;
-        bongAt = myBong();
+        const bongNow = myBong();
+        bongAt = bongNow;
         const r = mutate(myBox());
-        if (!r || !r.ok) bongAt = null;
+        bongAt = null;
         if (!r || !r.ok) { deps.toast(petErrorText(r && r.error)); return null; }
         const rawCost = r.cost || 0;
         const rawGain = r.gain || 0;
-        const cost = free() ? 0 : rawCost;
-        const gain = free() ? 0 : rawGain;
-        busy = true;
-        try {
-            st.pet = petBoxToDoc(r.box);
-            if (cost || gain) deps.applyBong(gain - cost);
-            render();
-            const opts = {
-                ...(cost > 0 ? { allowBongDecrease: true, maxBongDecrease: cost, requireServerBongBalance: true } : {}),
-                ...(gain > 0 ? { maxBongIncrease: gain } : {}),
-                operationLabel: label,
-                quietFail: true,
-                petAllowLoss: allowLoss,
-                petMutator: (serverPet) => {
-                    const rr = mutate(sanitizePetBox(serverPet));
-                    if (!rr || !rr.ok) return { ok: false, error: (rr && rr.error) || 'changed' };
-                    // 봉이 걸린 일은 서버 값으로 해도 값이 같아야 해요.
-                    if ((rr.cost || 0) !== rawCost || (rr.gain || 0) !== rawGain) return { ok: false, error: 'changed' };
-                    return { ok: true, pet: petBoxToDoc(rr.box) };
-                },
-            };
-            let saved = await deps.save(opts);
-            let why = deps.lastSaveError ? deps.lastSaveError() : '';
-            if (!saved && why.startsWith('net:') && !/resource-exhausted|quota/i.test(why)) {
-                // 연결이 잠깐 끊겼거나 동시에 저장이 겹쳤을 수 있어요. 잠깐 쉬고 한 번 더 해 봐요.
-                await new Promise((ok) => setTimeout(ok, 700));
-                saved = await deps.save(opts);
-                why = deps.lastSaveError ? deps.lastSaveError() : '';
-            }
-            if (!saved) {
-                // 화면을 원래대로(서버와 같게) 되돌려요.
-                const now2 = deps.state();
-                if (now2 === st) {
-                    st.pet = before;
-                    if (cost || gain) deps.applyBong(cost - gain);
-                }
-                const code = /resource-exhausted|quota/i.test(why) ? 'quota' : why.startsWith('net:') ? '' : why;
-                deps.toast(code ? petErrorText(code) : `저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 봐요.${why ? ` (${why.replace(/^net:/, '').slice(0, 40)})` : ''}`);
-                render();
-                return null;
-            }
+        const item = { label, mutate, rawCost, rawGain, cost: free() ? 0 : rawCost, gain: free() ? 0 : rawGain, bong: bongNow, allowLoss };
+        st.pet = petBoxToDoc(r.box);
+        if (item.cost || item.gain) deps.applyBong(item.gain - item.cost);
+        if (!queue.length) { queueBefore = before; queueState = st; }
+        queue.push(item);
+        if (batch && queue.length < BATCH_MAX) {
+            // 화면에는 바로 보여 주고, 저장은 잠시 뒤에 모아서 해요.
+            if (!queueTimer) queueTimer = setTimeout(() => { queueTimer = 0; void flush(); }, BATCH_MS);
             if (after) after(r);
             else render();
             return r;
-        } finally {
-            busy = false;
-            bongAt = null;
         }
+        render();
+        const ok = await flush();
+        if (!ok) return null;
+        if (after) after(r);
+        else render();
+        return r;
     }
 
     /** 보고 있는 칸의 펫에게 규칙 함수를 적용하고 저장해요. */
-    function run(label, fn, { after = null, allowLoss = false } = {}) {
+    function run(label, fn, { after = null, allowLoss = false, batch = false } = {}) {
         const at = slot;
         const t = now();
         const day = today();
@@ -310,12 +380,12 @@ export function createPetMode(deps) {
             const r = fn(cur, { bong: myBong(), now: t, today: day, rnd: dice(), walk });
             if (!r.ok) return r;
             return { ...r, box: petBoxWith(b, at, r.pet) };
-        }, { after, allowLoss });
+        }, { after, allowLoss, batch });
     }
 
     /** 상자(칸·대표 펫·케이지) 쪽 일을 적용하고 저장해요. fn(box) → { ok, error, box, cost } */
-    function runBox(label, fn, after = null) {
-        return commit(label, fn, { after });
+    function runBox(label, fn, after = null, { batch = false } = {}) {
+        return commit(label, fn, { after, batch });
     }
 
     /** 칸 늘리기 */
@@ -481,7 +551,7 @@ export function createPetMode(deps) {
     async function feed(foodId) {
         const f = PET_FOODS[foodId];
         if (!f) return;
-        await run(`펫 먹이: ${f.name}`, (p, o) => feedPet(p, { ...o, food: foodId }), { after: (r) => { react('feed'); grew(r, `${f.emoji} 냠냠!`); } });
+        await run(`펫 먹이: ${f.name}`, (p, o) => feedPet(p, { ...o, food: foodId }), { batch: true, after: (r) => { react('feed'); grew(r, `${f.emoji} 냠냠!`); } });
     }
 
     /** 경험치 팩 사기 */
@@ -492,7 +562,7 @@ export function createPetMode(deps) {
             const ok = await deps.confirm(`경험치 팩을 살까요?\n${deps.bong(pk.price)}을 내고 경험치 ${pk.exp}을 받아요.`);
             if (!ok) return;
         }
-        await run('펫 경험치 팩', (p, o) => buyPetExpPack(p, { ...o, index, packs: settings().expPacks }), { after: (r) => { react('pack'); grew(r, '📦 경험치 팩!'); } });
+        await run('펫 경험치 팩', (p, o) => buyPetExpPack(p, { ...o, index, packs: settings().expPacks }), { batch: true, after: (r) => { react('pack'); grew(r, '📦 경험치 팩!'); } });
     }
 
     async function enhance() {
@@ -501,6 +571,7 @@ export function createPetMode(deps) {
         const ok = await deps.confirm(`강화 +${v.enhance} → +${v.enhance + 1}\n${deps.bong(v.enhanceCost)}이 들고, 성공 확률은 ${Math.round(v.enhanceChance * 100)}%예요.\n실패해도 펫은 그대로지만 봉은 돌아오지 않아요. 할까요?`);
         if (!ok) return;
         await run('펫 강화', (p, o) => enhancePet(p, o), {
+            batch: true,
             after: (r) => {
                 if (r.success) { react('enhanceOk'); show(`강화 성공! +${r.pet.enhance}`, 'good'); if (feedback) feedback.play('ok'); }
                 else { react('enhanceNo'); show('강화 실패… 다음에 다시 해 봐요.', 'bad'); if (feedback) feedback.play('no'); }
@@ -523,7 +594,7 @@ export function createPetMode(deps) {
     async function rename() {
         const name = await deps.prompt(`펫 이름을 지어 줘요. (${PET_NAME_MAX}글자까지)\n친구들에게도 보이니 고운 이름으로 지어요.`);
         if (name == null) return;
-        await run('펫 이름 짓기', (p) => renamePet(p, { name }), { after: () => { react('rename'); render(); } });
+        await run('펫 이름 짓기', (p) => renamePet(p, { name }), { batch: true, after: () => { react('rename'); render(); } });
     }
 
     async function release() {
@@ -894,5 +965,5 @@ export function createPetMode(deps) {
         void raid.join(String(partyId));
     }
 
-    return { joinRaid, open, render, showsClass: () => tab === 'class' && !busy, isOpen, close: () => raid.stop() };
+    return { joinRaid, open, render, flush, showsClass: () => tab === 'class' && !busy, isOpen, close: () => { raid.stop(); void flush(); } };
 }

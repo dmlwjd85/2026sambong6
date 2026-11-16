@@ -1380,7 +1380,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.82';
+        const APP_VERSION = 'v1.83';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10642,7 +10642,9 @@ ${subjectLine}
 
         // 누군가 탐험 방을 만들면 화면 맨 위에 '도움이 필요합니다!'가 떠요. 누르면 바로 참가해요.
         const _raidCalls = createRaidCallBanner({
-            canShow: () => !!(db && window.playerState && !window.playerState.isGuest && currentStudentDocRef && localStorage.getItem('sambong_student_id')),
+            // 읽기를 줄이려고 '도전' 탭을 보고 있을 때만 탐험·보스 방 목록을 지켜봐요(다른 탭에서는 구독을 끊어요).
+            canShow: () => !!(db && window.playerState && !window.playerState.isGuest && currentStudentDocRef && localStorage.getItem('sambong_student_id')
+                && document.getElementById('tab-challenge') && document.getElementById('tab-challenge').getAttribute('aria-current') === 'page' && document.visibilityState !== 'hidden'),
             selfId: () => String(localStorage.getItem('sambong_student_id') || ''),
             watchPet: (cb) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'petRaids'), (snap) => {
                 cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));

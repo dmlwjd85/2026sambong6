@@ -15,6 +15,7 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
     resolveStudentJobsFromCatalog,
+    setJobAssignment,
     studentHasJob,
     studentHasJobName,
     toggleJobAssignment,
@@ -144,6 +145,24 @@ describe('직업 아이콘·색', () => {
         const peeled = toggleJobAssignment(stacked, stacked[0]);
         assert.equal(peeled.length, 1);
         assert.equal(peeled[0].id, 'job4');
+    });
+
+    it('이미 달린 직업을 다시 켜도 빼지 않고, 다른 직업은 남긴다', () => {
+        const vac = { id: 'job_vac', name: '블랙홀 마스터', icon: 'fa-wind', color: 'text-teal-400' };
+        const flag = { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const milk = { id: 'job4', name: '체력물약 보급관', icon: 'fa-glass-water', color: 'text-sky-400' };
+        const catalog = [vac, flag, milk];
+        const withFlag = setJobAssignment([vac], flag, catalog, true);
+        const again = setJobAssignment(withFlag, flag, catalog, true);
+        assert.equal(again.length, 2);
+        assert.equal(studentHasJob(again, vac, catalog), true);
+        assert.equal(studentHasJob(again, flag, catalog), true);
+        const server = [vac, milk];
+        const added = setJobAssignment(server, flag, catalog, true);
+        assert.deepEqual(added.map((job) => job.id), ['job_vac', 'job4', 'job1']);
+        const removed = setJobAssignment(added, milk, catalog, false);
+        assert.deepEqual(removed.map((job) => job.id), ['job_vac', 'job1']);
+        assert.equal(setJobAssignment(removed, milk, catalog, false).length, 2);
     });
 
     it('예전에 id 없이 저장된 직업도 이름이나 모양으로 카탈로그에 맞춘다', () => {

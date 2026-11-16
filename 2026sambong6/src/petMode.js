@@ -52,7 +52,9 @@ import {
     petView,
     playWithPet,
     rankClassPets,
-    releasePet,
+    releaseBoxPet,
+    releasedPetOf,
+    restoreReleasedPet,
     renamePet,
     sanitizePetBox,
     sanitizePetSettings,
@@ -191,6 +193,7 @@ export function createPetMode(deps) {
             else if (act === 'rename') void rename();
             else if (act === 'pet-tap') { const v = petView(myPet(), now(), today(), settings()); react(v.mood === 'hungry' || v.mood === 'starving' ? 'hungry' : 'tap'); try { if (navigator.vibrate) navigator.vibrate(10); } catch (_) { /* 진동 없는 기기 */ } render(); }
             else if (act === 'release') void release();
+            else if (act === 'unrelease') void unrelease();
             else if (act === 'cage') void cage();
             else if (act === 'uncage') void uncage(Number(t.getAttribute('data-cage')) || 0);
             else if (act === 'egg-store') { delete eggTaps[slot]; void runBox('알 보관하기', (b) => storePetEgg(b, slot), () => show('알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.', '')); }
@@ -606,7 +609,27 @@ export function createPetMode(deps) {
             ? '알을 놓아줄까요?\n알 값은 돌아오지 않아요.'
             : `${p.name}을(를) 자연으로 보내 줄까요?\n도감에는 남지만 레벨과 강화는 사라지고, 새 알을 사야 해요.`);
         if (!ok) return;
-        await run('펫 놓아주기', (pet) => releasePet(pet), { allowLoss: true, after: () => show('잘 가! 도감에 기록했어요.', '') });
+        // 실수로 누르지 않게 한 번 더: 글자를 직접 적어야 놓아줘요.
+        const typed = await deps.prompt(`정말 놓아주려면 아래 칸에 「놓아주기」라고 적어 줘요.${p.phase === 'pet' ? `\n(${p.name} · Lv.${p.level})` : ''}`);
+        if (typed == null) return;
+        if (String(typed).replace(/\s/g, '') !== '놓아주기') { deps.toast('「놓아주기」라고 적지 않아서 놓아주지 않았어요.'); return; }
+        const at = slot;
+        const t = now();
+        await commit('펫 놓아주기', (b) => releaseBoxPet(b, at, { now: t }), {
+            allowLoss: true,
+            after: () => show(p.phase === 'pet' ? '잘 가! 도감에 기록했어요. 7일 안에는 다시 데려올 수 있어요.' : '알을 놓아줬어요.', ''),
+        });
+    }
+
+    /** 놓아준 펫을 보고 있는 빈칸으로 다시 데려와요. */
+    async function unrelease() {
+        const g = releasedPetOf(myBox(), now());
+        if (!g) return;
+        const at = slot;
+        const t = now();
+        await commit('놓아준 펫 다시 데려오기', (b) => restoreReleasedPet(b, at, { now: t }), {
+            after: () => { react('main'); show(`${g.name}이(가) 돌아왔어요!`, 'good'); if (feedback) feedback.play('ok'); },
+        });
     }
 
     /* ---------- 그리기 ---------- */
@@ -788,6 +811,7 @@ export function createPetMode(deps) {
             <button type="button" class="pet-btn is-main" data-p="buy"${can ? '' : ' disabled'}>🥚 알 사기 · ${esc(deps.bong(PET_EGG_PRICE))}</button>
             ${can ? '' : `<p class="pet-note">봉이 ${esc(deps.bong(PET_EGG_PRICE - myBong()))} 모자라요. 퀘스트로 모아 봐요.</p>`}
             ${myBox().eggs > 0 ? `<button type="button" class="pet-btn is-evolve" data-p="egg-use">🥚 보관한 알 꺼내기 (${myBox().eggs}개 있어요)</button>` : ''}
+            ${(() => { const g = releasedPetOf(myBox(), now()); return g ? `<button type="button" class="pet-btn" data-p="unrelease">↩️ 놓아준 ${esc(g.name)}(Lv.${g.level}) 다시 데려오기</button><p class="pet-note">놓아준 지 7일 안에는 다시 데려올 수 있어요.</p>` : ''; })()}
             <p class="pet-note">이미 가진 종이 태어나면 그 종의 💎 강화 재료가 돼요.</p>
         </div>`;
     }

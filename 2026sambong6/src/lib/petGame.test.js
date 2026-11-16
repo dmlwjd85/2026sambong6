@@ -484,3 +484,31 @@ describe('알 선물 받기', () => {
         assert.deepEqual([full.box.eggs, full.added, full.gifted], [30, 1, 3]);
     });
 });
+
+describe('놓아주기 되돌리기', () => {
+    const T = new Date(2026, 10, 17, 9).getTime();
+    const pet = (species, level = 5) => ({ phase: 'pet', species, stage: 1, level, exp: 2, enhance: 3, full: 80, fedAt: T, name: '테스트', named: true });
+    it('놓아준 펫은 7일 안에 빈칸으로 다시 데려올 수 있어요(레벨·강화 그대로)', () => {
+        const box = P.sanitizePetBox({ v: 2, slots: 2, main: 0, list: [pet('zapowl', 7), pet('emberkit')], dex: {} });
+        const r = P.releaseBoxPet(box, 0, { now: T });
+        assert.equal(r.ok, true);
+        assert.equal(r.box.list[0].phase, 'none');
+        assert.equal(P.petBoxPetCount(r.box), 1);
+        const saved = P.sanitizePetBox(JSON.parse(JSON.stringify(P.petBoxToDoc(r.box))));
+        assert.equal(P.releasedPetOf(saved, T + 3600000).level, 7);
+        assert.equal(P.restoreReleasedPet(saved, 1, { now: T }).error, 'slot_busy');
+        const back = P.restoreReleasedPet(saved, 0, { now: T + 3600000 });
+        assert.equal(back.ok, true);
+        assert.deepEqual([back.box.list[0].species, back.box.list[0].level, back.box.list[0].enhance], ['zapowl', 7, 3]);
+        assert.equal(back.box.gone, null);
+        assert.equal(P.restoreReleasedPet(back.box, 0, { now: T }).error, 'no_gone');
+        assert.equal(P.releasedPetOf(saved, T + P.PET_RELEASE_UNDO_MS + 1), null, '7일이 지나면 못 데려와요');
+    });
+    it('알을 놓아주면 되돌릴 게 없고, 같은 종을 다시 키우는 중이면 못 데려와요', () => {
+        const egg = P.sanitizePetBox({ v: 2, slots: 1, main: 0, list: [{ phase: 'egg', taps: 1 }], dex: {} });
+        assert.equal(P.releaseBoxPet(egg, 0, { now: T }).box.gone, null);
+        let box = P.releaseBoxPet(P.sanitizePetBox({ v: 2, slots: 2, main: 0, list: [pet('zapowl'), { phase: 'none' }], dex: {} }), 0, { now: T }).box;
+        box = { ...box, list: [{ phase: 'none' }, pet('zapowl', 1)] };
+        assert.equal(P.restoreReleasedPet(box, 0, { now: T }).error, 'owned');
+    });
+});

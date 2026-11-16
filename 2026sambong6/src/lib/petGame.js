@@ -566,6 +566,7 @@ export function releasePet(pet) {
 
 export const PET_ERROR_TEXT = Object.freeze({
     has_pet: '이미 펫이나 알이 있어요.',
+    no_gone: '다시 데려올 펫이 없어요.',
     no_bong: '봉이 모자라요.',
     no_egg: '품을 알이 없어요.',
     no_pet: '펫이 없어요.',
@@ -670,13 +671,20 @@ function sanitizeKeep(src, slots) {
     const mats = {};
     const rawMats = src.mats && typeof src.mats === 'object' && !Array.isArray(src.mats) ? src.mats : {};
     Object.keys(PET_SPECIES).forEach((id) => { mats[id] = int(rawMats[id], 0, PET_MAX_MATS); });
-    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7) };
+    // 방금 놓아준 펫(되돌리기용). 한 마리만 기억해요.
+    let gone = null;
+    const g = src.gone && typeof src.gone === 'object' ? src.gone : null;
+    if (g && g.pet) {
+        const gp = sanitizePet(g.pet);
+        if (gp.phase === 'pet') gone = { pet: stripDex(gp), at: int(g.at) };
+    }
+    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7), gone };
 }
 
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
@@ -773,6 +781,43 @@ export function petBoxOwnedSpecies(box, exceptSlot = -1) {
 }
 
 /** 칸의 펫을 케이지에 넣어요. 지금 배부름 그대로 멈춰요. */
+/** 놓아준 펫을 다시 데려올 수 있는 시간(7일) */
+export const PET_RELEASE_UNDO_MS = 7 * 24 * 3600 * 1000;
+
+/** i번째 칸의 펫(또는 알)을 놓아줘요. 펫은 되돌릴 수 있게 상자에 한 마리 기억해 둬요(gone). */
+export function releaseBoxPet(box, i, { now = 0 } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const cur = b.list[idx];
+    const r = releasePet({ ...cur, dex: b.dex });
+    if (!r.ok) return boxFail(b, r.error);
+    const next = petBoxWith(b, idx, r.pet);
+    if (cur.phase === 'pet') next.gone = { pet: { ...cur }, at: int(now) };
+    return boxDone(next, { released: cur });
+}
+
+/** 놓아준 펫을 지금 볼 수 있는지(7일 안) */
+export function releasedPetOf(box, now = 0) {
+    const b = sanitizePetBox(box);
+    if (!b.gone || int(now) - b.gone.at > PET_RELEASE_UNDO_MS) return null;
+    return b.gone.pet;
+}
+
+/** 놓아준 펫을 i번째 빈칸으로 다시 데려와요. 같은 종을 이미 키우면 못 데려와요. */
+export function restoreReleasedPet(box, i, { now = 0 } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const pet = releasedPetOf(b, now);
+    if (!pet) return boxFail(b, 'no_gone');
+    if (b.list[idx].phase !== 'none') return boxFail(b, 'slot_busy');
+    if (petBoxOwnedSpecies(b).has(pet.species)) return boxFail(b, 'owned');
+    const back = { ...pet, fedAt: int(now) };
+    const list = b.list.map((x, k) => (k === idx ? back : x));
+    return boxDone({ ...b, list, gone: null }, { pet: back });
+}
+
 export function cagePet(box, i, { now = 0, today = '', settings = null } = {}) {
     const b = sanitizePetBox(box);
     const idx = slotIndex(b, i);

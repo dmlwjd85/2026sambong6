@@ -330,7 +330,7 @@ import { createMathConceptTool } from './mathConceptTool.js';
 import { createRaidCallBanner } from './raidCallBanner.js';
 import { raidMaxParty, sanitizeRaidSettings } from './lib/petRaid.js';
 import { isOxbOpen, sanitizeOxbSettings } from './lib/oxBossRaid.js';
-import { petBoxMain, sanitizePetBox } from './lib/petGame.js';
+import { petBoxMain, petBoxPetCount, sanitizePetBox } from './lib/petGame.js';
 import { petArtHtml } from './lib/petArt.js';
 import { alkkagiAiEndText, alkkagiAiLevelLabel, alkkagiAiResultTitle, runAlkkagiAiChunked, sanitizeAlkkagiAiLevel } from './lib/alkkagiAi.js';
 import { ALKKAGI_RESUME_KEY, buildAlkkagiResume, canResumeAlkkagiRoom, parseAlkkagiResume } from './lib/alkkagiResume.js';
@@ -1380,7 +1380,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.80';
+        const APP_VERSION = 'v1.81';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10559,6 +10559,7 @@ ${subjectLine}
             today: () => getLocalDateStr(),
             applyBong: (delta) => { window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(delta)); updateUI(); },
             save: (opts) => saveDataToCloud(opts),
+            lastSaveError: () => String(window._lastPetSaveError || ''),
             students: () => {
                 const me = String(localStorage.getItem('sambong_student_id') || '');
                 const rows = getActiveStudentIds().map((sid) => {
@@ -27996,6 +27997,9 @@ ${subjectLine}
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
             let blockedByStockTrade = false;
+            let petBlocked = '';
+            let petCommitted = false;
+            window._lastPetSaveError = '';
             let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -28299,8 +28303,31 @@ ${subjectLine}
                             delete dataToSave.thermometerUsedStaleValues;
                         }
                     }
+                    // 펫(pet) 칸 지키기:
+                    // - 펫을 바꾸는 저장(petMutator)은 서버에 있는 최신 펫 상자에 같은 일을 다시 적용해요.
+                    //   다른 기기·다른 탭에서 바뀐 펫을 낡은 화면 값으로 덮어써서 펫이 사라지는 일을 막아요.
+                    // - 펫과 상관없는 저장은 서버의 펫을 건드리지 않아요.
+                    // - 놓아주기가 아닌데 펫 수가 줄어드는 저장은 막고, 바로 전 펫 상자는 petPrev 에 남겨 둬요.
+                    const serverPet = snap.exists() ? (snap.data() || {}).pet : undefined;
+                    if (typeof opts.petMutator === 'function') {
+                        const pr = opts.petMutator(serverPet == null ? null : serverPet);
+                        if (!pr || !pr.ok) { petBlocked = (pr && pr.error) || 'changed'; return; }
+                        if (!opts.petAllowLoss && petBoxPetCount(pr.pet) < petBoxPetCount(serverPet)) { petBlocked = 'pet_loss'; return; }
+                        dataToSave.pet = pr.pet;
+                        if (serverPet != null) dataToSave.petPrev = serverPet;
+                        petCommitted = true;
+                    } else if (snap.exists() && serverPet !== undefined) {
+                        delete dataToSave.pet;
+                        delete dataToSave.petPrev;
+                    }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
+                if (petBlocked) {
+                    // 화면의 펫을 서버 값으로 맞추고, 왜 못 했는지는 펫 화면이 알려 줘요.
+                    window._lastPetSaveError = petBlocked;
+                    return false;
+                }
+                if (petCommitted) window.playerState.pet = dataToSave.pet;
                 if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade) {
                     if (serverRestoreData) {
                         const roleFlags = {
@@ -28395,7 +28422,9 @@ ${subjectLine}
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
-                if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                window._lastPetSaveError = typeof opts.petMutator === 'function' ? `net:${(e && (e.code || e.message)) || e}` : '';
+                // 펫 저장은 펫 화면이 다시 해 보고 알려 줘요(알림 창을 여러 번 띄우지 않아요).
+                if (!opts.quietFail && (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장')) {
                     const detail = (e && e.message) ? e.message : String(e);
                     await window.customAlert(`${opts.operationLabel}에 실패했습니다.\n${detail}`);
                 }
@@ -31857,7 +31886,7 @@ ${subjectLine}
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'questCancels', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
-            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords', 'pet', 'oxBoss',
+            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords', 'pet', 'petPrev', 'oxBoss',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',

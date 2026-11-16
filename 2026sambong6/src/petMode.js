@@ -112,7 +112,9 @@ export function createPetMode(deps) {
     const myPet = () => petBoxSlot(myBox(), slot) || { v: 1, phase: 'none', dex: myBox().dex };
     /** 선생님(마스터)은 봉·레벨 조건 없이 키워요. 봉을 쓰지도 벌지도 않아요. */
     const free = () => !!(deps.isAdmin && deps.isAdmin());
-    const myBong = () => (free() ? 1e9 : Number(deps.state() && deps.state().bong) || 0);
+    // 저장하는 동안에는 시작할 때의 봉으로 계산해요(화면에서 먼저 뺀 봉으로 다시 계산하면 '봉이 모자라요'가 나와요).
+    let bongAt = null;
+    const myBong = () => (free() ? 1e9 : bongAt != null ? bongAt : Number(deps.state() && deps.state().bong) || 0);
     /** 마스터 설정. 배고파지는 시간대(낮)도 여기서 규칙에 알려 줘요. */
     const settings = () => { const cfg = sanitizePetSettings(deps.settings ? deps.settings() : null); setPetAwakeHours(cfg.awake.start, cfg.awake.end); return cfg; };
     const myLevel = () => (free() ? 100 : Math.floor(Number(deps.level ? deps.level() : 0)) || 0);
@@ -187,7 +189,7 @@ export function createPetMode(deps) {
             else if (act === 'release') void release();
             else if (act === 'cage') void cage();
             else if (act === 'uncage') void uncage(Number(t.getAttribute('data-cage')) || 0);
-            else if (act === 'egg-store') void runBox('알 보관하기', (b) => storePetEgg(b, slot), () => show('알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.', ''));
+            else if (act === 'egg-store') { delete eggTaps[slot]; void runBox('알 보관하기', (b) => storePetEgg(b, slot), () => show('알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.', '')); }
             else if (act === 'egg-use') void runBox('보관한 알 꺼내기', (b) => useStoredEgg(b, slot, { now: now() }), () => show('알을 꺼냈어요! 쓰다듬어서 품어 줘요.', 'good'));
             else if (act === 'enhance-mat') void enhanceMat();
             else if (act === 'gift') void gift();
@@ -224,32 +226,64 @@ export function createPetMode(deps) {
         }
     }
 
+    /** 같은 결과를 다시 만들 수 있게 미리 굴려 둔 주사위(서버 값에 다시 적용할 때 같은 운이 나와요) */
+    const makeDice = () => { const rolls = Array.from({ length: 12 }, () => Math.random()); return () => { let i = 0; return () => rolls[i++ % rolls.length]; }; };
+
     /**
-     * 규칙 함수를 적용하고 저장해요. 봉이 들거나 생기면 저장 옵션에 그만큼만 허용해요.
-     * 저장에 실패하면 저장 함수가 서버 값으로 되돌려요.
+     * 펫 상자를 바꾸고 저장해요. mutate(box) → { ok, error, box, cost, gain, ... }
+     * - 화면에 먼저 보여 주고, 저장할 때는 서버에 있는 최신 상자에 같은 일을 다시 적용해요(다른 기기에서 바뀐 펫을 덮어쓰지 않아요).
+     * - 저장에 실패하면 화면을 원래대로 되돌리고, 연결 문제면 한 번 더 해 봐요.
      */
-    async function run(label, fn, { after = null, rnd = Math.random } = {}) {
+    async function commit(label, mutate, { after = null, allowLoss = false } = {}) {
         if (busy) return null;
         if (!deps.canPlay()) { deps.toast('로그인해야 펫을 키울 수 있어요.'); return null; }
         const st = deps.state();
-        const box = myBox();
-        const cur = petBoxSlot(box, slot);
-        if (!cur) return null;
-        const r = fn(cur, { bong: myBong(), now: now(), today: today(), rnd, walk: settings().walk });
-        if (!r.ok) { deps.toast(petErrorText(r.error)); return null; }
-        if (free()) { r.cost = 0; r.gain = 0; }
+        const before = petBoxToDoc(myBox());
+        bongAt = null;
+        bongAt = myBong();
+        const r = mutate(myBox());
+        if (!r || !r.ok) bongAt = null;
+        if (!r || !r.ok) { deps.toast(petErrorText(r && r.error)); return null; }
+        const rawCost = r.cost || 0;
+        const rawGain = r.gain || 0;
+        const cost = free() ? 0 : rawCost;
+        const gain = free() ? 0 : rawGain;
         busy = true;
         try {
-            st.pet = petBoxToDoc(petBoxWith(box, slot, r.pet));
-            if (r.cost || r.gain) deps.applyBong((r.gain || 0) - (r.cost || 0));
+            st.pet = petBoxToDoc(r.box);
+            if (cost || gain) deps.applyBong(gain - cost);
             render();
-            const saved = await deps.save({
-                ...(r.cost > 0 ? { allowBongDecrease: true, maxBongDecrease: r.cost, requireServerBongBalance: true } : {}),
-                ...(r.gain > 0 ? { maxBongIncrease: r.gain } : {}),
+            const opts = {
+                ...(cost > 0 ? { allowBongDecrease: true, maxBongDecrease: cost, requireServerBongBalance: true } : {}),
+                ...(gain > 0 ? { maxBongIncrease: gain } : {}),
                 operationLabel: label,
-            });
+                quietFail: true,
+                petAllowLoss: allowLoss,
+                petMutator: (serverPet) => {
+                    const rr = mutate(sanitizePetBox(serverPet));
+                    if (!rr || !rr.ok) return { ok: false, error: (rr && rr.error) || 'changed' };
+                    // 봉이 걸린 일은 서버 값으로 해도 값이 같아야 해요.
+                    if ((rr.cost || 0) !== rawCost || (rr.gain || 0) !== rawGain) return { ok: false, error: 'changed' };
+                    return { ok: true, pet: petBoxToDoc(rr.box) };
+                },
+            };
+            let saved = await deps.save(opts);
+            let why = deps.lastSaveError ? deps.lastSaveError() : '';
+            if (!saved && why.startsWith('net:')) {
+                // 연결이 잠깐 끊겼거나 동시에 저장이 겹쳤을 수 있어요. 잠깐 쉬고 한 번 더 해 봐요.
+                await new Promise((ok) => setTimeout(ok, 700));
+                saved = await deps.save(opts);
+                why = deps.lastSaveError ? deps.lastSaveError() : '';
+            }
             if (!saved) {
-                deps.toast('저장하지 못했어요. 잠시 뒤 다시 해 봐요.');
+                // 화면을 원래대로(서버와 같게) 되돌려요.
+                const now2 = deps.state();
+                if (now2 === st) {
+                    st.pet = before;
+                    if (cost || gain) deps.applyBong(cost - gain);
+                }
+                const code = why.startsWith('net:') ? '' : why;
+                deps.toast(code ? petErrorText(code) : '저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 봐요.');
                 render();
                 return null;
             }
@@ -258,33 +292,29 @@ export function createPetMode(deps) {
             return r;
         } finally {
             busy = false;
+            bongAt = null;
         }
     }
 
-    /** 상자(칸·대표 펫) 쪽 일을 적용하고 저장해요. fn(box) → { ok, error, box, cost } */
-    async function runBox(label, fn, after = null) {
-        if (busy) return null;
-        if (!deps.canPlay()) { deps.toast('로그인해야 펫을 키울 수 있어요.'); return null; }
-        const st = deps.state();
-        const r = fn(myBox());
-        if (!r.ok) { deps.toast(petErrorText(r.error)); return null; }
-        if (free()) r.cost = 0;
-        busy = true;
-        try {
-            st.pet = petBoxToDoc(r.box);
-            if (r.cost) deps.applyBong(-r.cost);
-            render();
-            const saved = await deps.save({
-                ...(r.cost > 0 ? { allowBongDecrease: true, maxBongDecrease: r.cost, requireServerBongBalance: true } : {}),
-                operationLabel: label,
-            });
-            if (!saved) { deps.toast('저장하지 못했어요. 잠시 뒤 다시 해 봐요.'); render(); return null; }
-            if (after) after(r);
-            else render();
-            return r;
-        } finally {
-            busy = false;
-        }
+    /** 보고 있는 칸의 펫에게 규칙 함수를 적용하고 저장해요. */
+    function run(label, fn, { after = null, allowLoss = false } = {}) {
+        const at = slot;
+        const t = now();
+        const day = today();
+        const dice = makeDice();
+        const walk = settings().walk;
+        return commit(label, (b) => {
+            const cur = petBoxSlot(b, at);
+            if (!cur) return { ok: false, error: 'bad_slot' };
+            const r = fn(cur, { bong: myBong(), now: t, today: day, rnd: dice(), walk });
+            if (!r.ok) return r;
+            return { ...r, box: petBoxWith(b, at, r.pet) };
+        }, { after, allowLoss });
+    }
+
+    /** 상자(칸·대표 펫·케이지) 쪽 일을 적용하고 저장해요. fn(box) → { ok, error, box, cost } */
+    function runBox(label, fn, after = null) {
+        return commit(label, fn, { after });
     }
 
     /** 칸 늘리기 */
@@ -323,25 +353,27 @@ export function createPetMode(deps) {
         render();
     }
 
-    /** 알 품기: 부화할 때만 저장해요(그 전에는 이 화면에서만 세요). */
+    /** 알 품기: 부화할 때만 저장해요(그 전에는 이 화면에서만 세요). 품은 횟수는 화면을 다시 그려도 기억해요. */
+    const eggTaps = {};
+    const tapsOf = (i, p) => Math.max(p && p.phase === 'egg' ? p.taps : 0, eggTaps[i] || 0);
     async function warm() {
         if (busy || !deps.canPlay()) return;
-        const st = deps.state();
-        const box = myBox();
-        const cur = petBoxSlot(box, slot);
-        if (!cur) return;
-        const r = warmPetEgg(cur, { now: now(), rnd: Math.random });
+        const at = slot;
+        const cur = petBoxSlot(myBox(), at);
+        if (!cur || cur.phase !== 'egg') return;
+        const r = warmPetEgg({ ...cur, taps: tapsOf(at, cur) }, { now: now(), rnd: Math.random });
         if (!r.ok) return;
         if (!r.hatched) {
-            st.pet = petBoxToDoc(petBoxWith(box, slot, r.pet));
+            eggTaps[at] = r.pet.taps;
             try { if (navigator.vibrate) navigator.vibrate(12); } catch (_) { /* 진동 없는 기기 */ }
             render();
             const egg = root() && root().querySelector('.pet-egg-btn');
             if (egg) { egg.classList.remove('is-tap'); void egg.offsetWidth; egg.classList.add('is-tap'); }
             return;
         }
+        delete eggTaps[at];
         // 이미 가진 종이 나오면 펫 대신 강화 재료가 돼요.
-        await runBox('펫 부화', (b) => settleHatchedPet(b, slot, r.pet), (res) => {
+        await runBox('펫 부화', (b) => (b.list[at] && b.list[at].phase === 'egg' ? settleHatchedPet(b, at, r.pet) : { ok: false, error: 'no_egg' }), (res) => {
             const sp = PET_SPECIES[r.pet.species];
             if (res.duplicate) {
                 show(`${sp.names[0]}은(는) 이미 있어요! 💎 ${sp.names[0]} 강화 재료 1개로 바뀌었어요.${res.shinyShared ? ' ✨ 색다른 빛은 가진 펫에게 옮겨 갔어요!' : ''}`, 'good');
@@ -507,7 +539,7 @@ export function createPetMode(deps) {
             ? '알을 놓아줄까요?\n알 값은 돌아오지 않아요.'
             : `${p.name}을(를) 자연으로 보내 줄까요?\n도감에는 남지만 레벨과 강화는 사라지고, 새 알을 사야 해요.`);
         if (!ok) return;
-        await run('펫 놓아주기', (pet) => releasePet(pet), { after: () => show('잘 가! 도감에 기록했어요.', '') });
+        await run('펫 놓아주기', (pet) => releasePet(pet), { allowLoss: true, after: () => show('잘 가! 도감에 기록했어요.', '') });
     }
 
     /* ---------- 그리기 ---------- */
@@ -693,7 +725,8 @@ export function createPetMode(deps) {
         </div>`;
     }
 
-    function eggHtml(p) {
+    function eggHtml(p0) {
+        const p = { ...p0, taps: tapsOf(slot, p0) };
         return `<div class="pet-card is-egg-card">
             <button type="button" class="pet-stage is-egg pet-egg-btn" data-p="warm" aria-label="알 품기">${ground}<span class="pet-sprite is-egg">${petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS })}</span>${fxHtml()}</button>
             <h3 class="pet-title">알을 품어 줘요</h3>

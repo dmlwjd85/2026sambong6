@@ -565,6 +565,8 @@ export const PET_ERROR_TEXT = Object.freeze({
     egg_store_full: '알 보관함이 꽉 찼어요.',
     no_mat: '이 펫에게 쓸 강화 재료가 없어요.',
     bad_species: '그런 펫은 없어요.',
+    changed: '다른 화면에서 펫이 바뀌었어요. 최신 모습으로 맞췄으니 다시 해 봐요.',
+    pet_loss: '펫이 사라질 수 있는 저장이라 막았어요. 화면을 새로 고쳐 주세요.',
     owned: '이미 가진 펫이에요. 같은 종류는 한 마리씩만 살 수 있어요.',
 });
 
@@ -716,6 +718,13 @@ export function setPetBoxMain(box, i) {
 const boxFail = (box, error) => ({ ok: false, error, box, cost: 0 });
 const boxDone = (box, extra = {}) => ({ ok: true, error: '', box, cost: 0, ...extra });
 const slotIndex = (b, i) => { const idx = Math.floor(Number(i)); return idx >= 0 && idx < b.slots ? idx : -1; };
+
+/** 상자 안 펫 수(칸 + 케이지). 펫이 사라지는 저장을 막을 때 써요. */
+export function petBoxPetCount(box) {
+    if (box == null) return 0;
+    const b = sanitizePetBox(box);
+    return b.list.filter((p) => p.phase === 'pet').length + b.cage.length;
+}
 
 /** 케이지에 넣을 수 있는 펫 수 */
 export function petCageCapacity(box, settings = null) {

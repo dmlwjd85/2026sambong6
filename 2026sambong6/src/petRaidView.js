@@ -188,12 +188,10 @@ export function createPetRaidView(ctx) {
         ctx.render();
     }
 
-    /** 보상 받기: 봉은 내 지갑에, 경험치는 대표 펫에게. 같은 전투는 한 번만 받아요. */
-    async function claim(run) {
-        const st = deps.state();
-        const b = box();
+    /** 보상 받기: 봉은 내 지갑에, 경험치는 전투에 나간 펫에게. 같은 전투는 한 번만 받아요. */
+    function rewardBox(b, run) {
         const res = claimRaidReward(b.raid, run, { id: me(), today: ctx.today(), settings: raidCfg() });
-        if (!res.ok) return null;
+        if (!res.ok) return { ok: false, error: res.error || 'claimed' };
         let next = { ...b, raid: res.progress };
         // 경험치는 전투에 나간 펫이 받아요(그 펫을 못 찾으면 대표 펫).
         const fought = run.members.find((m) => m.id === me());
@@ -206,12 +204,41 @@ export function createPetRaidView(ctx) {
             next = petBoxWith(next, idx, grown.pet);
             next.raid = res.progress;
         }
-        const bong = ctx.free() ? 0 : res.bong;
-        st.pet = petBoxToDoc(next);
+        return { ok: true, box: next, res, levelUps, gain: ctx.free() ? 0 : res.bong };
+    }
+
+    async function claim(run) {
+        const st = deps.state();
+        const first = rewardBox(box(), run);
+        if (!first.ok) return null;
+        const before = petBoxToDoc(box());
+        const bong = first.gain;
+        st.pet = petBoxToDoc(first.box);
         if (bong > 0) deps.applyBong(bong);
-        const saved = await deps.save({ ...(bong > 0 ? { maxBongIncrease: bong } : {}), operationLabel: `펫 탐험 ${run.stage}스테이지 보상` });
-        if (!saved) { deps.toast('보상을 저장하지 못했어요. 탐험 화면을 다시 열면 받을 수 있어요.'); shown.delete(run.id); return null; }
-        return { ...res, bong, levelUps };
+        const opts = {
+            ...(bong > 0 ? { maxBongIncrease: bong } : {}),
+            operationLabel: `펫 탐험 ${run.stage}스테이지 보상`,
+            quietFail: true,
+            // 서버의 최신 펫 상자에 보상을 다시 적용해요(이미 받았으면 다시 주지 않아요).
+            petMutator: (serverPet) => {
+                const r = rewardBox(sanitizePetBox(serverPet), run);
+                if (!r.ok) return r;
+                if (r.gain !== bong) return { ok: false, error: 'changed' };
+                return { ok: true, pet: petBoxToDoc(r.box) };
+            },
+        };
+        let saved = await deps.save(opts);
+        if (!saved && deps.lastSaveError && deps.lastSaveError().startsWith('net:')) {
+            await new Promise((ok) => setTimeout(ok, 700));
+            saved = await deps.save(opts);
+        }
+        if (!saved) {
+            if (deps.state() === st) { st.pet = before; if (bong > 0) deps.applyBong(-bong); }
+            deps.toast('보상을 저장하지 못했어요. 탐험 화면을 다시 열면 받을 수 있어요.');
+            shown.delete(run.id);
+            return null;
+        }
+        return { ...first.res, bong, levelUps: first.levelUps };
     }
 
     /** 새로 출발한(아직 못 본) 내 전투가 있으면 연출을 틀고 보상을 받아요. */

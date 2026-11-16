@@ -10639,8 +10639,6 @@ ${subjectLine}
             },
             // 학생은 선물함을 고치지 않아요(받은 합계는 펫 상자의 giftSeen 에 적어요).
         });
-            },
-        });
 
         // 누군가 탐험 방을 만들면 화면 맨 위에 '도움이 필요합니다!'가 떠요. 누르면 바로 참가해요.
         const _raidCalls = createRaidCallBanner({

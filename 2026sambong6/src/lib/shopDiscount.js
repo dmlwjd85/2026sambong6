@@ -188,7 +188,18 @@ export function skinRefundBase(originalPrice, paidPrice) {
 
 /** 환불 지급액. 결제 기록이 있으면 그 금액의 50%, 없으면 정가의 50%(내림). */
 export function skinRefundBong(originalPrice, paidPrice) {
+    // 할인받아 산 상품은 환불하지 않아요(선생님 요청, 2026-11-16).
+    if (isSkinBoughtOnSale(originalPrice, paidPrice)) return 0;
     return Math.floor(skinRefundBase(originalPrice, paidPrice) * 0.5);
+}
+
+/** 정가보다 싸게(할인·무료 행사) 산 상품인지. 결제 기록이 없는 옛 상품은 정가로 산 것으로 봐요. */
+export function isSkinBoughtOnSale(originalPrice, paidPrice) {
+    const original = Number(originalPrice);
+    if (!(Number.isFinite(original) && original > 0)) return false;
+    if (paidPrice === undefined || paidPrice === null || paidPrice === '') return false;
+    const paid = Number(paidPrice);
+    return Number.isFinite(paid) && paid >= 0 && paid < original - 0.0001;
 }
 
 /**

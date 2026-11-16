@@ -467,6 +467,7 @@ import {
     quoteSkinPurchase,
     reconcileBongAfterCommittedSkinPurchase,
     skinFieldsFromServerAfterPurchase,
+    isSkinBoughtOnSale,
     skinRefundBase,
     skinRefundBong,
 } from './lib/shopDiscount.js';
@@ -1380,7 +1381,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.83';
+        const APP_VERSION = 'v1.84';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -8141,7 +8142,9 @@ ${subjectLine}
                                 <span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>
                                 <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${formatBongAmount(refundB)}</button>
                                </div>`
-                            : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>')
+                            : (isSkinBoughtOnSale(skin.price, resolveSkinPaidPrice(skin, window.playerState.ownedSkinPaid))
+                                ? '<div class="flex flex-col items-end gap-1"><span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span><span class="text-[9px] text-slate-400">할인 구매 · 환불 불가</span></div>'
+                                : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>'))
                         : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
                     return;
                 }
@@ -31324,6 +31327,9 @@ ${subjectLine}
                 return await window.customAlert('사용 중인 캐릭터만 환불할 수 있습니다.\n먼저 장착한 뒤 환불 버튼을 눌러 주세요.');
             }
 
+            if (isSkinBoughtOnSale(skin.price, resolveSkinPaidPrice(skin, window.playerState.ownedSkinPaid))) {
+                return await window.customAlert('할인받아 산 캐릭터는 환불할 수 없어요.');
+            }
             const refundB = getEquippedSkinRefundBong(skin);
             if (refundB <= 0) return await window.customAlert('환불할 수 없는 캐릭터입니다.');
             const refundGate = canRefundSkinThisSeason(window.playerState, getLocalDateStr());
@@ -31511,7 +31517,7 @@ ${subjectLine}
             const charge = formatSkinPurchaseCharge(displayed, saleOn, formatBongAmount);
             const askPrice = charge === '무료' ? '무료로' : `${charge}에`;
             const ask = saleOn
-                ? `${kindLabel} '${skin.name}'을(를) ${askPrice} 살까요?\n(정가 ${formatBongAmount(skin.price)} · -${cfg.percent}%)`
+                ? `${kindLabel} '${skin.name}'을(를) ${askPrice} 살까요?\n(정가 ${formatBongAmount(skin.price)} · -${cfg.percent}%)\n할인받아 산 상품은 환불할 수 없어요.`
                 : `${kindLabel} '${skin.name}'을(를) ${askPrice} 살까요?`;
             if (!(await window.customConfirm(ask))) return;
             if (window._skinBuyRunning) return;

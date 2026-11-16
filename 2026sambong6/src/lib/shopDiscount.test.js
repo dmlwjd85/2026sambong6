@@ -14,6 +14,7 @@ import {
     quoteSkinPurchase,
     reconcileBongAfterCommittedSkinPurchase,
     skinFieldsFromServerAfterPurchase,
+    isSkinBoughtOnSale,
     skinRefundBong,
 } from './shopDiscount.js';
 
@@ -114,15 +115,19 @@ describe('캐릭터 상점 전체 할인', () => {
         assert.equal(formatSkinPurchaseCharge(0, false, (n) => `${n}B`), '0B');
     });
 
-    it('환불은 결제액의 50%, 기록이 없으면 정가의 50%이다', () => {
-        assert.equal(skinRefundBong(200, 140), 70);
+    it('환불은 정가로 산 것만 50%, 할인받아 산 것은 환불하지 않는다', () => {
+        assert.equal(skinRefundBong(200, 140), 0); // 할인 구매는 환불 불가
+        assert.equal(isSkinBoughtOnSale(200, 140), true);
+        assert.equal(isSkinBoughtOnSale(200, 200), false);
+        assert.equal(isSkinBoughtOnSale(200, undefined), false);
+        assert.equal(skinRefundBong(200, 200), 100);
         assert.equal(skinRefundBong(200), 100);
         assert.equal(skinRefundBong(200, undefined), 100);
         assert.equal(skinRefundBong(200, null), 100);
         assert.equal(skinRefundBong(200, ''), 100);
         assert.equal(skinRefundBong(200, 0), 0);
         assert.equal(skinRefundBong(200, 999), 100);
-        assert.equal(skinRefundBong(250, 168), 84);
+        assert.equal(skinRefundBong(250, 168), 0);
         assert.equal(skinRefundBong(1, 1), 0);
         assert.equal(skinRefundBong(200, -5), 100);
     });

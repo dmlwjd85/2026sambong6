@@ -262,7 +262,10 @@ const safeStage = (stage) => Math.max(1, Math.min(3, Math.floor(stage) || 1));
 
 /** 펫 그림 파일 주소 */
 export function petImageUrl(species, stage = 1) {
-    return `${assetBase()}pets/${safeSpecies(species)}_${safeStage(stage)}.webp`;
+    const sp = safeSpecies(species);
+    // 그림을 바꾼 종은 주소에 판 번호를 붙여서 예전 그림이 브라우저에 남지 않게 해요.
+    const ver = sp === 'punchroo' ? '?v=2' : '';
+    return `${assetBase()}pets/${sp}_${safeStage(stage)}.webp${ver}`;
 }
 
 /** 알 그림 파일 주소 */

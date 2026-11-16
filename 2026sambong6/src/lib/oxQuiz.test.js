@@ -7,6 +7,8 @@ import {
     chooseOxRecord,
     listOxSubjects,
     mergeOxQuestions,
+    oxUploadBlockReason,
+    planOxQuestionWrite,
     normalizeOxAnswer,
     OX_TEMPLATE_CSV,
     OX_TEMPLATE_XLSX,
@@ -75,6 +77,21 @@ describe('OX 문제 은행', () => {
         assert.equal(round.error, '');
         assert.ok(round.questions.every((item) => item.subject === '과학'));
         assert.equal(round.questions.length, 2);
+    });
+
+    it('추가는 이 화면이 모르는 서버 문제를 지우지 않습니다', () => {
+        const server = [
+            { id: 'L2', subject: '과학', prompt: '서버만', answer: 'O' },
+            { id: 'L3', subject: '과학', prompt: '둘 다', answer: 'X' },
+        ];
+        const incoming = [{ id: 'L2', subject: '사회', prompt: '새 문제', answer: 'O' }];
+        const plan = planOxQuestionWrite(server, incoming, 'append');
+        assert.equal(plan.error, '');
+        assert.deepEqual(plan.questions.map((item) => item.prompt), ['서버만', '둘 다', '새 문제']);
+        const wiped = planOxQuestionWrite(server, incoming, 'replace');
+        assert.deepEqual(wiped.questions.map((item) => item.prompt), ['새 문제']);
+        assert.match(oxUploadBlockReason(false), /불러오지 못했습니다/);
+        assert.equal(oxUploadBlockReason(true), '');
     });
 
     it('추가는 기존 문제를 남기고 id가 겹치지 않게 붙입니다', () => {

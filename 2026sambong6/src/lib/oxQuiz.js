@@ -187,6 +187,29 @@ export function oxTemplateCsv() {
     }).join(',')).join('\n');
 }
 
+/**
+ * 문제 은행 저장 계획.
+ * 추가는 이 화면이 가진 목록이 아니라 서버에 있는 문제 뒤에 붙입니다.
+ * 화면이 빈 목록을 들고 있어도 서버 문제를 지우지 않습니다.
+ */
+export function planOxQuestionWrite(existing, incoming, mode) {
+    if (mode === 'replace') {
+        const questions = (incoming || []).filter((item) => item && item.prompt && item.answer);
+        if (!questions.length) return { questions: [], error: '올릴 문제가 없습니다.' };
+        if (questions.length > OX_BANK_MAX) {
+            return { questions: [], error: `문제가 ${OX_BANK_MAX}개를 넘습니다. 나눠 올려 주세요.` };
+        }
+        return { questions, error: '' };
+    }
+    return mergeOxQuestions(existing, incoming);
+}
+
+/** 은행을 아직 읽지 못했으면 빈 화면 기준으로 올리기를 막습니다. */
+export function oxUploadBlockReason(bankReady) {
+    if (bankReady) return '';
+    return '문제 은행을 불러오지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.';
+}
+
 /** 추가 업로드. 기존 문제 id와 겹치지 않게 새 id를 붙입니다. */
 export function mergeOxQuestions(existing, incoming) {
     const base = (existing || []).filter((item) => item && item.prompt && item.answer);

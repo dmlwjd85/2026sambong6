@@ -470,3 +470,17 @@ describe('펫 상점', () => {
         assert.equal(P.buyShopPet(caged, 0, { species: 'emberkit', shiny: true, bong: 999 }).box.cage[0].shiny, true);
     });
 });
+
+describe('알 선물 받기', () => {
+    it('받은 합계를 적어 두어서 같은 선물을 두 번 받지 않아요', () => {
+        let box = P.sanitizePetBox({ v: 2, slots: 1, main: 0, list: [{ phase: 'none' }], dex: {} });
+        const r = P.receivePetGifts(box, 3);
+        assert.deepEqual([r.ok, r.box.eggs, r.box.giftSeen, r.gifted], [true, 3, 3, 3]);
+        assert.equal(P.receivePetGifts(r.box, 3).error, 'no_gift');
+        const r2 = P.receivePetGifts(r.box, 5);
+        assert.deepEqual([r2.box.eggs, r2.box.giftSeen], [5, 5]);
+        assert.equal(P.petBoxToDoc(r2.box).giftSeen, 5);
+        const full = P.receivePetGifts(P.sanitizePetBox({ ...r2.box, eggs: 29 }), 8);
+        assert.deepEqual([full.box.eggs, full.added, full.gifted], [30, 1, 3]);
+    });
+});

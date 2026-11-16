@@ -564,6 +564,8 @@ export const PET_ERROR_TEXT = Object.freeze({
     no_stored_egg: '보관한 알이 없어요.',
     egg_store_full: '알 보관함이 꽉 찼어요.',
     no_mat: '이 펫에게 쓸 강화 재료가 없어요.',
+    no_gift: '받을 선물이 없어요.',
+    quota: '오늘 학급 서버 사용량이 다 찼어요. 오후 5시가 지나면 다시 저장돼요.',
     bad_species: '그런 펫은 없어요.',
     changed: '다른 화면에서 펫이 바뀌었어요. 최신 모습으로 맞췄으니 다시 해 봐요.',
     pet_loss: '펫이 사라질 수 있는 저장이라 막았어요. 화면을 새로 고쳐 주세요.',
@@ -638,13 +640,13 @@ function sanitizeKeep(src, slots) {
     const mats = {};
     const rawMats = src.mats && typeof src.mats === 'object' && !Array.isArray(src.mats) ? src.mats : {};
     Object.keys(PET_SPECIES).forEach((id) => { mats[id] = int(rawMats[id], 0, PET_MAX_MATS); });
-    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats };
+    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7) };
 }
 
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats } };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
@@ -891,4 +893,17 @@ export function buyShopPet(box, i, { species = '', shiny = false, bong = 0, now 
     const pet = newbornPet(sp.id, shiny, now);
     const list = b.list.map((p, k) => (k === idx ? pet : p));
     return boxDone({ ...b, list, dex: withDex({ ...pet, dex: b.dex }) }, { cost: price, pet, upgraded: false });
+}
+
+/**
+ * 선생님이 선물한 알 받기. total 은 지금까지 받은 선물의 합계(선물함 문서의 eggs, 늘기만 해요).
+ * 상자에 이미 받은 합계(giftSeen)를 적어 두어서, 같은 선물을 두 번 받지 않고 실패해도 다음에 그대로 받아요.
+ */
+export function receivePetGifts(box, total) {
+    const b = sanitizePetBox(box);
+    const t = int(total, 0, 1e7);
+    const n = t - b.giftSeen;
+    if (n <= 0) return boxFail(b, 'no_gift');
+    const eggs = Math.min(PET_MAX_STORED_EGGS, b.eggs + n);
+    return boxDone({ ...b, eggs, giftSeen: t }, { added: eggs - b.eggs, gifted: n });
 }

@@ -1380,7 +1380,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.81';
+        const APP_VERSION = 'v1.82';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -5165,6 +5165,25 @@ function redrawPlazaGrantsUi() {
          * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
          * authStateReady + 익명 로그인 후 getIdToken()으로 토큰을 확실히 받은 뒤에만 true.
          */
+        /** 학급 공용 방(펫 탐험·OX 보스) 저장: 로그인을 먼저 챙기고, 연결·겹침 오류면 한 번 더 해요. */
+        async function runPublicRoomTx(run) {
+            const authed = await ensureAnonAuthReady();
+            if (!authed) { const e = new Error('로그인 확인에 실패했어요'); e.code = 'unauthenticated'; throw e; }
+            try {
+                return await run();
+            } catch (e) {
+                const code = String((e && e.code) || '');
+                if (/permission-denied|unauthenticated/.test(code)) {
+                    // 로그인 표가 낡았을 수 있어요. 새로 받아서 한 번 더 해요.
+                    try { if (auth && auth.currentUser) await auth.currentUser.getIdToken(true); } catch (_) { /* 무시 */ }
+                } else if (!/unavailable|aborted|deadline-exceeded|internal|failed-precondition/.test(code)) {
+                    throw e;
+                }
+                await new Promise((ok) => setTimeout(ok, 600));
+                return run();
+            }
+        }
+
         async function ensureAnonAuthReady() {
             if (!auth) return false;
             const tryOnce = async () => {
@@ -10483,14 +10502,14 @@ ${subjectLine}
                         cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
                     }, (err) => { console.warn('oxBossRaids', err); cb([]); });
                 },
-                tx: (roomId, mutator) => runTransaction(db, async (tx) => {
+                tx: (roomId, mutator) => runPublicRoomTx(() => runTransaction(db, async (tx) => {
                     const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxBossRaids', String(roomId));
                     const snap = await tx.get(ref);
                     const r = mutator(snap.exists() ? { ...snap.data(), id: snap.id } : null);
                     if (!r || !r.ok) return r || { ok: false, error: 'unknown' };
-                    if (r.room === null) { if (snap.exists()) tx.delete(ref); } else tx.set(ref, r.room);
+                    if (r.room === null) { if (snap.exists()) tx.delete(ref); } else tx.set(ref, JSON.parse(JSON.stringify(r.room)));
                     return r;
-                }),
+                })),
                 // 내가 낀 무기·방패·신발(강화 반영)이 전투 능력치가 돼요.
                 me: () => {
                     const id = String(localStorage.getItem('sambong_student_id') || '');
@@ -10590,20 +10609,22 @@ ${subjectLine}
             raidWatch: (cb) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'petRaids'), (snap) => {
                 cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
             }, (err) => { console.warn('petRaids', err); cb([]); }),
-            raidTx: (partyId, mutator) => runTransaction(db, async (tx) => {
+            // 로그인(익명 인증)을 먼저 확인하고, 연결이 잠깐 끊기면 한 번 더 해 봐요.
+            raidTx: (partyId, mutator) => runPublicRoomTx(() => runTransaction(db, async (tx) => {
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'petRaids', String(partyId));
                 const snap = await tx.get(ref);
                 const r = mutator(snap.exists() ? { ...snap.data(), id: snap.id } : null);
                 if (!r || !r.ok) return r || { ok: false, error: 'unknown' };
-                if (r.party === null) { if (snap.exists()) tx.delete(ref); } else tx.set(ref, r.party);
+                if (r.party === null) { if (snap.exists()) tx.delete(ref); } else tx.set(ref, JSON.parse(JSON.stringify(r.party)));
                 return r;
-            }),
+            })),
             saveSettings: async (petSettings) => {
                 if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 고칠 수 있어요');
                 await setDoc(getGlobalSettingsDocRef(), { petSettings }, { merge: true });
                 window.globalSettings = { ...(window.globalSettings || {}), petSettings };
             },
-            // 알 선물: 학생마다 선물함 문서가 하나 있어요(petGifts/{학번}.eggs). 학생 저장과 따로 둬서 서로 덮어쓰지 않아요.
+            // 알 선물: 학생마다 선물함 문서가 하나 있어요(petGifts/{학번}.eggs = 지금까지 선물한 알의 합계, 늘기만 해요).
+            // 학생은 이 문서를 고치지 않고, 받은 합계를 펫 상자(giftSeen)에 적어요. 그래서 같은 선물을 두 번 받거나 저장을 되풀이하지 않아요.
             giftEggs: async (ids, count) => {
                 if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 선물할 수 있어요');
                 const n = Math.max(1, Math.min(10, Math.floor(Number(count)) || 1));
@@ -10616,23 +10637,8 @@ ${subjectLine}
                     cb(snap.exists() ? Math.max(0, Math.floor(Number(snap.data().eggs) || 0)) : 0);
                 }, (err) => { console.warn('petGifts', err); });
             },
-            // 선물함을 비우고 몇 개였는지 돌려줘요.
-            takeGifts: () => {
-                const id = String(localStorage.getItem('sambong_student_id') || '');
-                if (!id) return Promise.resolve(0);
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', id);
-                return runTransaction(db, async (tx) => {
-                    const snap = await tx.get(ref);
-                    const n = snap.exists() ? Math.max(0, Math.floor(Number(snap.data().eggs) || 0)) : 0;
-                    if (n > 0) tx.set(ref, { eggs: 0, takenAt: Date.now() }, { merge: true });
-                    return n;
-                });
-            },
-            returnGifts: (count) => {
-                const id = String(localStorage.getItem('sambong_student_id') || '');
-                const n = Math.max(0, Math.floor(Number(count)) || 0);
-                if (!id || !n) return Promise.resolve();
-                return setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', id), { eggs: increment(n) }, { merge: true });
+            // 학생은 선물함을 고치지 않아요(받은 합계는 펫 상자의 giftSeen 에 적어요).
+        });
             },
         });
 

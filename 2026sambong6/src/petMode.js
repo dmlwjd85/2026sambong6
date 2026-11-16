@@ -20,6 +20,7 @@ import {
     PET_SPECIES,
     PET_TYPES,
     addStoredEggs,
+    receivePetGifts,
     buyShopPet,
     petBoxOwnedSpecies,
     petShopPrice,
@@ -269,7 +270,7 @@ export function createPetMode(deps) {
             };
             let saved = await deps.save(opts);
             let why = deps.lastSaveError ? deps.lastSaveError() : '';
-            if (!saved && why.startsWith('net:')) {
+            if (!saved && why.startsWith('net:') && !/resource-exhausted|quota/i.test(why)) {
                 // 연결이 잠깐 끊겼거나 동시에 저장이 겹쳤을 수 있어요. 잠깐 쉬고 한 번 더 해 봐요.
                 await new Promise((ok) => setTimeout(ok, 700));
                 saved = await deps.save(opts);
@@ -282,8 +283,8 @@ export function createPetMode(deps) {
                     st.pet = before;
                     if (cost || gain) deps.applyBong(cost - gain);
                 }
-                const code = why.startsWith('net:') ? '' : why;
-                deps.toast(code ? petErrorText(code) : '저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 봐요.');
+                const code = /resource-exhausted|quota/i.test(why) ? 'quota' : why.startsWith('net:') ? '' : why;
+                deps.toast(code ? petErrorText(code) : `저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 봐요.${why ? ` (${why.replace(/^net:/, '').slice(0, 40)})` : ''}`);
                 render();
                 return null;
             }
@@ -441,26 +442,19 @@ export function createPetMode(deps) {
     /* ---------- 선생님의 알 선물 ---------- */
 
     let giftUnsub = null;
-    let pendingGifts = 0;
-    let giftBusy = false;
-    /** 선물이 와 있으면 알 보관함으로 옮겨요. */
-    async function takeGifts(count) {
-        if (giftBusy || busy || !(count > 0) || !deps.canPlay() || !deps.takeGifts) return;
-        giftBusy = true;
-        try {
-            const n = Math.floor(Number(await deps.takeGifts())) || 0;
-            if (n <= 0) return;
-            const r = await runBox('알 선물 받기', (b) => addStoredEggs(b, n), (res) => {
-                show(`🎁 선생님이 알 ${n}개를 선물했어요! 알 보관함에 넣었어요.${res.added < n ? ` (보관함이 꽉 차서 ${res.added}개만 들어갔어요)` : ''}`, 'good');
-                if (feedback) feedback.play('ok');
-            });
-            // 저장하지 못했으면 선물을 되돌려 놓아요(다음에 다시 받아요).
-            if (!r && deps.returnGifts) { try { await deps.returnGifts(n); } catch (_) { /* 다음에 다시 시도 */ } }
-        } catch (e) {
-            console.warn('pet gifts', e);
-        } finally {
-            giftBusy = false;
-        }
+    let giftTotal = 0; // 선물함에 쌓인 합계(늘기만 해요)
+    let giftTryAt = 0;
+    /** 아직 안 받은 선물이 있으면 알 보관함에 넣어요. 실패해도 선물함은 그대로라 다음에 다시 받아요(1분에 한 번만 시도). */
+    async function takeGifts() {
+        if (busy || !deps.canPlay()) return;
+        if (giftTotal <= myBox().giftSeen) return;
+        if (now() - giftTryAt < 60000) return;
+        giftTryAt = now();
+        const total = giftTotal;
+        await runBox('알 선물 받기', (b) => receivePetGifts(b, total), (res) => {
+            show(`🎁 선생님이 알 ${res.gifted}개를 선물했어요! 알 보관함에 넣었어요.${res.added < res.gifted ? ` (보관함이 꽉 차서 ${res.added}개만 들어갔어요)` : ''}`, 'good');
+            if (feedback) feedback.play('ok');
+        });
     }
 
     /** 마스터: 알 선물하기 */
@@ -879,8 +873,8 @@ export function createPetMode(deps) {
         render();
         if (tab === 'raid') { raid.start(); void raid.maybePlay(); }
         // 선생님이 선물한 알이 있으면 받아요.
-        if (!giftUnsub && deps.giftWatch && deps.canPlay()) giftUnsub = deps.giftWatch((count) => { if (isOpen()) void takeGifts(count); else pendingGifts = count; });
-        if (pendingGifts > 0) { const n = pendingGifts; pendingGifts = 0; void takeGifts(n); }
+        if (!giftUnsub && deps.giftWatch && deps.canPlay()) giftUnsub = deps.giftWatch((total) => { giftTotal = Math.max(giftTotal, Math.floor(Number(total)) || 0); if (isOpen()) void takeGifts(); });
+        void takeGifts();
         if (!timer) {
             timer = setInterval(() => {
                 const el = root();

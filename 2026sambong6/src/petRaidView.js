@@ -105,7 +105,13 @@ export function createPetRaidView(ctx) {
             if (r && r.ok === false) deps.toast(raidErrorText(r.error));
             return r;
         } catch (e) {
-            deps.toast('저장하지 못했어요. 잠시 뒤 다시 해 봐요.');
+            console.warn('petRaid tx', e);
+            const code = String((e && (e.code || e.message)) || '');
+            deps.toast(/resource-exhausted|quota/i.test(code)
+                ? '오늘 학급 서버 사용량이 다 찼어요. 오후 5시가 지나면 다시 돼요.'
+                : /unauthenticated|permission/.test(code)
+                ? '로그인이 풀렸어요. 화면을 새로 고친 뒤 다시 해 봐요.'
+                : `저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 봐요.${code ? ` (${code.slice(0, 40)})` : ''}`);
             return null;
         } finally {
             busy = false;

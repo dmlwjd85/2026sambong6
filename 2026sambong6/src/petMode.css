@@ -104,15 +104,7 @@
 .pet-svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .pet-art.is-silhouette > * { filter: brightness(0) opacity(0.55); }
 .pet-art.is-silhouette > .pet-img { filter: brightness(0) invert(0.2) opacity(0.7); }
-/* 색이 다른 펫: 같은 그림에 색 필터 */
-.pet-art.is-shiny.sp-emberkit > .pet-img { filter: hue-rotate(195deg) saturate(1.15); }
-.pet-art.is-shiny.sp-dropotter > .pet-img { filter: hue-rotate(115deg) saturate(1.4); }
-.pet-art.is-shiny.sp-sproutdeer > .pet-img { filter: hue-rotate(-55deg) saturate(1.25); }
-.pet-art.is-shiny.sp-zapowl > .pet-img { filter: hue-rotate(115deg) saturate(1.1); }
-.pet-art.is-shiny.sp-snowbun > .pet-img { filter: hue-rotate(70deg) saturate(1.8); }
-.pet-art.is-shiny.sp-pebbletle > .pet-img { filter: sepia(0.35) hue-rotate(-35deg) saturate(1.9); }
-.pet-art.is-shiny.sp-punchroo > .pet-img { filter: hue-rotate(200deg) saturate(1.4); }
-.pet-art.is-shiny.sp-stardrake > .pet-img { filter: saturate(0.3) brightness(0.72) contrast(1.2); }
+/* 색이 다른 펫: 따로 그린 그림(종_단계_s.webp)을 써요. 아우라가 그림에 들어 있어요. */
 .pet-art.is-shiny::after {
     content: '✨';
     position: absolute;

@@ -2,10 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { petArtHtml, petEggHtml, petEggImageUrl, petImageUrl, petSvg } from './petArt.js';
 import { PET_SPECIES } from './petGame.js';
+import fs from 'node:fs';
 
 test('종·단계마다 그림 파일 주소가 있어요', () => {
     Object.keys(PET_SPECIES).forEach((sp) => {
-        [1, 2, 3].forEach((st) => assert.match(petImageUrl(sp, st), new RegExp(`pets/${sp}_${st}\\.webp$`)));
+        [1, 2, 3].forEach((st) => {
+            assert.match(petImageUrl(sp, st), new RegExp(`pets/${sp}_${st}\\.webp(\\?v=\\d+)?$`));
+            // 그림 파일(보통·색다른)이 정말 있어요.
+            [`${sp}_${st}.webp`, `${sp}_${st}_s.webp`].forEach((f) => assert.ok(fs.existsSync(new URL(`../../public/pets/${f}`, import.meta.url)), f));
+        });
     });
     assert.match(petEggImageUrl(), /pets\/egg\.webp$/);
 });
@@ -13,6 +18,7 @@ test('종·단계마다 그림 파일 주소가 있어요', () => {
 test('이상한 값은 안전한 그림으로 바꿔요', () => {
     assert.match(petImageUrl('nope', 9), /pets\/emberkit_3\.webp$/);
     assert.match(petImageUrl('zapowl', 0), /pets\/zapowl_1\.webp$/);
+    assert.match(petImageUrl('zapowl', 2, true), /pets\/zapowl_2_s\.webp$/);
     const html = petArtHtml({ species: '"><script>', stage: 2, alt: '<b>"x' });
     assert.doesNotMatch(html, /<script|<b>/);
 });

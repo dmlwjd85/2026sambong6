@@ -261,8 +261,10 @@ const safeSpecies = (species) => (ART_SPECIES.includes(species) ? species : 'emb
 const safeStage = (stage) => Math.max(1, Math.min(3, Math.floor(stage) || 1));
 
 /** 펫 그림 파일 주소 */
-export function petImageUrl(species, stage = 1) {
+export function petImageUrl(species, stage = 1, shiny = false) {
     const sp = safeSpecies(species);
+    // 색다른 펫은 따로 그린 그림(부분 색 바꾸기·반짝이는 눈·볼 홍조·아우라)을 써요: 종_단계_s.webp
+    if (shiny) return `${assetBase()}pets/${sp}_${safeStage(stage)}_s.webp`;
     // 그림을 바꾼 종은 주소에 판 번호를 붙여서 예전 그림이 브라우저에 남지 않게 해요.
     const ver = sp === 'punchroo' ? '?v=2' : '';
     return `${assetBase()}pets/${sp}_${safeStage(stage)}.webp${ver}`;
@@ -275,7 +277,7 @@ export function petEggImageUrl() {
 
 /**
  * 펫 일러스트 마크업. 그림을 못 불러오면 화면 쪽(petMode)이 data-* 값으로 petSvg 를 대신 넣어요.
- * shiny 는 같은 그림에 CSS 색 필터를 씌워요(.is-shiny.sp-종). silhouette 은 도감의 '아직 못 만난' 그림자예요.
+ * shiny 는 따로 만든 색다른 그림(종_단계_s.webp)을 써요. silhouette 은 도감의 '아직 못 만난' 그림자예요.
  * @param {{ species: string, stage?: number, shiny?: boolean, mood?: string, eager?: boolean, silhouette?: boolean, alt?: string }} o
  */
 export function petArtHtml({ species = 'emberkit', stage = 1, shiny = false, mood = 'happy', eager = false, silhouette = false, alt = '' } = {}) {
@@ -284,7 +286,7 @@ export function petArtHtml({ species = 'emberkit', stage = 1, shiny = false, moo
     const m = ['happy', 'ok', 'hungry', 'starving'].includes(mood) ? mood : 'happy';
     const cls = `pet-art sp-${sp} st-${st} mood-${m}${shiny && !silhouette ? ' is-shiny' : ''}${silhouette ? ' is-silhouette' : ''}`;
     const a = String(alt || '').replace(/[<>&"]/g, '');
-    return `<span class="${cls}" data-pet-sp="${sp}" data-pet-st="${st}" data-pet-shiny="${shiny ? 1 : 0}" data-pet-mood="${m}"><img class="pet-img" src="${petImageUrl(sp, st)}" alt="${a}" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false"></span>`;
+    return `<span class="${cls}" data-pet-sp="${sp}" data-pet-st="${st}" data-pet-shiny="${shiny ? 1 : 0}" data-pet-mood="${m}"><img class="pet-img" src="${petImageUrl(sp, st, shiny && !silhouette)}" alt="${a}" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false"></span>`;
 }
 
 /** 알 일러스트 + 금(taps가 늘수록 늘어요). 금은 그림 위에 SVG로 겹쳐 그려요. */

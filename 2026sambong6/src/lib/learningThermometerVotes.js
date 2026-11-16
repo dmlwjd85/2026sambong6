@@ -14,6 +14,50 @@ function clampVote(raw, min, max) {
     return value;
 }
 
+/** 학생 표 값. 키가 없거나 숫자가 아니면 0입니다. */
+export function thermometerVoteValue(values, sid, min, max) {
+    const map = values && typeof values === 'object' ? values : {};
+    return clampVote(map[String(sid)], min, max);
+}
+
+/**
+ * 방금 서버에 쓴 값과 화면 값이 같을 때만 대기 목록에서 뺍니다.
+ * 저장 요청이 네트워크를 기다리는 동안 움직인 학생은 남겨, 복사해 둔 옛 값으로 끝내지 않습니다.
+ */
+export function retainThermometerPendingIds({ pendingIds, writtenValues, currentValues, min, max } = {}) {
+    const written = writtenValues && typeof writtenValues === 'object' ? writtenValues : {};
+    const current = currentValues && typeof currentValues === 'object' ? currentValues : {};
+    const keep = [];
+    const seen = new Set();
+    (pendingIds || []).forEach((sid) => {
+        const id = String(sid);
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        if (!Object.prototype.hasOwnProperty.call(written, id)) {
+            keep.push(id);
+            return;
+        }
+        const wrote = clampVote(written[id], min, max);
+        const now = thermometerVoteValue(current, id, min, max);
+        if (wrote !== now) keep.push(id);
+    });
+    return keep;
+}
+
+/**
+ * 예전 값을 화면에 얹습니다. 이미 있는 학생 값(저장 중에 바꾼 값)은 그대로 둡니다.
+ */
+export function applyThermometerLegacySeeds(currentValues, seeds) {
+    const current = currentValues && typeof currentValues === 'object' ? { ...currentValues } : {};
+    const extra = seeds && typeof seeds === 'object' ? seeds : {};
+    Object.keys(extra).forEach((sid) => {
+        const id = String(sid);
+        if (Object.prototype.hasOwnProperty.call(current, id)) return;
+        current[id] = extra[sid];
+    });
+    return current;
+}
+
 /** 표 문서가 하나라도 있을 때만 화면 값을 표로 바꿉니다. 빈 목록은 예전 값을 지우지 않습니다. */
 export function thermometerVotesShouldReplaceValues(docCount) {
     return Math.max(0, Math.floor(Number(docCount) || 0)) > 0;

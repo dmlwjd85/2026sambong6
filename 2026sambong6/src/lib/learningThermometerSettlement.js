@@ -67,6 +67,54 @@ export function sanitizeThermometerParentState(raw, { today = '', minDefault = -
     };
 }
 
+/**
+ * 잠글 때 저장한 학생별 정산 값입니다.
+ * 0과 범위 밖, 학번 형식이 아닌 키는 빼서 맵만 남깁니다.
+ * 부모 문서 규칙의 허용 키에는 이 맵이 없으므로 부모에 넣지 않습니다.
+ */
+export function sanitizeSettlementPending(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const out = {};
+    Object.keys(raw).forEach((sid) => {
+        const id = String(sid);
+        if (!/^[A-Za-z0-9_-]{1,24}$/.test(id)) return;
+        const value = Math.round(Number(raw[id]) || 0);
+        if (!value || value < -500 || value > 500) return;
+        if (Object.keys(out).length >= 40) return;
+        out[id] = value;
+    });
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * 같은 날 잠금을 이어 받을 때는 처음 잠글 때 저장한 값만 지급합니다.
+ * 그 뒤에 바꾼 표는 이번 정산에 넣지 않습니다.
+ * 저장분이 없으면 지금 표를 씁니다.
+ */
+export function resolveContinuingSettlementValues({ continuing, storedPending, pendingValues } = {}) {
+    const stored = sanitizeSettlementPending(storedPending);
+    if (continuing && stored) return stored;
+    return sanitizeSettlementPending(pendingValues) || {};
+}
+
+/**
+ * 완료 때 0으로 지울 표.
+ * 저장분이 있으면 그 값과 지금 표가 같은 학생만 지웁니다.
+ * 저장분에 없는 요청(예전 값 닫기)은 그대로 지웁니다.
+ * 저장분이 없으면 요청한 표를 모두 지웁니다.
+ */
+export function thermometerVoteIdsToClear({ snapshot, currentVotes, requestedIds } = {}) {
+    const ids = [...new Set((requestedIds || []).map((id) => String(id)))];
+    const stored = sanitizeSettlementPending(snapshot);
+    if (!stored) return ids;
+    const current = currentVotes && typeof currentVotes === 'object' ? currentVotes : {};
+    return ids.filter((id) => {
+        if (!Object.prototype.hasOwnProperty.call(stored, id)) return true;
+        if (!Object.prototype.hasOwnProperty.call(current, id)) return true;
+        return Math.round(Number(current[id]) || 0) === stored[id];
+    });
+}
+
 /** 규칙이 허용하는 부모 문서 필드만 남깁니다. values 는 학생별 표 문서에 있습니다. */
 export function buildThermometerParentPayload(state, options = {}) {
     const today = options.today ? String(options.today) : '';
@@ -475,6 +523,9 @@ export async function grantThermometerStudentXp(db, {
 export async function finishThermometerSettlement(db, {
     thermometerRef,
     voteRefs = [],
+    voteIds = [],
+    snapshot = null,
+    snapshotRef = null,
     owner,
     today,
     leaseMs,
@@ -497,12 +548,47 @@ export async function finishThermometerSettlement(db, {
             leaseMs,
         });
         if (!held) return { status: 'lock_lost' };
-        voteRefs.forEach((ref) => tx.set(ref, { value: 0 }));
-        tx.set(thermometerRef, {
+        let snapshotData = null;
+        if (snapshotRef) {
+            const snapshotSnap = await tx.get(snapshotRef);
+            if (snapshotSnap.exists()) snapshotData = snapshotSnap.data() || {};
+        }
+        const snapshotKeyMatches = snapshotData
+            && String(snapshotData.settlementKey || '') === String(today || '');
+        const stored = snapshotKeyMatches
+            ? sanitizeSettlementPending(snapshotData.values)
+            : sanitizeSettlementPending(snapshot);
+        const targets = voteRefs.map((ref, index) => ({
+            ref,
+            id: voteIds[index] != null ? String(voteIds[index]) : '',
+        }));
+        const currentVotes = {};
+        if (stored) {
+            for (const target of targets) {
+                if (!target.id || !Object.prototype.hasOwnProperty.call(stored, target.id)) continue;
+                const voteSnap = await tx.get(target.ref);
+                const data = voteSnap.exists() ? (voteSnap.data() || {}) : null;
+                if (data && Object.prototype.hasOwnProperty.call(data, 'value')) currentVotes[target.id] = data.value;
+            }
+        }
+        const clearIds = stored
+            ? new Set(thermometerVoteIdsToClear({
+                snapshot: stored,
+                currentVotes,
+                requestedIds: targets.map((target) => target.id),
+            }))
+            : null;
+        targets.forEach((target) => {
+            if (!clearIds || clearIds.has(target.id)) tx.set(target.ref, { value: 0 });
+        });
+        if (snapshotRef && snapshotKeyMatches) tx.delete(snapshotRef);
+        const donePayload = {
             ...parentPayload,
             usedStaleValues: parent.usedStaleValues === true || parentPayload.usedStaleValues === true,
             settlementAttempt: Math.max(0, Math.floor(Number(parent.settlementAttempt ?? parentPayload.settlementAttempt) || 0)),
-        });
+        };
+        delete donePayload.settlementPending;
+        tx.set(thermometerRef, donePayload);
         return { status: 'done' };
     });
 }
@@ -530,6 +616,7 @@ export async function runThermometerSettlementPass(db, {
     activeIds,
     voteRefFor,
     studentRefFor,
+    snapshotRef = null,
     today,
     owner,
     leaseMs,
@@ -572,6 +659,14 @@ export async function runThermometerSettlementPass(db, {
         const legacyThermometer = legacySnap && legacySnap.exists()
             ? (legacySnap.data() || {}).learningThermometer
             : null;
+        let storedPending = null;
+        if (snapshotRef) {
+            const snapshotSnap = await tx.get(snapshotRef);
+            const snapshotData = snapshotSnap.exists() ? (snapshotSnap.data() || {}) : null;
+            if (snapshotData && String(snapshotData.settlementKey || '') === settlementDay) {
+                storedPending = snapshotData.values;
+            }
+        }
         const raw = snap.exists() ? parentData : (legacyThermometer || {});
         const state = sanitizeThermometerParentState(raw, shape);
         const plan = planThermometerSettlement({
@@ -585,6 +680,13 @@ export async function runThermometerSettlementPass(db, {
             max: state.max,
         });
         const pendingValues = plan.pendingValues;
+        const continuingLock = String(parentData.settlementStatus || '') === 'running'
+            && String(parentData.settlementKey || '') === settlementDay;
+        const grantValues = resolveContinuingSettlementValues({
+            continuing: continuingLock,
+            storedPending,
+            pendingValues,
+        });
         const startedAt = readNow();
         const decision = decideThermometerLockClaim({
             settlementKey: state.settlementKey,
@@ -598,13 +700,13 @@ export async function runThermometerSettlementPass(db, {
             now: startedAt,
             leaseMs,
             manual,
-            pendingCount: Object.keys(pendingValues).length,
+            pendingCount: Object.keys(grantValues).length,
         });
         if (decision.action === 'already_done') return { status: 'already_done', state };
         if (decision.action === 'locked') return { status: 'locked', state };
         const nextState = {
             ...state,
-            values: pendingValues,
+            values: grantValues,
             settlementAttempt: decision.attempt,
             settlementLockOwner: owner,
         };
@@ -617,12 +719,23 @@ export async function runThermometerSettlementPass(db, {
                 settlementStartedAt: startedAt,
             }, shape));
         }
+        // 이어 받는 잠금에 저장분이 있으면 그 뒤를 바꾼 표로 덮지 않습니다.
+        const shouldFreeze = snapshotRef && (!continuingLock || !sanitizeSettlementPending(storedPending));
+        const cleanPending = sanitizeSettlementPending(grantValues);
+        if (shouldFreeze) {
+            if (cleanPending) {
+                tx.set(snapshotRef, { settlementKey: settlementDay, values: cleanPending });
+            } else {
+                tx.delete(snapshotRef);
+            }
+        }
         return {
             status: 'claimed',
             state: nextState,
             legacyIds: plan.legacyIds,
             legacyIdsToClose: plan.legacyIdsToClose,
             consumeLegacy: plan.consumeLegacy === true,
+            settlementPending: cleanPending,
         };
     });
 
@@ -671,6 +784,7 @@ export async function runThermometerSettlementPass(db, {
         settlementTotalDelta: totalDelta,
         usedStaleValues: claimed.state.usedStaleValues === true || claimed.consumeLegacy === true,
     };
+    delete resetState.settlementPending;
     const voteIds = [...new Set([
         ...entries.map(([sid]) => String(sid)),
         ...((claimed.legacyIdsToClose || []).map((sid) => String(sid))),
@@ -678,6 +792,9 @@ export async function runThermometerSettlementPass(db, {
     const finished = await finishThermometerSettlement(db, {
         thermometerRef,
         voteRefs: voteIds.map((sid) => voteRefFor(sid)),
+        voteIds,
+        snapshot: claimed.settlementPending,
+        snapshotRef,
         owner,
         today: settlementDay,
         leaseMs,

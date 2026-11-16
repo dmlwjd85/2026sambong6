@@ -232,3 +232,75 @@ describe('은행 지수 투자', () => {
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').buyIndex, 17000);
     });
 });
+
+import { STOCK_SELL_RATIOS, previewStockSell, stockSellAmountForRatio } from './stockMarket.js';
+
+describe('지수 일부 매도 비율', () => {
+    it('비율 버튼 목록', () => {
+        assert.deepEqual(STOCK_SELL_RATIOS, [25, 50, 75, 100]);
+    });
+    it('원금 비율만큼 팔고 남는 원금은 10봉 이상', () => {
+        assert.deepEqual(stockSellAmountForRatio(200, 25), { ok: true, amount: 50, remaining: 150, full: false, adjusted: false });
+        assert.deepEqual(stockSellAmountForRatio(200, 50), { ok: true, amount: 100, remaining: 100, full: false, adjusted: false });
+        assert.equal(stockSellAmountForRatio(200, 100).full, true);
+        assert.equal(stockSellAmountForRatio(200, 100).amount, 200);
+    });
+    it('남는 원금이 10봉 미만이면 10봉 남기도록 줄임', () => {
+        const r = stockSellAmountForRatio(30, 75); // 23 → 남는 7 → 20 매도
+        assert.equal(r.amount, 20);
+        assert.equal(r.remaining, 10);
+        assert.equal(r.adjusted, true);
+    });
+    it('원금이 10봉뿐이면 일부 매도 대신 전량', () => {
+        const r = stockSellAmountForRatio(10, 50);
+        assert.equal(r.full, true);
+        assert.equal(r.amount, 10);
+    });
+    it('잘못된 값은 거절', () => {
+        assert.equal(stockSellAmountForRatio(0, 50).ok, false);
+        assert.equal(stockSellAmountForRatio(100, 0).ok, false);
+        assert.equal(stockSellAmountForRatio(100, NaN).ok, false);
+    });
+    it('비율로 고른 금액은 서버 매도 검사도 통과', () => {
+        for (const p of [10, 11, 19, 20, 33, 100, 999, 1000]) {
+            for (const pct of STOCK_SELL_RATIOS) {
+                const pick = stockSellAmountForRatio(p, pct);
+                const gate = canSellStock({ existing: { principal: p, buyIndex: 100, openedAt: 1 }, amount: pick.amount });
+                assert.equal(gate.ok, true, `${p} ${pct}`);
+            }
+        }
+    });
+});
+
+describe('매도 미리보기', () => {
+    const inv = { kospi: { principal: 100, buyIndex: 100, openedAt: 0, openedDate: '2026-11-01' } };
+    it('일부 매도 예상 정산과 남는 원금', () => {
+        const pv = previewStockSell({ investments: inv, marketId: 'kospi', amount: 40, currentIndex: 102, daily: null, today: '2026-11-09', nowMs: 10 * 86400000 });
+        assert.equal(pv.ok, true);
+        assert.equal(pv.amount, 40);
+        assert.equal(pv.remaining, 60);
+        assert.equal(pv.payout, 41);
+    });
+    it('비우면 전량', () => {
+        const pv = previewStockSell({ investments: inv, marketId: 'kospi', amount: null, currentIndex: 100, today: '2026-11-09', nowMs: 1 });
+        assert.equal(pv.full, true);
+        assert.equal(pv.payout, 100);
+    });
+    it('시세가 없으면 정산액 없이 원금만', () => {
+        const pv = previewStockSell({ investments: inv, marketId: 'kospi', amount: 50, currentIndex: NaN });
+        assert.equal(pv.ok, true);
+        assert.equal(pv.payout, null);
+    });
+    it('남는 원금 1~9봉·보유 초과·미보유는 거절', () => {
+        assert.equal(previewStockSell({ investments: inv, marketId: 'kospi', amount: 95, currentIndex: 100 }).reason, 'remainder');
+        assert.equal(previewStockSell({ investments: inv, marketId: 'kospi', amount: 101, currentIndex: 100 }).reason, 'amount');
+        assert.equal(previewStockSell({ investments: inv, marketId: 'nasdaq', amount: 10, currentIndex: 100 }).reason, 'none');
+    });
+    it('일부 매도 뒤 서버 정산을 두 번 하면 두 번째는 남은 원금만', () => {
+        const first = applyStockSellFromServer({ serverInvestments: inv, serverDaily: null, serverBong: 0, marketId: 'kospi', amount: 50, currentIndex: 100, today: '2026-11-09', nowMs: 1 });
+        assert.equal(first.ok, true);
+        assert.equal(first.remaining, 50);
+        const again = applyStockSellFromServer({ serverInvestments: first.investments, serverDaily: first.daily, serverBong: first.bong, marketId: 'kospi', amount: 60, currentIndex: 100, today: '2026-11-09', nowMs: 2 });
+        assert.equal(again.ok, false);
+    });
+});

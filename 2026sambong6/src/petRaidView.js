@@ -13,14 +13,19 @@ import {
     RAID_MIN_PARTY,
     RAID_STAGE_COUNT,
     RAID_STRONG,
+    answerRaidQuiz,
     claimRaidReward,
+    closeRaidQuiz,
     createRaidParty,
     isRaidPartyStale,
     joinRaidParty,
+    kickRaidIdle,
     leaveRaidParty,
     raidErrorText,
     raidMaxParty,
     raidMemberFromPet,
+    raidOwner,
+    raidOwners,
     raidPetStats,
     raidTypeMult,
     raidUnlockedStage,
@@ -40,7 +45,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * ctx: { root(), deps, now(), today(), free(), render(), show(text, kind), feedback() }
- * deps 에는 petMode 의 deps 에 더해 raidWatch(cb) → 끄기 함수, raidTx(partyId, mutator) → Promise, classSize() 가 있어요.
+ * deps 에는 petMode 의 deps 에 더해 raidWatch(cb) → 끄기 함수, raidTx(partyId, mutator) → Promise, classSize(),
+ * oxQuestions() → Promise<[{ prompt, answer }]>(OX 퀴즈 은행) 가 있어요.
  */
 export function createPetRaidView(ctx) {
     const { deps } = ctx;
@@ -51,6 +57,14 @@ export function createPetRaidView(ctx) {
     let playing = ''; // 지금 연출 중인 전투 번호
     const shown = new Set(); // 이 화면에서 이미 연출한 전투 번호
     let lastResult = null; // { run, sim, reward } 마지막 결과 카드
+    let quizBank = null; // OX 퀴즈 은행에서 받은 문제([{ q, a }]). 못 받으면 준비된 문제를 써요.
+    let bankAsked = false;
+    let clock = 0; // 방 안의 초읽기(혼자 있는 방 닫기·준비 안 한 친구 내보내기)
+    let leaving = false;
+    let autoAt = 0; // 자동으로 방을 닫거나 내보내려고 마지막으로 저장을 건 때(실패해도 1분 안에는 다시 안 해요)
+    const seen = { solo: '', soloAt: 0, wait: '', waitAt: 0 }; // 내 화면이 그 상태를 처음 본 때(기기마다 시계가 달라도 되게)
+    const blockedUntil = new Map(); // 실패한 전투를 다시 틀어도 되는 때
+    const snapWaiters = [];
 
     const me = () => String(deps.selfId() || '');
     const box = () => sanitizePetBox(deps.state() && deps.state().pet);
@@ -63,7 +77,22 @@ export function createPetRaidView(ctx) {
         const ok = (i) => i >= 0 && i < b.slots && b.list[i] && b.list[i].phase === 'pet' && !petView(b.list[i], ctx.now(), ctx.today()).away;
         return ok(pickSlot) ? pickSlot : petBoxMainIndex(b);
     };
-    const myMember = () => { const b = box(); const i = raidSlot(); return raidMemberFromPet(i >= 0 ? b.list[i] : null, { id: me(), name: deps.selfName ? deps.selfName() : me(), now: ctx.now(), today: ctx.today() }); };
+    const memberAt = (i) => { const b = box(); return raidMemberFromPet(i >= 0 && i < b.slots ? b.list[i] : null, { id: me(), name: deps.selfName ? deps.selfName() : me(), now: ctx.now(), today: ctx.today() }); };
+    const myMember = () => memberAt(raidSlot());
+    /** 더 데려갈 수 있는 내 펫들(데려가는 펫 말고, 열린 칸에 있는 펫) */
+    const spareSlots = () => { const b = box(); const main = raidSlot(); const out = []; for (let i = 0; i < b.slots; i += 1) { if (i !== main && memberAt(i)) out.push(i); } return out; };
+    const myExtras = (p) => (p ? p.members.filter((m) => m.owner === me()) : []);
+    /** 종 이름들로 더 데려갈 펫 정보를 만들어요(지금 데려가는 펫과 같은 종은 빼요). */
+    const extraMembers = (speciesList, mainSpecies) => spareSlots().map(memberAt).filter((m) => m && m.species !== mainSpecies && speciesList.includes(m.species));
+    const myBong = () => Number(deps.state() && deps.state().bong) || 0;
+    const randQuiz = () => (quizBank && quizBank.length ? quizBank[Math.floor(Math.random() * quizBank.length)] : null);
+    function loadBank() {
+        if (bankAsked || !deps.oxQuestions) return;
+        bankAsked = true;
+        Promise.resolve().then(() => deps.oxQuestions()).then((list) => {
+            quizBank = (Array.isArray(list) ? list : []).map((x) => ({ q: String((x && x.prompt) || '').trim(), a: x && x.answer })).filter((x) => x.q && (x.a === 'O' || x.a === 'X'));
+        }).catch((e) => { console.warn('petRaid quiz bank', e); });
+    }
     const unlocked = () => (ctx.free() ? RAID_STAGE_COUNT : raidUnlockedStage(box().raid));
     const liveParties = () => parties.filter((p) => !isRaidPartyStale(p, ctx.now()));
     // 내가 들어 있는 방은 오래돼도 내 방이에요(오래됐다고 안 보이면 '방 없애기'가 먹통이 돼요). 다른 사람에게만 안 보여요.
@@ -85,15 +114,90 @@ export function createPetRaidView(ctx) {
     function start() {
         if (unsub || !deps.raidWatch) return;
         unsub = deps.raidWatch((list) => {
+            const was = myParty();
             parties = (Array.isArray(list) ? list : []).map(sanitizeRaidParty).filter(Boolean);
+            const cur = myParty();
+            // 준비가 늦어 방에서 나오게 됐으면 알려 줘요.
+            if (was && !cur && !leaving && was.status === 'open' && was.waitId === me() && parties.some((x) => x.id === was.id && x.members.length > 0)) deps.toast('준비가 늦어서 탐험 방에서 나왔어요.');
+            if (cur) loadBank();
+            snapWaiters.splice(0).forEach((fn) => fn());
             if (!playing) ctx.render();
             void maybePlay();
         });
+        if (!clock) clock = setInterval(tick, 500);
     }
 
     function stop() {
         if (unsub) { try { unsub(); } catch (_) { /* 무시 */ } }
         unsub = null;
+        if (clock) clearInterval(clock);
+        clock = 0;
+        snapWaiters.splice(0).forEach((fn) => fn());
+    }
+
+    /** 방 목록이 새로 오거나 ms 가 지나면 끝나요. */
+    const nextSnap = (ms) => new Promise((ok) => { let done = false; const fin = () => { if (!done) { done = true; ok(); } }; snapWaiters.push(fin); setTimeout(fin, ms); });
+
+    /* ---------- 방 안의 초읽기 ---------- */
+
+    /** 지금 방의 초읽기: { kind: 'solo'|'wait', left(초), who } 또는 null. 내 화면이 그 상태를 처음 본 때부터 재요. */
+    function countdown(p) {
+        if (!p || p.status !== 'open') { seen.solo = ''; seen.wait = ''; return null; }
+        const cfg = raidCfg();
+        const t = Date.now();
+        const soloKey = p.soloAt ? `${p.id}|${p.soloAt}` : '';
+        if (seen.solo !== soloKey) { seen.solo = soloKey; seen.soloAt = t; }
+        const waitKey = p.waitId ? `${p.id}|${p.waitId}|${p.waitAt}` : '';
+        if (seen.wait !== waitKey) { seen.wait = waitKey; seen.waitAt = t; }
+        if (waitKey && cfg.idleSec > 0) {
+            const m = p.members.find((x) => x.id === p.waitId);
+            return { kind: 'wait', who: p.waitId, name: m ? m.name : '', left: cfg.idleSec - (t - seen.waitAt) / 1000 };
+        }
+        if (soloKey && cfg.soloSec > 0) {
+            // 방장 화면이 꺼졌다 켜졌으면 방에 적힌 시간으로도 봐요(시계 차이를 30초까지 봐줘요).
+            const gone = Math.max(t - seen.soloAt, ctx.now() - p.soloAt - 30000);
+            return { kind: 'solo', who: p.leaderId, name: '', left: cfg.soloSec - gone / 1000 };
+        }
+        return null;
+    }
+
+    function clockText(p, c) {
+        const n = Math.max(0, Math.ceil(c.left));
+        if (c.kind === 'solo') return p.leaderId === me() ? `⏳ 아무도 오지 않으면 ${n}초 뒤 방이 닫혀요.` : '';
+        if (c.who === me()) return `⏰ ${n}초 안에 「준비」를 누르지 않으면 방에서 나가게 돼요!`;
+        return `⏰ ${c.name || '친구'}만 준비하면 돼요. ${n}초 뒤에는 먼저 가요.`;
+    }
+
+    function tick() {
+        if (!ctx.isRaidTab() || playing) return;
+        const p = myParty();
+        const c = countdown(p);
+        const root = ctx.root();
+        const line = root ? root.querySelector('[data-raid-clock]') : null;
+        const text = c ? clockText(p, c) : '';
+        if (line) { line.textContent = text; line.hidden = !text; line.classList.toggle('is-warn', !!c && c.kind === 'wait' && c.who === me()); }
+        if (!c || busy || c.left > 0 || Date.now() - autoAt < 60000) return;
+        if (c.kind === 'solo') {
+            if (p.leaderId !== me()) return;
+            autoAt = Date.now();
+            void leave().then(() => { if (!myParty()) deps.toast('아무도 오지 않아서 탐험 방을 닫았어요.'); });
+            return;
+        }
+        // 준비한 친구들 가운데 순서대로 한 사람씩 나서요(동시에 여럿이 저장하지 않게).
+        if (c.who === me()) return;
+        const ready = raidOwners(p.members).filter((o) => o !== c.who).sort();
+        const rank = ready.indexOf(me());
+        if (rank < 0 || -c.left * 1000 < rank * 1500) return;
+        autoAt = Date.now();
+        const { waitId, waitAt } = p;
+        const seed = Math.floor(Math.random() * 2147483646) + 1;
+        const question = randQuiz();
+        void deps.raidTx(p.id, (cur) => {
+            const k = kickRaidIdle(cur, { id: me(), waitId, waitAt, now: ctx.now() });
+            if (!k.ok || !k.allReady || raidOwners(k.party.members).length < raidCfg().minParty) return k;
+            const started = startRaid(k.party, { id: me(), settings: raidCfg(), seed, now: ctx.now(), question });
+            return started.ok ? started : k;
+        }).then((r) => { if (r && r.ok) autoAt = 0; }).catch((e) => { console.warn('petRaid kick', e); });
     }
 
     async function tx(partyId, mutator) {
@@ -144,6 +248,8 @@ export function createPetRaidView(ctx) {
     async function leave() {
         const p = myParty();
         if (!p) return;
+        leaving = true;
+        setTimeout(() => { leaving = false; }, 4000);
         await tx(p.id, (cur) => {
             const r = leaveRaidParty(cur, { id: me(), now: ctx.now() });
             // 방장이 나가도 마지막 전투 기록이 있으면 문서는 남겨요(빈 방으로).
@@ -168,10 +274,11 @@ export function createPetRaidView(ctx) {
         const mine = p.members.find((m) => m.id === me());
         const want = !(mine && mine.ready);
         const seed = Math.floor(Math.random() * 2147483646) + 1;
+        const question = randQuiz();
         await tx(p.id, (cur) => {
             const rd = readyRaidParty(cur, { id: me(), ready: want, now: ctx.now() });
-            if (!rd.ok || !rd.allReady || rd.party.members.length < raidCfg().minParty) return rd;
-            const started = startRaid(rd.party, { id: me(), settings: raidCfg(), seed, now: ctx.now() });
+            if (!rd.ok || !rd.allReady || raidOwners(rd.party.members).length < raidCfg().minParty) return rd;
+            const started = startRaid(rd.party, { id: me(), settings: raidCfg(), seed, now: ctx.now(), question });
             return started.ok ? started : rd;
         });
     }
@@ -182,7 +289,27 @@ export function createPetRaidView(ctx) {
         const p = myParty();
         const m = myMember();
         if (!p || p.status !== 'open' || !m) { ctx.render(); return; }
-        await tx(p.id, (cur) => joinRaidParty(cur, { member: m, max: maxParty(), now: ctx.now() }));
+        // 더 데려가던 펫은 그대로 데려가요(새로 고른 펫과 같은 펫만 빼요).
+        const extras = extraMembers(myExtras(p).map((x) => x.species), m.species);
+        await tx(p.id, (cur) => joinRaidParty(cur, { member: m, extras, max: maxParty(), maxExtra: raidCfg().extraMax, now: ctx.now() }));
+        ctx.render();
+    }
+
+    /** 내 펫을 더 데려가거나(한 마리에 extraFee 봉, 출발할 때 내요) 다시 빼요. 바꾸면 내 준비가 풀려요. */
+    async function toggleExtra(species) {
+        const p = myParty();
+        const m = myMember();
+        const cfg = raidCfg();
+        if (!p || p.status !== 'open' || !m) return;
+        const cur = myExtras(p).map((x) => x.species);
+        const has = cur.includes(species);
+        const want = has ? cur.filter((x) => x !== species) : cur.concat(species);
+        if (!has) {
+            if (want.length > cfg.extraMax) { deps.toast(`펫은 ${cfg.extraMax}마리까지 더 데려갈 수 있어요.`); return; }
+            if (!ctx.free() && myBong() < cfg.extraFee * want.length) { deps.toast(`봉이 모자라요. (${deps.bong(cfg.extraFee * want.length)} 필요)`); return; }
+        }
+        const extras = extraMembers(want, m.species);
+        await tx(p.id, (c) => joinRaidParty(c, { member: m, extras, max: maxParty(), maxExtra: cfg.extraMax, now: ctx.now() }));
         ctx.render();
     }
 
@@ -220,18 +347,21 @@ export function createPetRaidView(ctx) {
         const first = rewardBox(box(), run);
         if (!first.ok) return null;
         const before = petBoxToDoc(box());
-        const bong = first.gain;
+        // 더 데려간 펫 값은 보상과 함께 계산해요(가진 봉보다 많이 내지는 않아요).
+        const fee = ctx.free() ? 0 : Math.max(0, Math.min(first.res.fee || 0, myBong() + first.gain));
+        const bong = first.gain - fee;
         st.pet = petBoxToDoc(first.box);
-        if (bong > 0) deps.applyBong(bong);
+        if (bong) deps.applyBong(bong);
         const opts = {
             ...(bong > 0 ? { maxBongIncrease: bong } : {}),
+            ...(bong < 0 ? { allowBongDecrease: true, maxBongDecrease: -bong } : {}),
             operationLabel: `펫 탐험 ${run.stage}스테이지 보상`,
             quietFail: true,
             // 서버의 최신 펫 상자에 보상을 다시 적용해요(이미 받았으면 다시 주지 않아요).
             petMutator: (serverPet) => {
                 const r = rewardBox(sanitizePetBox(serverPet), run);
                 if (!r.ok) return r;
-                if (r.gain !== bong) return { ok: false, error: 'changed' };
+                if (r.gain !== first.gain) return { ok: false, error: 'changed' };
                 return { ok: true, pet: petBoxToDoc(r.box) };
             },
         };
@@ -241,27 +371,39 @@ export function createPetRaidView(ctx) {
             saved = await deps.save(opts);
         }
         if (!saved) {
-            if (deps.state() === st) { st.pet = before; if (bong > 0) deps.applyBong(-bong); }
+            if (deps.state() === st) { st.pet = before; if (bong) deps.applyBong(-bong); }
             deps.toast('보상을 저장하지 못했어요. 탐험 화면을 다시 열면 받을 수 있어요.');
             shown.delete(run.id);
+            blockedUntil.set(run.id, Date.now() + 60000);
             return null;
         }
-        return { ...first.res, bong, levelUps: first.levelUps };
+        return { ...first.res, bong: first.gain, fee, levelUps: first.levelUps };
     }
 
     /** 새로 출발한(아직 못 본) 내 전투가 있으면 연출을 틀고 보상을 받아요. */
     async function maybePlay() {
         if (playing || !ctx.isRaidTab()) return;
-        const run = pendingRun();
-        if (!run || shown.has(run.id)) return;
-        playing = run.id;
-        shown.add(run.id);
-        const sim = replayRaidRun(run);
+        const first = pendingRun();
+        if (!first || shown.has(first.id) || (blockedUntil.get(first.id) || 0) > Date.now()) return;
+        playing = first.id;
+        shown.add(first.id);
+        loadBank();
+        let done = null;
         try {
-            await playBattle(run, sim);
+            // 퀴즈가 있는 전투는 퀴즈마다 멈췄다가, 답이 모이면 이어서 보여 줘요.
+            done = await playBattle(first, replayRaidRun(first));
         } catch (e) {
             console.warn('petRaid battle', e);
         }
+        if (!done || done.sim.pending) {
+            // 전투를 끝까지 못 봤어요(방이 사라졌거나 연결이 끊김). 조금 뒤 탐험 화면에서 다시 볼 수 있어요.
+            shown.delete(first.id);
+            blockedUntil.set(first.id, Date.now() + 60000);
+            playing = '';
+            ctx.render();
+            return;
+        }
+        const { run, sim } = done;
         const reward = await claim(run);
         lastResult = { run, sim, reward };
         playing = '';
@@ -277,6 +419,10 @@ export function createPetRaidView(ctx) {
         return petImageUrl(sp, Number(st) || 1);
     }
 
+    /**
+     * 전투를 보여 줘요. 퀴즈를 기다리는 전투(sim.pending)면 거기서 OX 퀴즈를 내고, 답이 모이면 이어서 보여 줘요.
+     * @returns {Promise<{ run, sim } | null>} 끝까지 본 전투(방이 사라져 못 봤으면 null)
+     */
     async function playBattle(run, sim) {
         // 전투는 화면 전체를 덮어요(되는 기기에서는 진짜 전체 화면으로 바꿔요).
         const host = document.body;
@@ -297,13 +443,13 @@ export function createPetRaidView(ctx) {
             <div class="raid-fx-boss"><img src="${bossArtUrl(run.boss.art)}" alt="" draggable="false"></div>
             <div class="raid-fx-layer" aria-hidden="true"></div>
             <div class="raid-fx-team">${run.members.map((m) => `
-                <span class="raid-fx-pet type-${m.type}" data-id="${esc(m.id)}" style="--c:${TYPE_COLOR[m.type]}">
+                <span class="raid-fx-pet type-${m.type}${m.owner ? ' is-extra' : ''}" data-id="${esc(m.id)}" style="--c:${TYPE_COLOR[m.type]}">
                     ${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, eager: true })}
                     <b>${esc(m.name)}</b>
                     <em data-dmg></em>
                 </span>`).join('')}</div>
             <div class="raid-fx-meter" aria-label="체력과 데미지">${run.members.map((m) => `
-                <p class="raid-fx-mrow${m.id === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.name)}</b><span class="raid-fx-mbar"><i style="width:100%"></i><em>${raidPetStats(m.power).hp}</em></span><small title="입힌 데미지">⚔️<u data-dealt>0</u></small><small title="막은 데미지">🛡️<u data-blocked>0</u></small></p>`).join('')}</div>
+                <p class="raid-fx-mrow${raidOwner(m) === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.owner ? `${m.name}·${m.petName}` : m.name)}</b><span class="raid-fx-mbar"><i style="width:100%"></i><em>${raidPetStats(m.power).hp}</em></span><small title="입힌 데미지">⚔️<u data-dealt>0</u></small><small title="막은 데미지">🛡️<u data-blocked>0</u></small></p>`).join('')}</div>
             <p class="raid-fx-phase"></p>
             <div class="raid-fx-feed" aria-hidden="true"></div>
             <p class="raid-fx-banner" aria-live="polite"></p>`;
@@ -394,17 +540,185 @@ export function createPetRaidView(ctx) {
             while (feed.children.length > 4) feed.lastChild.remove();
         };
 
+        /** 지금까지의 전투 결과대로 체력·미터기를 맞춰요(건너뛰었을 때·퀴즈 앞에서). */
+        const syncAll = () => {
+            const left = {};
+            run.members.forEach((m) => { left[m.id] = maxHpOf[m.id]; });
+            sim.rounds.forEach((rd) => rd.boss.forEach((h) => { left[h.target] = h.faint ? 0 : left[h.target] - h.dmg; }));
+            run.members.forEach((m) => setMemberHp(m.id, left[m.id]));
+            // 미터기도 전투 결과 합계로 맞춰요.
+            run.members.forEach((m) => { total[m.id] = (sim.dealt && sim.dealt[m.id]) || 0; saved[m.id] = (sim.blocked && sim.blocked[m.id]) || 0; setMeter(m.id); const pe = petEl(m.id); const sum = pe && pe.querySelector('[data-dmg]'); if (sum) sum.textContent = total[m.id].toLocaleString(); });
+            setHp(sim.bossHp);
+            run.members.forEach((m) => { const pe = petEl(m.id); if (pe && !sim.alive.includes(m.id)) pe.classList.add('is-faint'); });
+        };
+
+        /** 이 구간(rounds)을 보여 주는 데 걸리는 시간(어림). 퀴즈 마감 시간을 기기마다 비슷하게 맞추려고 써요. */
+        const estMs = (rounds) => rounds.reduce((t, rd) => {
+            if (rd.quiz !== undefined) return t + 2700;
+            const gap = Math.max(130, Math.min(220, 1900 / Math.max(1, rd.hits.length)));
+            return t + rd.hits.length * gap + 420 + (rd.boss.length ? 1090 : 0);
+        }, 0);
+
+        /** 퀴즈 결과: 합동 필살기(성공) 또는 보스 필살기(실패) */
+        const playUlt = async (round) => {
+            const tally = (run.log && run.log[round.quiz]) || null;
+            const info = tally ? `정답은 ${tally.a === 'X' ? '❌' : '⭕'} · ${tally.t}명 중 ${tally.r}명 정답` : '';
+            const bc = center(bossEl);
+            if (round.ok) {
+                phase.textContent = `퀴즈 성공! ${info}`;
+                phase.className = 'raid-fx-phase is-team';
+                await say('⭕ 합동 필살기!', 'is-win', 1100);
+                if (skipped) return;
+                round.hits.forEach((h) => pop(petEl(h.by), 'is-attack', 420));
+                const beam = document.createElement('i');
+                beam.className = 'raid-fx-ult';
+                beam.style.left = `${bc.x}px`;
+                beam.style.top = `${bc.y}px`;
+                layer.appendChild(beam);
+                setTimeout(() => beam.remove(), 900);
+                await pause(420);
+                const sum = round.hits.reduce((t, h) => t + h.dmg, 0);
+                round.hits.forEach((h) => { total[h.by] = (total[h.by] || 0) + h.dmg; setMeter(h.by); const pe = petEl(h.by); const em = pe && pe.querySelector('[data-dmg]'); if (em) em.textContent = total[h.by].toLocaleString(); });
+                setHp(round.bossHp);
+                pop(bossEl, 'is-hit-crit', 420);
+                pop(el, 'is-shake', 320);
+                float(`💥${sum.toLocaleString()}`, bc.x, bc.y - 40, 'is-crit', '합동 필살기');
+                log('합동 필살기', sum.toLocaleString(), 'is-crit');
+                try { if (navigator.vibrate) navigator.vibrate([30, 20, 30, 20, 90]); } catch (_) { /* 진동 없는 기기 */ }
+                await pause(1100);
+                return;
+            }
+            phase.textContent = `퀴즈 실패… ${info}`;
+            phase.className = 'raid-fx-phase is-boss';
+            await say(`❌ ${run.boss.name}의 필살기!`, 'is-lose', 1100);
+            if (skipped) return;
+            pop(bossEl, 'is-windup', 380);
+            await pause(360);
+            pop(bossEl, 'is-strike', 520);
+            await pause(170);
+            if (skipped) return;
+            const red = document.createElement('i');
+            red.className = 'raid-fx-red';
+            el.appendChild(red);
+            setTimeout(() => red.remove(), 620);
+            const wave = document.createElement('i');
+            wave.className = 'raid-fx-wave';
+            wave.style.left = `${bc.x}px`;
+            wave.style.top = `${bc.y}px`;
+            layer.appendChild(wave);
+            setTimeout(() => wave.remove(), 600);
+            pop(el, 'is-quake', 420);
+            try { if (navigator.vibrate) navigator.vibrate([60, 30, 120]); } catch (_) { /* 진동 없는 기기 */ }
+            round.boss.forEach((h) => {
+                const pe = petEl(h.target);
+                if (!pe) return;
+                const pc = center(pe);
+                pop(pe, 'is-hurt', 460);
+                setMemberHp(h.target, hpOf[h.target] - h.dmg);
+                float(`-${h.dmg.toLocaleString()}`, pc.x, pc.y - 30, 'is-hurt is-big');
+                if (h.faint) { pe.classList.add('is-faint'); log(nameOf[h.target] || '', '쓰러짐', 'is-hurt'); }
+            });
+            log(`${run.boss.name} 필살기`, '전체', 'is-hurt');
+            await pause(900);
+        };
+
+        /**
+         * OX 퀴즈를 내고 결과를 기다려요. 모두 답하면 바로, 아니면 시간이 다 된 뒤(답하지 않은 사람은 틀린 것으로) 마감해요.
+         * @returns {Promise<object|null>} 퀴즈가 마감된 전투 기록(방이 사라졌으면 null)
+         */
+        const askQuiz = async (k, deadline) => {
+            const owners = raidOwners(run.members);
+            const rank = Math.max(0, owners.slice().sort().indexOf(me()));
+            const closeAt = deadline + 2500 + rank * 1500;
+            const total0 = Math.max(1000, deadline - Date.now());
+            const panel = document.createElement('div');
+            panel.className = 'raid-fx-quiz';
+            panel.innerHTML = `<p class="raid-fx-quiz-tag">OX 퀴즈 · ${owners.length}명 중 ${Math.ceil(owners.length / 2)}명 이상 맞히면 합동 필살기!</p>
+                <p class="raid-fx-quiz-q"></p>
+                <div class="raid-fx-quiz-btns"><button type="button" class="is-o" data-a="O" aria-label="O">⭕</button><button type="button" class="is-x" data-a="X" aria-label="X">❌</button></div>
+                <span class="raid-fx-quiz-time" aria-hidden="true"><i></i></span>
+                <p class="raid-fx-quiz-state" aria-live="polite"></p>`;
+            el.appendChild(panel);
+            const qEl = panel.querySelector('.raid-fx-quiz-q');
+            const stEl = panel.querySelector('.raid-fx-quiz-state');
+            const bar = panel.querySelector('.raid-fx-quiz-time i');
+            const btns = Array.from(panel.querySelectorAll('button'));
+            let mine = '';
+            let sending = false;
+            let failed = false;
+            let closedAt = 0;
+            let goneAt = 0;
+            const partyOf = () => parties.find((x) => x.run && x.run.id === run.id) || null;
+            btns.forEach((b) => b.addEventListener('click', () => {
+                const pr = partyOf();
+                if (mine || sending || !pr || Date.now() > deadline) return;
+                const answer = b.getAttribute('data-a');
+                sending = true;
+                failed = false;
+                b.classList.add('is-on');
+                const next = randQuiz();
+                deps.raidTx(pr.id, (cur) => answerRaidQuiz(cur, { id: me(), runId: run.id, n: k, answer, next, now: ctx.now() }))
+                    .then((r) => { if (r && (r.ok || r.error === 'answered')) mine = answer; else b.classList.remove('is-on'); })
+                    .catch((e) => { console.warn('petRaid quiz', e); failed = true; b.classList.remove('is-on'); })
+                    .finally(() => { sending = false; });
+            }));
+            try {
+                for (;;) {
+                    if (!unsub) return null;
+                    const pr = partyOf();
+                    const cur = pr ? pr.run : null;
+                    const t = Date.now();
+                    if (!cur) {
+                        if (!goneAt) goneAt = t;
+                        if (t - goneAt > 6000) return null;
+                    } else {
+                        goneAt = 0;
+                        if (cur.results.length > k || !cur.pending) return cur;
+                        if (cur.quiz) {
+                            qEl.textContent = cur.quiz.q;
+                            if (cur.quiz.answers[me()]) mine = cur.quiz.answers[me()];
+                            const n = Object.keys(cur.quiz.answers).length;
+                            const late = t > deadline;
+                            btns.forEach((b) => { b.disabled = !!mine || sending || late; b.classList.toggle('is-on', b.getAttribute('data-a') === mine || (sending && b.classList.contains('is-on'))); });
+                            stEl.textContent = failed ? '답을 보내지 못했어요. 다시 눌러 봐요.' : mine ? `답했어요! 친구들을 기다려요 (${n}/${owners.length}명)` : late ? '시간이 다 됐어요!' : `${Math.max(0, Math.ceil((deadline - t) / 1000))}초 안에 골라요 (${n}/${owners.length}명 답함)`;
+                            bar.style.width = `${Math.max(0, Math.min(100, ((deadline - t) / total0) * 100))}%`;
+                        }
+                        // 시간이 다 됐는데 아직 안 끝났으면 내가 마감해요(실패하면 1분 뒤에 다시 해 봐요).
+                        if (t > closeAt && (!closedAt || t - closedAt > 60000)) {
+                            closedAt = t;
+                            const next = randQuiz();
+                            deps.raidTx(pr.id, (c) => closeRaidQuiz(c, { id: me(), runId: run.id, n: k, next, now: ctx.now() })).catch((e) => { console.warn('petRaid quiz close', e); });
+                        }
+                    }
+                    await nextSnap(250);
+                }
+            } finally {
+                panel.remove();
+            }
+        };
+
         try {
             await pause(250);
             await say(`${run.members.length}마리 출격!`, '', 900);
             let hp = sim.bossMaxHp;
             let slot = 0;
             let watching = false;
-            for (let r = 0; r < sim.rounds.length; r += 1) {
+            let from = 0;
+            let turn = 0;
+            let segStart = Date.now();
+            let lost = false;
+            for (;;) {
+            for (let r = from; r < sim.rounds.length; r += 1) {
                 const round = sim.rounds[r];
                 if (skipped) break;
+                if (round.quiz !== undefined) {
+                    await playUlt(round);
+                    hp = round.bossHp;
+                    continue;
+                }
+                turn += 1;
                 // 우리 팀 공격: 차례로 속성 빛줄기를 쏴요. 숫자는 자리를 바꿔 가며 띄워 겹치지 않게 해요.
-                phase.textContent = `${r + 1}턴 · 우리 팀 공격!`;
+                phase.textContent = `${turn}턴 · 우리 팀 공격!`;
                 phase.className = 'raid-fx-phase is-team';
                 const gap = Math.max(130, Math.min(220, 1900 / round.hits.length));
                 const bc = center(bossEl);
@@ -562,18 +876,25 @@ export function createPetRaidView(ctx) {
                     if (watching && !skipped) { phase.textContent = '내 펫이 쓰러졌어요 · 끝까지 응원해요!'; phase.className = 'raid-fx-phase is-boss'; await pause(500); }
                 }
             }
-            // 건너뛰었으면 체력도 마지막 값으로 맞춰요.
-            {
-                const left = {};
-                run.members.forEach((m) => { left[m.id] = maxHpOf[m.id]; });
-                sim.rounds.forEach((rd) => rd.boss.forEach((h) => { left[h.target] = h.faint ? 0 : left[h.target] - h.dmg; }));
-                run.members.forEach((m) => setMemberHp(m.id, left[m.id]));
-                // 미터기도 전투 결과 합계로 맞춰요.
-                run.members.forEach((m) => { total[m.id] = (sim.dealt && sim.dealt[m.id]) || 0; saved[m.id] = (sim.blocked && sim.blocked[m.id]) || 0; setMeter(m.id); const pe = petEl(m.id); const sum = pe && pe.querySelector('[data-dmg]'); if (sum) sum.textContent = total[m.id].toLocaleString(); });
+            if (!sim.pending) break;
+            // 퀴즈 차례: 지금까지의 모습으로 맞추고 문제를 내요.
+            syncAll();
+            hp = sim.bossHp;
+            turn = sim.turns;
+            skipped = false;
+            phase.textContent = `${sim.turns}턴 끝 · OX 퀴즈!`;
+            phase.className = 'raid-fx-phase is-team';
+            const k = sim.rounds.filter((rd) => rd.quiz !== undefined).length;
+            const deadline = Math.max(Date.now() + 4000, segStart + (from === 0 ? 1150 : 0) + estMs(sim.rounds.slice(from)) + raidCfg().quizSec * 1000);
+            const next = await askQuiz(k, deadline);
+            if (!next) { lost = true; break; }
+            from = sim.rounds.length;
+            run = next;
+            sim = replayRaidRun(next);
+            segStart = Date.now();
             }
-            // 건너뛰었으면 마지막 모습으로 맞춰요.
-            setHp(sim.bossHp);
-            run.members.forEach((m) => { const pe = petEl(m.id); if (pe && !sim.alive.includes(m.id)) pe.classList.add('is-faint'); });
+            if (lost) return null;
+            syncAll();
             skipped = false;
             if (sim.win) {
                 bossEl.classList.add('is-down');
@@ -591,6 +912,7 @@ export function createPetRaidView(ctx) {
                 el.classList.add('is-lose');
                 await say(sim.alive.length ? '시간 초과…' : '모두 쓰러졌어요…', 'is-lose', reduce ? 600 : 1500);
             }
+            return { run, sim };
         } finally {
             try { if (document.fullscreenElement === wrap && document.exitFullscreen) await document.exitFullscreen(); } catch (_) { /* 무시 */ }
             wrap.remove();
@@ -603,11 +925,11 @@ export function createPetRaidView(ctx) {
 
     function memberChip(m, bossType, leaderId, showReady = false) {
         const mult = raidTypeMult(m.type, bossType);
-        return `<div class="raid-member type-${m.type}${m.id === me() ? ' is-me' : ''}">
+        return `<div class="raid-member type-${m.type}${raidOwner(m) === me() ? ' is-me' : ''}${m.owner ? ' is-extra' : ''}">
             <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny })}</span>
-            <span class="raid-member-text"><b>${m.id === leaderId ? '👑 ' : ''}${esc(m.name)}</b><i>${esc(m.petName)} · ${m.power}</i></span>
+            <span class="raid-member-text"><b>${m.id === leaderId ? '👑 ' : ''}${m.owner ? '＋ ' : ''}${esc(m.name)}</b><i>${esc(m.petName)} · ${m.power}</i></span>
             ${mult > 1 ? '<em class="raid-eff is-good">유리 ▲</em>' : mult < 1 ? '<em class="raid-eff is-bad">불리 ▼</em>' : ''}
-            ${showReady ? `<em class="raid-ready${m.ready ? ' is-on' : ''}">${m.ready ? '✅' : '⏳'}</em>` : ''}
+            ${showReady && !m.owner ? `<em class="raid-ready${m.ready ? ' is-on' : ''}">${m.ready ? '✅' : '⏳'}</em>` : ''}
         </div>`;
     }
 
@@ -628,7 +950,7 @@ export function createPetRaidView(ctx) {
     function resultHtml() {
         const { run, sim, reward } = lastResult;
         const top = Object.entries(sim.dealt).sort((a, b) => b[1] - a[1]).slice(0, 3);
-        const nameOf = (id) => { const m = run.members.find((x) => x.id === id); return m ? m.name : id; };
+        const nameOf = (id) => { const m = run.members.find((x) => x.id === id); return m ? (m.owner ? `${m.name}·${m.petName}` : m.name) : id; };
         let line = '';
         if (!reward) line = '보상은 이미 받았어요.';
         else if (!run.win) line = reward.exp > 0 ? `다음엔 친구를 더 모아 봐요! 대표 펫 경험치 +${reward.exp}` : '다음엔 친구를 더 모아 봐요!';
@@ -638,10 +960,14 @@ export function createPetRaidView(ctx) {
         else line = `보상 ${deps.bong(reward.bong)} · 대표 펫 경험치 +${reward.exp}`;
         const p = myParty();
         const leader = p && p.leaderId === me();
+        const quizzes = run.results || [];
+        const mineExtra = run.members.filter((m) => m.owner === me()).length;
         return `<div class="pet-card raid-result ${run.win ? 'is-win' : 'is-lose'}">
             <p class="raid-result-title">${run.win ? '🏆 탐험 성공!' : '💦 탐험 실패'}</p>
-            <p class="pet-lead">STAGE ${run.stage} · ${esc(run.boss.name)} · ${sim.rounds.length}턴${run.win ? '' : ` · 보스 체력 ${sim.bossHp.toLocaleString()} 남음`}</p>
+            <p class="pet-lead">STAGE ${run.stage} · ${esc(run.boss.name)} · ${sim.turns || sim.rounds.length}턴${run.win ? '' : ` · 보스 체력 ${sim.bossHp.toLocaleString()} 남음`}</p>
             <p class="raid-result-reward">${esc(line)}${reward && reward.levelUps ? ' · 레벨 업!' : ''}</p>
+            ${quizzes.length ? `<p class="pet-note">OX 퀴즈 ${quizzes.length}번 중 ${quizzes.filter(Boolean).length}번 성공 ${quizzes.map((ok) => (ok ? '⭕' : '❌')).join('')}</p>` : ''}
+            ${reward && mineExtra && !ctx.free() ? `<p class="pet-note">펫 ${mineExtra}마리를 더 데려가서 ${esc(deps.bong(reward.fee || 0))}을 냈어요.</p>` : ''}
             <div class="raid-mvp">${top.map(([id, dmg], i) => `<span>${['🥇', '🥈', '🥉'][i]} ${esc(nameOf(id))} <b>${dmg.toLocaleString()}</b></span>`).join('')}</div>
             <button type="button" class="pet-btn is-main" data-p="raid-again">${leader ? '같은 팀으로 다시 모으기' : '확인'}</button>
         </div>`;
@@ -671,8 +997,29 @@ export function createPetRaidView(ctx) {
             }).join('')}</div>`;
     }
 
+    /** 내 펫 더 데려가기: 한 마리에 extraFee 봉(출발할 때 내요), extraMax 마리까지 */
+    function extraHtml(p, cfg) {
+        if (cfg.extraMax < 1) return '';
+        const mine = myExtras(p).map((x) => x.species);
+        const list = spareSlots().map(memberAt).filter(Boolean);
+        if (!list.length && !mine.length) return '';
+        const bossType = cfg.stages[p.stage - 1].type;
+        const fee = ctx.free() ? '' : ` · 한 마리에 ${deps.bong(cfg.extraFee)}`;
+        return `<p class="pet-sub">내 펫 더 데려가기 <em>(${cfg.extraMax}마리까지${fee})</em></p>
+            <div class="raid-petpick">${list.map((m) => {
+                const on = mine.includes(m.species);
+                const mult = raidTypeMult(m.type, bossType);
+                return `<button type="button" class="raid-petpick-item type-${m.type}${on ? ' is-on' : ''}" data-p="raid-extra" data-species="${esc(m.species)}" aria-pressed="${on}">
+                    <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny })}</span>
+                    <b>${on ? '✓ ' : '＋ '}${esc(m.petName)}</b><i>전투력 ${m.power}${mult > 1 ? ' · 유리 ▲' : mult < 1 ? ' · 불리 ▼' : ''}</i>
+                </button>`;
+            }).join('')}</div>
+            ${ctx.free() ? '' : `<p class="pet-note">봉은 출발할 때 내요${mine.length ? ` (지금 ${deps.bong(cfg.extraFee * mine.length)})` : ''}. 출발하지 않으면 내지 않아요. 더 데려간 펫은 경험치를 받지 않아요.</p>`}`;
+    }
+
     function partyHtml(p, cfg) {
         const readyCount = p.members.filter((m) => m.ready).length;
+        const people = raidOwners(p.members).length;
         const iAmReady = p.members.some((m) => m.id === me() && m.ready);
         const leader = p.leaderId === me();
         const max = maxParty();
@@ -682,20 +1029,24 @@ export function createPetRaidView(ctx) {
         return `<div class="pet-card raid-party">
             ${bossCard(p.stage, cfg)}
             ${leader && !waiting ? `<label class="raid-stage-pick">스테이지 <select data-raid-stage>${stageOpts}</select></label>` : ''}
-            <p class="pet-sub">우리 팀 ${p.members.length} / ${max}명 · 전투력 합 ${total.toLocaleString()}</p>
+            <p class="pet-sub">우리 팀 ${people} / ${max}명${p.members.length > people ? ` · 펫 ${p.members.length}마리` : ''} · 전투력 합 ${total.toLocaleString()}</p>
             <div class="raid-members">${p.members.map((m) => memberChip(m, cfg.stages[p.stage - 1].type, p.leaderId, !waiting)).join('')}</div>
             ${waiting ? '' : petPickHtml(cfg.stages[p.stage - 1].type)}
-            <p class="pet-note">사람이 많을수록 유리해요. 한 명 늘 때마다 팀 공격력이 ${cfg.teamBonus}%씩 세져요. 전투는 자동이에요.</p>
-            ${waiting ? '<p class="pet-lead">전투가 끝났어요. 방장이 다시 모으면 또 갈 수 있어요.</p>'
-                : `<p class="pet-lead">${p.members.length >= cfg.minParty ? `모두 「준비」를 누르면 바로 출발해요! (${readyCount}/${p.members.length}명 준비)` : `${cfg.minParty}명이 모여야 출발할 수 있어요. 친구를 기다려요! (${readyCount}/${p.members.length}명 준비)`}</p>
+            ${waiting ? '' : extraHtml(p, cfg)}
+            <p class="pet-note">펫이 많을수록 유리해요. 한 마리 늘 때마다 팀 공격력이 ${cfg.teamBonus}%씩 세져요.${cfg.quizEvery ? ` ${cfg.quizEvery}턴마다 OX 퀴즈가 나와요. 반 이상이 맞히면 합동 필살기, 아니면 보스 필살기를 맞아요!` : ' 전투는 자동이에요.'}</p>
+            ${waiting ? `<p class="pet-lead">${p.run && p.run.pending ? '전투 중이에요.' : '전투가 끝났어요. 방장이 다시 모으면 또 갈 수 있어요.'}</p>`
+                : `<p class="pet-lead">${people >= cfg.minParty ? `모두 「준비」를 누르면 바로 출발해요! (${readyCount}/${people}명 준비)` : `${cfg.minParty}명이 모여야 출발할 수 있어요. 친구를 기다려요! (${readyCount}/${people}명 준비)`}</p>
+                    <p class="raid-clock" data-raid-clock hidden></p>
                     <button type="button" class="pet-btn ${iAmReady ? '' : 'is-main'}" data-p="raid-ready">${iAmReady ? '준비 취소' : '⚔️ 준비!'}</button>`}
-            ${leader && waiting ? '<button type="button" class="pet-btn is-main" data-p="raid-again">같은 팀으로 다시 모으기</button>' : ''}
+            ${leader && waiting && !(p.run && p.run.pending) ? '<button type="button" class="pet-btn is-main" data-p="raid-again">같은 팀으로 다시 모으기</button>' : ''}
             <button type="button" class="pet-link" data-p="raid-leave">${leader ? '방 없애기' : '팀에서 나가기'}</button>
         </div>`;
     }
 
     function lobbyHtml(cfg) {
-        const open = liveParties().filter((p) => p.status === 'open' && p.members.length > 0);
+        // 아무도 오지 않은 채 시간이 지난 방은 목록에서 빼요(방장 화면이 꺼져 있어도 안 보이게).
+        const lonely = (p) => cfg.soloSec > 0 && p.soloAt > 0 && ctx.now() - p.soloAt > (cfg.soloSec + 30) * 1000;
+        const open = liveParties().filter((p) => p.status === 'open' && p.members.length > 0 && !lonely(p));
         const un = unlocked();
         const sel = Math.min(pickedStage || un, un);
         const m = myMember();
@@ -722,8 +1073,8 @@ export function createPetRaidView(ctx) {
         <div class="pet-card">
             <p class="pet-sub">모이는 중인 탐험 방</p>
             ${open.length ? open.map((p) => `<div class="raid-room type-${cfg.stages[p.stage - 1].type}">
-                <span class="raid-room-text"><b>${esc(p.leaderName)}의 탐험대</b><i>STAGE ${p.stage} · ${esc(cfg.stages[p.stage - 1].name)} · ${p.members.length}/${maxParty()}명</i></span>
-                <button type="button" class="pet-btn is-food" data-p="raid-join" data-party="${esc(p.id)}"${m && p.members.length < maxParty() ? '' : ' disabled'}>함께 가기</button>
+                <span class="raid-room-text"><b>${esc(p.leaderName)}의 탐험대</b><i>STAGE ${p.stage} · ${esc(cfg.stages[p.stage - 1].name)} · ${raidOwners(p.members).length}/${maxParty()}명</i></span>
+                <button type="button" class="pet-btn is-food" data-p="raid-join" data-party="${esc(p.id)}"${m && raidOwners(p.members).length < maxParty() ? '' : ' disabled'}>함께 가기</button>
             </div>`).join('') : '<p class="pet-note">아직 모이는 방이 없어요. 방을 만들고 친구를 불러 봐요!</p>'}
         </div>`;
     }
@@ -767,12 +1118,18 @@ export function createPetRaidView(ctx) {
                 <label class="pet-set-row"><span>하루 보상 횟수</span>${n('dailyRewards', cfg.dailyRewards, 0, 99)} 번 (도전은 무제한)</label>
                 <label class="pet-set-row"><span>출발 최소</span>${n('minParty', cfg.minParty, 1, RAID_MAX_PARTY)} 명</label>
                 <label class="pet-set-row"><span>한 팀 최대</span>${n('maxParty', cfg.maxParty, 0, RAID_MAX_PARTY)} 명 (0 = 학급 인원, 최대 13)</label>
-                <label class="pet-set-row"><span>인원 보너스</span>한 명 늘 때마다 공격력 +${n('teamBonus', cfg.teamBonus, 0, 50)} %</label>
+                <label class="pet-set-row"><span>인원 보너스</span>펫 한 마리 늘 때마다 공격력 +${n('teamBonus', cfg.teamBonus, 0, 50)} %</label>
+                <label class="pet-set-row"><span>펫 더 데려가기</span>한 사람 ${n('extraMax', cfg.extraMax, 0, 2)} 마리까지 (0 = 끔), 한 마리에 ${n('extraFee', cfg.extraFee, 0, 100)} 봉</label>
+                <label class="pet-set-row"><span>빈 방 닫기</span>아무도 오지 않으면 ${n('soloSec', cfg.soloSec, 0, 600)} 초 뒤 (0 = 끔)</label>
+                <label class="pet-set-row"><span>늦은 친구</span>혼자 준비하지 않으면 ${n('idleSec', cfg.idleSec, 0, 120)} 초 뒤 내보내기 (0 = 끔)</label>
+                <label class="pet-set-row"><span>OX 퀴즈</span>${n('quizEvery', cfg.quizEvery, 0, 9)} 턴마다 (0 = 끔), 푸는 시간 ${n('quizSec', cfg.quizSec, 5, 60)} 초</label>
+                <label class="pet-set-row"><span>필살기</span>합동 필살기 공격력의 ${n('teamUlt', cfg.teamUlt, 0, 1000)} %, 보스 필살기 공격력의 ${n('bossUlt', cfg.bossUlt, 0, 500)} %</label>
                 <div class="raid-admin-table"><table>
                     <thead><tr><th>#</th><th>보스 이름</th><th>속성</th><th>체력</th><th>공격력</th><th>전체 공격 %</th><th>첫 보상</th><th>반복 보상</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>
                 <p class="pet-note">펫 한 마리: 체력 200 + 전투력×2, 공격력 20 + 전투력×0.5 (전투력은 최대 1000). 전투는 최대 18턴이에요.</p>
+                <p class="pet-note">OX 퀴즈 문제는 「OX 퀴즈」에 올려 둔 문제에서 무작위로 나와요. 참가자의 반 이상이 맞히면 살아 있는 펫이 모두 합동 필살기를 쓰고, 아니면 모두가 보스 필살기를 맞아요(막기 기술이 안 통해요).</p>
                 <p class="pet-note">보스는 턴마다 「전체 공격 %」 확률로 모두에게 공격력의 절반을, 아니면 한 마리에게 공격력의 1.5배를 줘요. 펫은 배운 기술(Lv.1·10·20, 1배·1.3배·1.7배) 중 하나를 무작위로 써요.</p>
                 <div class="pet-foods">
                     <button type="button" class="pet-btn is-main" data-p="raid-settings-save">탐험 설정 저장</button>
@@ -799,6 +1156,14 @@ export function createPetRaidView(ctx) {
             minParty: val('minParty'),
             maxParty: val('maxParty'),
             teamBonus: val('teamBonus'),
+            extraMax: val('extraMax'),
+            extraFee: val('extraFee'),
+            soloSec: val('soloSec'),
+            idleSec: val('idleSec'),
+            quizEvery: val('quizEvery'),
+            quizSec: val('quizSec'),
+            teamUlt: val('teamUlt'),
+            bossUlt: val('bossUlt'),
             stages: Array.from({ length: RAID_STAGE_COUNT }, (_, i) => ({ name: val(`name-${i}`), type: val(`type-${i}`), hp: val(`hp-${i}`), atk: val(`atk-${i}`), aoe: val(`aoe-${i}`), first: val(`first-${i}`), repeat: val(`repeat-${i}`) })),
         });
         try {
@@ -819,6 +1184,7 @@ export function createPetRaidView(ctx) {
         if (act === 'raid-leave') { void leave(); return true; }
         if (act === 'raid-ready') { void ready(); return true; }
         if (act === 'raid-pet') { void swapPet(Number(t.getAttribute('data-slot')) || 0); return true; }
+        if (act === 'raid-extra') { void toggleExtra(String(t.getAttribute('data-species') || '')); return true; }
         if (act === 'raid-again') { void again(); return true; }
         if (act === 'raid-settings-save') { void saveSettings(false); return true; }
         if (act === 'raid-settings-reset') { void saveSettings(true); return true; }

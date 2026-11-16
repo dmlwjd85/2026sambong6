@@ -274,3 +274,165 @@ describe('막기 기술과 격투 펫', () => {
         });
     });
 });
+
+describe('펫 더 데려가기 · 방 정리 · OX 퀴즈', () => {
+    const cfg = { minParty: 2 };
+    const room = () => {
+        let p = R.createRaidParty({ member: member(0), stage: 1, now: T0 }).party;
+        p = R.joinRaidParty(p, { member: member(1), now: T0 + 1000 }).party;
+        return p;
+    };
+    const readyAll = (p, now = T0 + 5000) => R.raidOwners(p.members).reduce((acc, id) => R.readyRaidParty(acc, { id, now }).party, p);
+
+    it('내 펫을 2마리까지 더 데려가요(같은 종은 한 번만). 준비는 주인만 하면 돼요', () => {
+        let p = room();
+        const r = R.joinRaidParty(p, { member: member(1), extras: [member(5, 200, 'zapowl'), member(6, 200, 'zapowl'), member(7, 200, 'snowbun'), member(8, 200, 'pebbletle')], maxExtra: 2, now: T0 + 2000 });
+        assert.equal(r.ok, true);
+        p = r.party;
+        assert.deepEqual(p.members.map((m) => m.id), ['1', '2', '2~1', '2~2']);
+        assert.deepEqual(p.members.slice(2).map((m) => [m.owner, m.species, m.name]), [['2', 'zapowl', '학생2'], ['2', 'snowbun', '학생2']]);
+        assert.deepEqual(R.raidOwners(p.members), ['1', '2']);
+        // 설정에서 끄면 못 데려가요
+        assert.equal(R.joinRaidParty(room(), { member: member(1), extras: [member(5, 200, 'zapowl')], maxExtra: 0, now: T0 }).party.members.length, 2);
+        p = readyAll(p);
+        assert.equal(R.isRaidAllReady(p), true);
+        // 펫을 바꾸면 내 준비가 풀리고, 더 데려온 펫을 빼면 사라져요
+        p = R.joinRaidParty(p, { member: member(1), extras: [], maxExtra: 2, now: T0 + 6000 }).party;
+        assert.deepEqual(p.members.map((m) => m.id), ['1', '2']);
+        assert.deepEqual(R.raidUnready(p), ['2']);
+        // 나가면 내 펫이 모두 나가요
+        p = R.joinRaidParty(p, { member: member(1), extras: [member(5, 200, 'zapowl')], maxExtra: 2, now: T0 + 7000 }).party;
+        assert.deepEqual(R.leaveRaidParty(p, { id: '2', now: T0 + 8000 }).party.members.map((m) => m.id), ['1']);
+    });
+
+    it('펫이 13마리로 꽉 차도 새 친구는 들어와요(더 데려온 펫이 비켜 줘요)', () => {
+        let p = R.createRaidParty({ member: member(0), stage: 1, now: T0 }).party;
+        p = R.joinRaidParty(p, { member: member(0), extras: [member(20, 100, 'zapowl'), member(21, 100, 'snowbun')], maxExtra: 2, now: T0 }).party;
+        for (let i = 1; i <= 10; i += 1) p = R.joinRaidParty(p, { member: member(i), now: T0 }).party;
+        assert.equal(p.members.length, 13);
+        const r = R.joinRaidParty(p, { member: member(11), now: T0 });
+        assert.equal(r.ok, true);
+        assert.equal(r.party.members.length, 13);
+        assert.equal(r.party.members.filter((m) => m.owner).length, 1);
+        assert.equal(R.joinRaidParty(r.party, { member: member(1), extras: [member(22, 100, 'zapowl'), member(23, 100, 'snowbun')], maxExtra: 2, now: T0 }).error, 'full_pets');
+    });
+
+    it('더 데려간 펫 값은 출발한 전투에서 한 마리에 2봉씩이에요', () => {
+        let p = R.joinRaidParty(room(), { member: member(1), extras: [member(5, 200, 'zapowl'), member(7, 200, 'snowbun')], maxExtra: 2, now: T0 }).party;
+        p = readyAll(p);
+        const st = R.startRaid(p, { id: '1', settings: { ...cfg, quizEvery: 0 }, seed: 5, now: T0 + 9000 });
+        assert.equal(st.ok, true);
+        assert.equal(st.party.run.extraFee, 2);
+        assert.equal(st.party.run.pending, false);
+        assert.equal(R.claimRaidReward(null, st.party.run, { id: '2', today: DAY }).fee, 4);
+        assert.equal(R.claimRaidReward(null, st.party.run, { id: '1', today: DAY }).fee, 0);
+    });
+
+    it('혼자 있는 방은 soloAt 이 적히고, 친구가 오면 지워져요', () => {
+        let p = R.createRaidParty({ member: member(0), stage: 1, now: T0 }).party;
+        assert.equal(p.soloAt, T0);
+        p = R.setRaidStage(p, { id: '1', stage: 1, now: T0 + 30000 }).party;
+        assert.equal(p.soloAt, T0, '계속 혼자면 처음 때를 지켜요');
+        p = R.joinRaidParty(p, { member: member(1), now: T0 + 40000 }).party;
+        assert.equal(p.soloAt, 0);
+        p = R.leaveRaidParty(p, { id: '2', now: T0 + 50000 }).party;
+        assert.equal(p.soloAt, T0 + 50000);
+    });
+
+    it('한 명만 준비하지 않으면 waitId 가 적히고, 그 사람을 내보낼 수 있어요', () => {
+        let p = R.joinRaidParty(room(), { member: member(2), now: T0 }).party;
+        p = R.readyRaidParty(p, { id: '1', now: T0 + 1000 }).party;
+        assert.equal(p.waitId, '');
+        p = R.readyRaidParty(p, { id: '3', now: T0 + 2000 }).party;
+        assert.deepEqual([p.waitId, p.waitAt], ['2', T0 + 2000]);
+        // 펫을 바꿔도 기다린 시간은 그대로예요
+        p = R.joinRaidParty(p, { member: member(1, 500), now: T0 + 5000 }).party;
+        assert.deepEqual([p.waitId, p.waitAt], ['2', T0 + 2000]);
+        assert.equal(R.kickRaidIdle(p, { id: '2', waitId: '2', waitAt: p.waitAt }).ok, false);
+        assert.equal(R.kickRaidIdle(p, { id: '1', waitId: '2', waitAt: p.waitAt + 1 }).error, 'changed');
+        const k = R.kickRaidIdle(p, { id: '1', waitId: '2', waitAt: p.waitAt, now: T0 + 13000 });
+        assert.equal(k.ok, true);
+        assert.deepEqual(k.party.members.map((m) => m.id), ['1', '3']);
+        assert.equal(k.allReady, true);
+        assert.equal(R.startRaid(k.party, { id: '1', settings: cfg, seed: 3, now: T0 + 13000 }).ok, true);
+        // 방장이 준비하지 않으면 다음 사람이 방장이 돼요
+        let q = R.joinRaidParty(room(), { member: member(2), now: T0 }).party;
+        q = R.readyRaidParty(R.readyRaidParty(q, { id: '2', now: T0 }).party, { id: '3', now: T0 + 1 }).party;
+        const k2 = R.kickRaidIdle(q, { id: '3', waitId: '1', waitAt: q.waitAt, now: T0 + 12000 });
+        assert.deepEqual([k2.party.leaderId, k2.party.id, k2.party.members.length], ['2', '1', 2]);
+    });
+
+    it('5턴마다 퀴즈: 맞히면 합동 필살기, 틀리면 보스 필살기. 앞부분 전투는 그대로예요', () => {
+        const boss = { type: 'grass', hp: 5000000, atk: 30, aoe: 30 };
+        const base = (results) => R.simulateRaid(team(4, 400), boss, 77, { guard: true, quiz: { every: 5, results, teamUlt: 300, bossUlt: 120 } });
+        const a = base([]);
+        assert.equal(a.pending, true);
+        assert.equal(a.win, false);
+        assert.equal(a.rounds.length, 5);
+        const good = base([true]);
+        const badly = base([false]);
+        assert.deepEqual(good.rounds.slice(0, 5), a.rounds);
+        assert.deepEqual(badly.rounds.slice(0, 5), a.rounds);
+        assert.equal(good.rounds[5].quiz, 0);
+        assert.equal(good.rounds[5].ok, true);
+        assert.equal(good.rounds[5].hits.length, 4);
+        assert.ok(good.rounds[5].hits.every((h) => h.ult && h.dmg > 0));
+        assert.equal(badly.rounds[5].bossMove, 'ult');
+        assert.equal(badly.rounds[5].boss.length, 4);
+        assert.ok(good.rounds[5].bossHp < a.bossHp);
+        assert.equal(good.pending, true, '10턴에 또 내요');
+        const end = base([true, false, true]);
+        assert.equal(end.pending, false);
+        assert.equal(end.turns, R.RAID_MAX_ROUNDS);
+        assert.equal(end.rounds.filter((r) => r.quiz !== undefined).length, 3);
+        // 퀴즈가 없던 예전 전투는 그대로
+        assert.deepEqual(R.simulateRaid(team(4, 400), boss, 77, { guard: true }).rounds.slice(0, 5), a.rounds);
+    });
+
+    it('퀴즈: 참가자의 반 이상이 맞히면 성공이고, 모두 답하면 바로 다음으로 가요', () => {
+        const hard = { ...cfg, stages: [{ hp: 5000000, atk: 1 }] };
+        let p = R.joinRaidParty(room(), { member: member(2), now: T0 }).party;
+        p = R.joinRaidParty(p, { member: member(2), extras: [member(9, 100, 'zapowl')], maxExtra: 2, now: T0 }).party;
+        p = readyAll(p);
+        const st = R.startRaid(p, { id: '1', settings: hard, seed: 9, now: T0 + 9000, question: { q: '1+1=2', a: 'O' } });
+        p = st.party;
+        assert.equal(p.run.pending, true);
+        assert.deepEqual([p.run.quiz.n, p.run.quiz.q, p.run.quiz.a], [0, '1+1=2', 'O']);
+        assert.equal(R.claimRaidReward(null, p.run, { id: '1', today: DAY }).error, 'pending');
+        assert.equal(R.reopenRaidParty(p, { id: '1', now: T0 + 20000 }).error, 'fighting');
+        let r = R.answerRaidQuiz(p, { id: '1', runId: p.run.id, n: 0, answer: 'O' });
+        assert.deepEqual([r.ok, r.settled], [true, false]);
+        assert.equal(R.answerRaidQuiz(r.party, { id: '1', runId: p.run.id, n: 0, answer: 'X' }).error, 'answered');
+        assert.equal(R.answerRaidQuiz(r.party, { id: '9', runId: p.run.id, n: 0, answer: 'X' }).error, 'not_member');
+        r = R.answerRaidQuiz(r.party, { id: '2', runId: p.run.id, n: 0, answer: 'X' });
+        r = R.answerRaidQuiz(r.party, { id: '3', runId: p.run.id, n: 0, answer: 'O', next: { q: '고래는 물고기', a: 'X' } });
+        assert.deepEqual([r.settled, r.quizOk], [true, true]); // 3명 중 2명
+        assert.deepEqual(r.party.run.results, [true]);
+        assert.deepEqual(r.party.run.log, [{ r: 2, t: 3, a: 'O' }]);
+        assert.deepEqual([r.party.run.quiz.n, r.party.run.quiz.q, r.party.run.quiz.a], [1, '고래는 물고기', 'X']);
+        assert.equal(R.answerRaidQuiz(r.party, { id: '1', runId: p.run.id, n: 0, answer: 'O' }).error, 'quiz_closed');
+        // 시간이 다 되면 답하지 않은 사람은 틀린 것으로: 3명 중 1명 → 보스 필살기
+        r = R.answerRaidQuiz(r.party, { id: '1', runId: p.run.id, n: 1, answer: 'X' });
+        r = R.closeRaidQuiz(r.party, { id: '2', runId: p.run.id, n: 1 });
+        assert.deepEqual([r.settled, r.quizOk], [true, false]);
+        assert.equal(r.party.run.quiz.q.length > 0, true, '문제를 못 받으면 준비된 문제를 써요');
+        r = R.closeRaidQuiz(r.party, { id: '2', runId: p.run.id, n: 2 });
+        assert.equal(r.party.run.pending, false);
+        assert.equal(r.party.run.quiz, null);
+        assert.equal(R.claimRaidReward(null, r.party.run, { id: '1', today: DAY }).ok, true);
+        // 방에 적힌 것만으로 모든 기기가 같은 전투를 봐요
+        assert.deepEqual(R.replayRaidRun(R.sanitizeRaidParty(JSON.parse(JSON.stringify(r.party))).run), r.sim);
+        // 반반이면 성공(반 이상)
+        let two = readyAll(room());
+        two = R.startRaid(two, { id: '1', settings: hard, seed: 4, now: T0 }).party;
+        two = R.answerRaidQuiz(two, { id: '1', runId: two.run.id, n: 0, answer: two.run.quiz.a }).party;
+        assert.equal(R.closeRaidQuiz(two, { id: '1', runId: two.run.id, n: 0 }).quizOk, true);
+    });
+
+    it('예전 규칙(2)으로 적힌 전투는 퀴즈 없이 그대로 다시 돌려요', () => {
+        const old = { id: 'x', seed: 11, rules: 2, stage: 1, boss: R.RAID_DEFAULT_STAGES[0], teamBonus: 6, win: true, startedAt: T0, members: team(3, 300) };
+        const run = R.sanitizeRaidParty({ leaderId: '1', run: old }).run;
+        assert.deepEqual(R.replayRaidRun(run).rounds, R.simulateRaid(team(3, 300), R.RAID_DEFAULT_STAGES[0], 11, { guard: true }).rounds);
+        assert.equal(R.claimRaidReward(null, run, { id: '1', today: DAY }).fee, 0);
+    });
+});

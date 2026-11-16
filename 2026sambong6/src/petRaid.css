@@ -265,3 +265,27 @@
     .raid-fx-meter { grid-template-columns: repeat(auto-fill, minmax(9.4rem, 1fr)); }
     .raid-fx-mbar { height: 10px; } .raid-fx-mbar em { line-height: 10px; font-size: 9px; }
 }
+
+/* 방 안 초읽기(혼자 있는 방 닫기 · 준비 안 한 친구 내보내기) */
+.raid-clock { margin: 0.35rem 0; padding: 0.4rem 0.6rem; border-radius: 0.6rem; font-size: 13px; font-weight: 800; color: #fde68a; background: rgba(120, 53, 15, 0.45); text-align: center; }
+.raid-clock.is-warn { color: #fff; background: #dc2626; animation: raid-clock-warn 0.6s ease-in-out infinite alternate; }
+@keyframes raid-clock-warn { to { background: #f97316; } }
+.raid-member.is-extra { border-style: dashed; opacity: 0.95; }
+
+/* OX 퀴즈(전투 중) */
+.raid-fx-quiz { position: absolute; z-index: 8; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(92%, 560px); padding: 1rem 1rem 0.9rem; border-radius: 1.2rem; background: rgba(15, 23, 42, 0.96); border: 3px solid #fde047; box-shadow: 0 0 0 100vmax rgba(2, 6, 23, 0.55), 0 12px 40px rgba(0, 0, 0, 0.6); color: #fff; text-align: center; animation: raid-quiz-in 0.3s cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes raid-quiz-in { from { transform: translate(-50%, -50%) scale(0.7); opacity: 0; } }
+.raid-fx-quiz-tag { margin: 0 0 0.5rem; font-size: 13px; font-weight: 900; color: #fde047; }
+.raid-fx-quiz-q { margin: 0 0 0.8rem; font-size: clamp(18px, 3.2vw, 26px); font-weight: 900; line-height: 1.4; word-break: keep-all; }
+.raid-fx-quiz-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+.raid-fx-quiz-btns button { min-height: 84px; border-radius: 1rem; border: 4px solid transparent; font-size: 44px; line-height: 1; cursor: pointer; background: #1d4ed8; }
+.raid-fx-quiz-btns button.is-x { background: #b91c1c; }
+.raid-fx-quiz-btns button.is-on { border-color: #fff; transform: scale(1.04); }
+.raid-fx-quiz-btns button:disabled { cursor: default; }
+.raid-fx-quiz-btns button:disabled:not(.is-on) { opacity: 0.35; }
+.raid-fx-quiz-time { display: block; height: 8px; margin: 0.7rem 0 0.4rem; border-radius: 4px; background: rgba(148, 163, 184, 0.3); overflow: hidden; }
+.raid-fx-quiz-time i { display: block; height: 100%; width: 100%; background: #fde047; transition: width 0.25s linear; }
+.raid-fx-quiz-state { margin: 0; font-size: 13px; font-weight: 800; color: #cbd5e1; min-height: 1.3em; }
+/* 합동 필살기: 보스 자리에서 터지는 큰 빛 */
+.raid-fx-ult { position: absolute; width: 40px; height: 40px; margin: -20px; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #fde047 35%, rgba(249, 115, 22, 0.7) 60%, transparent 72%); animation: raid-ult 0.9s ease-out forwards; pointer-events: none; }
+@keyframes raid-ult { 0% { transform: scale(0.2); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(16); opacity: 0; } }

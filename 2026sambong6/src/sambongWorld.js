@@ -1381,7 +1381,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.87';
+        const APP_VERSION = 'v1.88';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10609,6 +10609,13 @@ ${subjectLine}
             selfName: () => { const id = String(localStorage.getItem('sambong_student_id') || ''); return id === 'gm' ? '선생님' : id === 'gm_a' ? '선생님(A)' : displayStudentName(id, id); },
             // 탐험(보스 레이드): 방 하나가 문서 하나예요(petRaids/{방장 학번}).
             classSize: () => getActiveStudentIds().length,
+            // 탐험 중 OX 퀴즈에 쓸 문제(OX 퀴즈 은행). 탐험 방에 들어갈 때 한 번만 읽어요.
+            oxQuestions: async () => {
+                if (!db) return [];
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'));
+                const list = snap.exists() ? (snap.data() || {}).questions : null;
+                return Array.isArray(list) ? list : [];
+            },
             raidWatch: (cb) => onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'petRaids'), (snap) => {
                 cb(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
             }, (err) => { console.warn('petRaids', err); cb([]); }),

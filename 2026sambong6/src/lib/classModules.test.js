@@ -12,7 +12,6 @@ import {
     unlockClassModule,
 } from './classModules.js';
 import {
-    DEFAULT_SEED_EXTERNAL_PORTALS,
     resolveExternalPortals,
     sanitizeExternalPortals,
 } from './externalPortals.js';
@@ -48,12 +47,11 @@ describe('학급 기능 해금', () => {
 });
 
 describe('외부 세계 링크', () => {
-    it('시드는 기본 링크를 쓰고, 새 학급은 비운다', () => {
-        assert.equal(DEFAULT_SEED_EXTERNAL_PORTALS.length >= 3, true);
-        assert.equal(resolveExternalPortals(undefined, { isSeed: true }).length, DEFAULT_SEED_EXTERNAL_PORTALS.length);
-        assert.deepEqual(resolveExternalPortals(undefined, { isSeed: false, hasModuleRecord: true }), []);
-        assert.equal(resolveExternalPortals(undefined, { isSeed: false, hasModuleRecord: false }).length, DEFAULT_SEED_EXTERNAL_PORTALS.length);
-        assert.deepEqual(resolveExternalPortals([], { isSeed: true }), []);
+    it('코드에 박힌 기본 링크 없이, 저장된 링크만 쓴다', () => {
+        assert.deepEqual(resolveExternalPortals(undefined), []);
+        assert.deepEqual(resolveExternalPortals(undefined, { isSeed: true }), []);
+        assert.deepEqual(resolveExternalPortals([]), []);
+        assert.equal(resolveExternalPortals([{ name: '우리 반', url: 'https://example.com' }]).length, 1);
         const cleaned = sanitizeExternalPortals([
             { name: '우리 반 패드', url: 'https://example.com/pad', emoji: '📌' },
             { name: '나쁜곳', url: 'javascript:alert(1)' },

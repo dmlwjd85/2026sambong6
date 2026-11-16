@@ -20,6 +20,9 @@ import {
     PET_SPECIES,
     PET_TYPES,
     addStoredEggs,
+    buyShopPet,
+    petBoxOwnedSpecies,
+    petShopPrice,
     bringPetBack,
     cagePet,
     cagePetView,
@@ -99,6 +102,7 @@ export function createPetMode(deps) {
     let fx = null; // { text, kind, at } 잠깐 띄우는 글자
     let timer = 0;
     let talk = null; // { text, at, kind } 펫이 방금 한 말
+    let shopOpen = null; // 펫 상점을 펼쳤는지(null 이면 빈 칸일 때만 펼쳐요)
     let slot = 0; // 보고 있는 칸(0~2). 아직 안 열린 칸이면 '칸 늘리기' 화면이에요.
 
     const now = () => Date.now();
@@ -187,8 +191,11 @@ export function createPetMode(deps) {
             else if (act === 'egg-use') void runBox('보관한 알 꺼내기', (b) => useStoredEgg(b, slot, { now: now() }), () => show('알을 꺼냈어요! 쓰다듬어서 품어 줘요.', 'good'));
             else if (act === 'enhance-mat') void enhanceMat();
             else if (act === 'gift') void gift();
+            else if (act === 'shop-buy') void shopBuy(t.getAttribute('data-sp'), t.getAttribute('data-shiny') === '1');
         });
         el.addEventListener('change', (e) => raid.onChange(e));
+        // 펫 상점을 펼치거나 접은 상태는 다시 그려도 그대로 둬요(toggle 은 거품이 안 올라와서 capture 로 받아요).
+        el.addEventListener('toggle', (e) => { if (e.target && e.target.classList && e.target.classList.contains('pet-shop-box')) shopOpen = e.target.open; }, true);
     }
 
     /** 펫이 고마워하거나 애교를 부려요(말풍선 + 폴짝 + 하트). */
@@ -303,6 +310,7 @@ export function createPetMode(deps) {
             slotRules: [{ level: val('s2-level'), price: val('s2-price') }, { level: val('s3-level'), price: val('s3-price') }],
             walk: { min: val('walk-min'), max: val('walk-max'), step: val('walk-step'), cap: val('walk-cap') },
             expPacks: [0, 1, 2].map((i) => ({ price: val(`pack${i}-price`), exp: val(`pack${i}-exp`) })),
+            shop: { normal: val('shop-normal'), shiny: val('shop-shiny'), rare: val('shop-rare'), rareShiny: val('shop-rareShiny') },
             cageSize: val('cage-size'),
             awake: { start: val('awake-start'), end: val('awake-end') },
         });
@@ -342,6 +350,24 @@ export function createPetMode(deps) {
                 const stage = root() && root().querySelector('.pet-stage');
                 if (stage) stage.classList.add('is-hatch');
             }
+            if (feedback) feedback.play('ok');
+        });
+    }
+
+    /** 펫 상점에서 사기 */
+    async function shopBuy(species, shiny) {
+        const sp = PET_SPECIES[species];
+        if (!sp) return;
+        const price = petShopPrice(species, shiny, settings());
+        const owned = petBoxOwnedSpecies(myBox()).has(species);
+        const name = `${shiny ? '✨ 색다른 ' : ''}${sp.names[0]}`;
+        const ok = await deps.confirm(owned
+            ? `가지고 있는 ${sp.names[0]}을(를) 색다른 모습으로 바꿀까요?${free() ? '' : `\n${deps.bong(price)}이 들어요.`} 레벨과 강화는 그대로예요.`
+            : `${name}을(를) ${slot + 1}번 칸에 데려올까요?${free() ? '' : `\n${deps.bong(price)}이 들어요.`}`);
+        if (!ok) return;
+        await runBox(owned ? '펫 상점: 색다른 모습' : '펫 상점에서 사기', (b) => buyShopPet(b, slot, { species, shiny, bong: myBong(), now: now(), settings: settings() }), (r) => {
+            react('main');
+            show(r.upgraded ? `✨ ${sp.names[0]}이(가) 색다른 모습이 되었어요!` : `${name}이(가) 왔어요! 잘 키워 줘요.`, 'good');
             if (feedback) feedback.play('ok');
         });
     }
@@ -537,6 +563,32 @@ export function createPetMode(deps) {
         return `<div class="pet-slots" role="group" aria-label="펫 칸">${cells.join('')}</div>${keepHtml(box)}`;
     }
 
+    /** 펫 상점: 종마다 일반·색다른 펫 */
+    function shopHtml() {
+        const box = myBox();
+        const owned = petBoxOwnedSpecies(box);
+        const shinyOwned = new Set([...box.list, ...box.cage].filter((p) => p.phase === 'pet' && p.shiny).map((p) => p.species));
+        const empty = slot < box.slots && box.list[slot].phase === 'none';
+        const btn = (sp, shiny) => {
+            const price = petShopPrice(sp.id, shiny, settings());
+            const have = owned.has(sp.id);
+            // 가진 종은 색다른 모습으로 바꾸기만 돼요. 새로 사려면 빈 칸이 필요해요.
+            const can = have ? shiny && !shinyOwned.has(sp.id) : empty;
+            const label = have ? (shiny ? (shinyOwned.has(sp.id) ? '✨ 있어요' : '✨ 색다르게') : '있어요') : shiny ? '✨ 색다른' : '일반';
+            return `<button type="button" class="pet-shop-buy${shiny ? ' is-shiny' : ''}" data-p="shop-buy" data-sp="${sp.id}" data-shiny="${shiny ? 1 : 0}"${can && myBong() >= price ? '' : ' disabled'}><b>${label}</b><i>${free() ? '무료' : esc(deps.bong(price))}</i></button>`;
+        };
+        const rows = Object.values(PET_SPECIES).map((sp) => `<div class="pet-shop-row type-${sp.type}${sp.rare ? ' is-rare' : ''}">
+            <span class="pet-shop-art">${petArtHtml({ species: sp.id, stage: 1, alt: sp.names[0] })}</span>
+            <span class="pet-shop-name"><b>${esc(sp.names[0])}</b>${typeBadge(sp.type)}${sp.rare ? '<em>희귀</em>' : ''}</span>
+            ${btn(sp, false)}${btn(sp, true)}
+        </div>`).join('');
+        return `<details class="pet-shop-box"${(shopOpen == null ? empty : shopOpen) ? ' open' : ''}>
+            <summary>🛒 펫 상점 <i>알 대신 원하는 펫을 바로 데려와요</i></summary>
+            <p class="pet-note">${empty ? `${slot + 1}번 칸에 데려와요.` : '새 펫은 빈 칸을 고른 뒤 살 수 있어요.'} 같은 종류는 한 마리씩만 가질 수 있고, 가진 펫은 색다른 모습으로 바꿀 수 있어요(레벨·강화 그대로).</p>
+            <div class="pet-shop-list">${rows}</div>
+        </details>`;
+    }
+
     /** 케이지(쉬는 펫)·알 보관함·강화 재료 */
     function keepHtml(box) {
         const cap = petCageCapacity(box, settings());
@@ -607,6 +659,9 @@ export function createPetMode(deps) {
                 <label class="pet-set-row"><span>하루 상한</span>${num('walk-cap', w.cap, 0, 500)} 봉</label>
                 <p class="pet-sub">경험치 팩</p>
                 ${cfg.expPacks.map((pk, i) => `<label class="pet-set-row"><span>${i + 1}번 팩</span>${num(`pack${i}-price`, pk.price, 1, 5000)} 봉 → 경험치 ${num(`pack${i}-exp`, pk.exp, 1, 100000)}</label>`).join('')}
+                <p class="pet-sub">펫 상점 값</p>
+                <label class="pet-set-row"><span>일반 펫</span>${num('shop-normal', cfg.shop.normal, 1, 100000)} 봉 · 색다른 ${num('shop-shiny', cfg.shop.shiny, 1, 100000)} 봉</label>
+                <label class="pet-set-row"><span>별빛룡(희귀)</span>${num('shop-rare', cfg.shop.rare, 1, 100000)} 봉 · 색다른 ${num('shop-rareShiny', cfg.shop.rareShiny, 1, 100000)} 봉</label>
                 <p class="pet-sub">케이지와 배고픔</p>
                 <label class="pet-set-row"><span>케이지 크기</span>케이지 하나에 ${num('cage-size', cfg.cageSize, 1, 5)} 마리 (펫 칸마다 케이지 하나)</label>
                 <label class="pet-set-row"><span>배고픈 시간</span>${num('awake-start', cfg.awake.start, 0, 23)} 시부터 ${num('awake-end', cfg.awake.end, 1, 24)} 시까지 (그 밖의 시간에는 배고프지 않아요)</label>
@@ -731,7 +786,7 @@ export function createPetMode(deps) {
         if (slot >= myBox().slots) return `${slotBarHtml()}${lockedHtml()}${adminHtml()}`;
         const p = myPet();
         const card = p.phase === 'egg' ? eggHtml(p) : p.phase === 'pet' ? petHtml(petView(p, now(), today(), settings())) : noneHtml();
-        return `${slotBarHtml()}${card}${adminHtml()}`;
+        return `${slotBarHtml()}${card}${shopHtml()}${adminHtml()}`;
     }
 
     function classHtml() {

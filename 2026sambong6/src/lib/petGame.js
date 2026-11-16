@@ -168,6 +168,8 @@ export const PET_DEFAULT_SETTINGS = Object.freeze({
     cageSize: 3,
     /** 배가 고파지는 시간: start시부터 end시까지(밤에는 배고프지 않아요) */
     awake: PET_AWAKE_DEFAULT,
+    /** 펫 상점(봉으로 바로 사기): 일반 펫·색다른 펫, 희귀(별빛룡)·희귀 색다른 */
+    shop: Object.freeze({ normal: 50, shiny: 70, rare: 500, rareShiny: 700 }),
 });
 
 export function sanitizePetSettings(raw) {
@@ -196,7 +198,9 @@ export function sanitizePetSettings(raw) {
     const aw = src.awake && typeof src.awake === 'object' ? src.awake : {};
     const start = num(aw.start, d.awake.start, 0, 23);
     const end = Math.max(start + 1, num(aw.end, d.awake.end, 1, 24));
-    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, expPacks, cageSize: num(src.cageSize, d.cageSize, 1, PET_MAX_CAGE_SIZE), awake: { start, end }, ...(raid ? { raid } : {}) };
+    const sh = src.shop && typeof src.shop === 'object' ? src.shop : {};
+    const shop = { normal: num(sh.normal, d.shop.normal, 1, 100000), shiny: num(sh.shiny, d.shop.shiny, 1, 100000), rare: num(sh.rare, d.shop.rare, 1, 100000), rareShiny: num(sh.rareShiny, d.shop.rareShiny, 1, 100000) };
+    return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, expPacks, shop, cageSize: num(src.cageSize, d.cageSize, 1, PET_MAX_CAGE_SIZE), awake: { start, end }, ...(raid ? { raid } : {}) };
 }
 
 export function emptyPet() {
@@ -560,6 +564,8 @@ export const PET_ERROR_TEXT = Object.freeze({
     no_stored_egg: '보관한 알이 없어요.',
     egg_store_full: '알 보관함이 꽉 찼어요.',
     no_mat: '이 펫에게 쓸 강화 재료가 없어요.',
+    bad_species: '그런 펫은 없어요.',
+    owned: '이미 가진 펫이에요. 같은 종류는 한 마리씩만 살 수 있어요.',
 });
 
 export function petErrorText(code) {
@@ -834,4 +840,46 @@ export function enhancePetWithMat(box, i, { now = 0, today = '' } = {}) {
     const pet = { ...p, enhance: p.enhance + 1 };
     const list = b.list.map((cur, k) => (k === idx ? pet : cur));
     return boxDone({ ...b, list, mats: { ...b.mats, [p.species]: b.mats[p.species] - 1 } }, { pet, success: true });
+}
+
+/* ---------- 펫 상점: 봉으로 펫을 바로 사요 ---------- */
+
+/** 이 펫(종·색다름)의 값 */
+export function petShopPrice(species, shiny, settings = null) {
+    const sp = PET_SPECIES[species];
+    if (!sp) return 0;
+    const shop = sanitizePetSettings(settings).shop;
+    return sp.rare ? (shiny ? shop.rareShiny : shop.rare) : (shiny ? shop.shiny : shop.normal);
+}
+
+/** 갓 태어난 모습의 펫 */
+function newbornPet(species, shiny, now) {
+    return { v: 1, phase: 'pet', species, shiny: !!shiny, name: PET_SPECIES[species].names[0], named: false, stage: 1, level: 1, exp: 0, enhance: 0, full: 60, fedAt: int(now), playDate: '', playCount: 0, playAt: 0, walkDate: '', bornAt: int(now), earned: 0 };
+}
+
+/**
+ * 빈 칸에 펫을 사서 넣어요. 이미 가진 종(칸·케이지)은 못 사요.
+ * 단, 일반 펫을 가지고 있을 때 같은 종의 색다른 펫은 살 수 있어요(가진 펫이 색다른 펫이 돼요, 칸은 그대로).
+ */
+export function buyShopPet(box, i, { species = '', shiny = false, bong = 0, now = 0, settings = null } = {}) {
+    const b = sanitizePetBox(box);
+    const sp = PET_SPECIES[String(species)];
+    if (!sp) return boxFail(b, 'bad_species');
+    const price = petShopPrice(sp.id, shiny, settings);
+    const owned = [...b.list.map((p, k) => ({ p, where: 'list', k })), ...b.cage.map((p, k) => ({ p, where: 'cage', k }))].find((x) => x.p.phase === 'pet' && x.p.species === sp.id);
+    if (owned) {
+        // 색다른 모습으로 바꾸기만 할 수 있어요.
+        if (!shiny || owned.p.shiny) return boxFail(b, 'owned');
+        if (Number(bong) < price) return boxFail(b, 'no_bong');
+        const up = { ...owned.p, shiny: true };
+        const next = owned.where === 'list' ? { ...b, list: b.list.map((p, k) => (k === owned.k ? up : p)) } : { ...b, cage: b.cage.map((p, k) => (k === owned.k ? up : p)) };
+        return boxDone({ ...next, dex: withDex({ ...up, dex: b.dex }) }, { cost: price, pet: up, upgraded: true });
+    }
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    if (b.list[idx].phase !== 'none') return boxFail(b, 'slot_used');
+    if (Number(bong) < price) return boxFail(b, 'no_bong');
+    const pet = newbornPet(sp.id, shiny, now);
+    const list = b.list.map((p, k) => (k === idx ? pet : p));
+    return boxDone({ ...b, list, dex: withDex({ ...pet, dex: b.dex }) }, { cost: price, pet, upgraded: false });
 }

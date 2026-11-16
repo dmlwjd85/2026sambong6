@@ -537,3 +537,23 @@ button.pet-cage-cell:active { transform: scale(0.97); }
 .pet-keep-items { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .pet-btn.is-mat { border-color: #67e8f9; background: #083344; }
 .pet-gift-who { width: auto !important; min-width: 9rem; max-width: 12rem; }
+
+/* ---------- 펫 상점 ---------- */
+.pet-shop-box { border-radius: 0.9rem; border: 2px solid #334155; background: #0f172a; padding: 0.45rem 0.55rem; }
+.pet-shop-box > summary { cursor: pointer; font-size: 14px; font-weight: 900; color: #fde68a; list-style: none; }
+.pet-shop-box > summary::-webkit-details-marker { display: none; }
+.pet-shop-box > summary i { margin-left: 0.4rem; font-style: normal; font-size: 11px; font-weight: 700; color: #94a3b8; }
+.pet-shop-box[open] > summary { margin-bottom: 0.35rem; }
+.pet-shop-list { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.35rem; }
+.pet-shop-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 4.6rem 4.6rem; align-items: center; gap: 0.4rem; padding: 0.25rem 0.35rem; border-radius: 0.7rem; background: #1e293b; border: 1px solid #334155; }
+.pet-shop-row.is-rare { border-color: #facc15; box-shadow: 0 0 10px rgba(250, 204, 21, 0.25); }
+.pet-shop-art { width: 44px; height: 44px; display: grid; place-items: center; }
+.pet-shop-art .pet-art, .pet-shop-art .pet-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pet-shop-name { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.35rem; min-width: 0; }
+.pet-shop-name b { font-size: 13px; color: #f8fafc; }
+.pet-shop-name em { font-style: normal; font-size: 10px; font-weight: 900; color: #facc15; }
+.pet-shop-buy { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 40px; padding: 0.15rem; border-radius: 0.6rem; border: 2px solid #22c55e; background: #14532d; color: #f0fdf4; }
+.pet-shop-buy b { font-size: 11px; }
+.pet-shop-buy i { font-style: normal; font-size: 11px; font-weight: 800; color: #fde68a; }
+.pet-shop-buy.is-shiny { border-color: #e879f9; background: linear-gradient(135deg, #4a044e, #1e1b4b); }
+.pet-shop-buy:disabled { opacity: 0.4; }

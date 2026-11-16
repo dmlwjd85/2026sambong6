@@ -436,3 +436,37 @@ describe('펫: 케이지·알 보관함·강화 재료', () => {
         assert.deepEqual([old.cage.length, old.eggs, old.mats.emberkit], [0, 0, 0]);
     });
 });
+
+describe('펫 상점', () => {
+    const boxOf = (list, extra = {}) => P.sanitizePetBox({ v: 2, slots: list.length, main: 0, list, dex: {}, ...extra });
+    it('값: 일반 50 · 색다름 70 · 별빛룡 500 · 색다른 별빛룡 700, 마스터가 바꿀 수 있어요', () => {
+        assert.equal(P.petShopPrice('emberkit', false), 50);
+        assert.equal(P.petShopPrice('emberkit', true), 70);
+        assert.equal(P.petShopPrice('stardrake', false), 500);
+        assert.equal(P.petShopPrice('stardrake', true), 700);
+        assert.equal(P.petShopPrice('emberkit', false, { shop: { normal: 40 } }), 40);
+        assert.equal(P.petShopPrice('nope', false), 0);
+    });
+    it('빈 칸에 사서 넣고, 봉이 모자라거나 칸이 차 있으면 못 사요', () => {
+        const box = boxOf([{ phase: 'none' }, { phase: 'egg', taps: 1 }]);
+        const r = P.buyShopPet(box, 0, { species: 'stardrake', shiny: true, bong: 700, now: T0 });
+        assert.equal(r.ok, true);
+        assert.equal(r.cost, 700);
+        assert.deepEqual([r.box.list[0].species, r.box.list[0].shiny, r.box.list[0].level], ['stardrake', true, 1]);
+        assert.equal(r.box.dex.stardrake.shiny, true);
+        assert.equal(P.buyShopPet(box, 0, { species: 'stardrake', bong: 499 }).error, 'no_bong');
+        assert.equal(P.buyShopPet(box, 1, { species: 'emberkit', bong: 99 }).error, 'slot_used');
+    });
+    it('이미 가진 종은 못 사고, 일반 펫을 색다른 펫으로는 바꿀 수 있어요', () => {
+        const raw = { phase: 'pet', species: 'emberkit', stage: 2, level: 12, enhance: 3, full: 60, fedAt: T0 };
+        const box = boxOf([raw, { phase: 'none' }]);
+        assert.equal(P.buyShopPet(box, 1, { species: 'emberkit', bong: 999 }).error, 'owned');
+        const up = P.buyShopPet(box, 1, { species: 'emberkit', shiny: true, bong: 70 });
+        assert.equal(up.upgraded, true);
+        assert.deepEqual([up.box.list[0].shiny, up.box.list[0].level, up.box.list[0].enhance, up.box.list[1].phase], [true, 12, 3, 'none']);
+        assert.equal(P.buyShopPet(up.box, 1, { species: 'emberkit', shiny: true, bong: 999 }).error, 'owned');
+        const caged = boxOf([{ phase: 'none' }], { cage: [raw] });
+        assert.equal(P.buyShopPet(caged, 0, { species: 'emberkit', bong: 999 }).error, 'owned');
+        assert.equal(P.buyShopPet(caged, 0, { species: 'emberkit', shiny: true, bong: 999 }).box.cage[0].shiny, true);
+    });
+});

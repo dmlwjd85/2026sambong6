@@ -6,7 +6,7 @@
  *   petMax() → 펫 탐험 한 팀 최대, bossOpen() → 보스레이드가 열린 날인지, bossName(idx), petStageName(stage),
  *   joinPet(roomId), joinBoss(roomId) }
  */
-import { isRaidPartyStale, sanitizeRaidParty } from './lib/petRaid.js';
+import { isRaidPartyStale, raidOwners, sanitizeRaidParty } from './lib/petRaid.js';
 import { OXB_MAX_PARTY, isOxbRoomStale, sanitizeOxbRoom } from './lib/oxBossRaid.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -15,9 +15,12 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 export function pickRaidCalls({ pet = [], boss = [], me = '', now = Date.now(), petMax = 13, bossOpen = true, dismissed = [] } = {}) {
     const out = [];
     pet.map(sanitizeRaidParty).filter(Boolean).forEach((p) => {
-        if (isRaidPartyStale(p, now) || p.status !== 'open' || !p.members.length || p.members.length >= petMax) return;
+        // 사람 수로 세요(더 데려온 펫은 빼요). 아무도 오지 않아 곧 닫힐 방(1분 30초 넘게 혼자)은 알리지 않아요.
+        const people = raidOwners(p.members).length;
+        if (isRaidPartyStale(p, now) || p.status !== 'open' || !people || people >= petMax) return;
+        if (p.soloAt > 0 && now - p.soloAt > 90000) return;
         if (p.members.some((m) => m.id === me)) return;
-        out.push({ kind: 'pet', id: p.id, key: `pet:${p.id}:${p.createdAt}`, leader: p.leaderName, stage: p.stage, count: p.members.length, max: petMax, at: p.createdAt });
+        out.push({ kind: 'pet', id: p.id, key: `pet:${p.id}:${p.createdAt}`, leader: p.leaderName, stage: p.stage, count: people, max: petMax, at: p.createdAt });
     });
     if (bossOpen) {
         boss.map(sanitizeOxbRoom).filter(Boolean).forEach((r) => {

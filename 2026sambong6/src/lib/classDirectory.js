@@ -95,6 +95,16 @@ export function shouldRotateMasterPinOnReset(targetClassId) {
 }
 
 /**
+ * 학급 초기화 뒤 마스터 문서에 남길 PIN.
+ * 시드 반은 기존 PIN을 유지합니다. 필드를 빼면 set()이 비밀번호를 지웁니다.
+ * 그 외 반은 새 PIN으로 바꿉니다.
+ */
+export function pinForResetMasterDoc(existingPin, { rotate = false, newPin = '' } = {}) {
+    if (rotate && newPin) return String(newPin);
+    return existingPin || '';
+}
+
+/**
  * 시드 마스터만 다른 학급 목록을 봅니다.
  * 그 외 마스터·학생은 지금 들어와 있는 반만 남깁니다.
  */

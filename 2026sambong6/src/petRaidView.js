@@ -353,6 +353,7 @@ export function createPetRaidView(ctx) {
         st.pet = petBoxToDoc(first.box);
         if (bong) deps.applyBong(bong);
         const opts = {
+            petBongDelta: bong,
             ...(bong > 0 ? { maxBongIncrease: bong } : {}),
             ...(bong < 0 ? { allowBongDecrease: true, maxBongDecrease: -bong } : {}),
             operationLabel: `펫 탐험 ${run.stage}스테이지 보상`,

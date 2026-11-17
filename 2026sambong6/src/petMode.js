@@ -257,6 +257,8 @@ export function createPetMode(deps) {
         return {
             ...(cost > 0 ? { allowBongDecrease: true, maxBongDecrease: cost, requireServerBongBalance: true } : {}),
             ...(gain > 0 ? { maxBongIncrease: gain } : {}),
+            // 봉은 화면 값이 아니라 서버 봉에 이만큼 더하고 빼요. 모으는 사이 반 친구 저장으로 화면 봉이 서버 값으로 바뀌어도 값을 제대로 내요.
+            petBongDelta: gain - cost,
             operationLabel: label,
             quietFail: true,
             petAllowLoss: items.some((x) => x.allowLoss),

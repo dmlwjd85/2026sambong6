@@ -1411,7 +1411,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.93';
+        const APP_VERSION = 'v1.94';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -28750,6 +28750,11 @@ ${subjectLine}
                                 Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
                             ) {
                                 dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                            }
+                            // 펫 저장: 봉은 서버 봉에 이번에 낸 값·받은 값(petBongDelta)만 더해요.
+                            // 화면 봉이 그 사이 서버 값으로 바뀌었어도(모아서 저장하는 15초 동안) 값을 빠뜨리거나 두 번 내지 않아요.
+                            if (typeof opts.petMutator === 'function' && Number.isFinite(Number(opts.petBongDelta)) && Number.isFinite(serverBong)) {
+                                dataToSave.bong = normalizeBongValue(serverBong + Number(opts.petBongDelta));
                             }
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));

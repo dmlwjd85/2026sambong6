@@ -1411,7 +1411,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.92';
+        const APP_VERSION = 'v1.93';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -22727,6 +22727,7 @@ ${subjectLine}
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     noteRemoteQuestCompletions(myData);
+                                    maybeShowTeacherNotice(myData, myId);
                                     const nx = Number(myData.xp) || 0;
 
                                     if (
@@ -26437,7 +26438,7 @@ ${subjectLine}
                 const ok = await window.customConfirm(
                     `대출 ${formatBongAmount(plan.loan.principal)}를 ${plan.loan.days}영업일 받을까요?\n` +
                     `이자 ${formatBongAmount(plan.loan.interest)} (적금 이율 ${rate}% × 1.5배 · 최소 1봉)\n` +
-                    `약정일 ${plan.loan.dueYmd}에 합계 ${formatBongAmount(plan.due)}가 지갑→일반예금 순으로 자동이체됩니다.\n적금은 건드리지 않습니다.`
+                    `약정일 ${plan.loan.dueYmd}에 합계 ${formatBongAmount(plan.due)}가 지갑→일반예금 순으로 자동이체됩니다.\n적금은 건드리지 않습니다.\n\n⏳ 은행 처리는 1~2분 걸릴 수 있어요. 지갑에 바로 안 보여도 기다려 주세요.`
                 );
                 if (!ok) return;
                 const saved = await saveDataToCloud({
@@ -26451,7 +26452,7 @@ ${subjectLine}
                 if (!saved) return;
                 if (amtEl) amtEl.value = '';
                 updateUI();
-                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔습니다. 지금 지갑 ${formatBongAmount(Number(window.playerState.bong) || 0)}\n약정일 ${plan.loan.dueYmd} · 이자 ${formatBongAmount(plan.loan.interest)}\n지갑에서 그대로 확인되지 않으면 바로 선생님께 알려 주세요.`);
+                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔습니다. 지금 지갑 ${formatBongAmount(Number(window.playerState.bong) || 0)}\n약정일 ${plan.loan.dueYmd} · 이자 ${formatBongAmount(plan.loan.interest)}\n은행 처리는 1~2분 걸릴 수 있어요. 2분이 지나도 지갑에 없으면 선생님께 알려 주세요.`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -33249,6 +33250,24 @@ ${subjectLine}
                 void window.checkAndDistributeClassXP();
                 scheduleClassXpBell();
             }, classXpTimerDelay(nowMs, classXpNextFireMs(nowMs)));
+        }
+
+        /* ---------- 선생님 알림 팝업 ---------- */
+        // 학생 문서의 teacherNotice { id, text, at } 를 그 학생 화면에 한 번 띄워요(기기마다 한 번, 3일 지나면 안 띄워요).
+        // 반 학생 문서 구독에 이미 들어오는 값이라 읽기가 늘지 않아요.
+        const _teacherNoticeShown = new Set();
+        function maybeShowTeacherNotice(data, myId) {
+            const n = data && data.teacherNotice;
+            if (!n || typeof n !== 'object' || !n.id || !n.text) return;
+            if (Date.now() - (Number(n.at) || 0) > 3 * 86400000) return;
+            const id = String(n.id);
+            if (_teacherNoticeShown.has(id)) return;
+            const key = `sambong_teacher_notice_seen_${appId}_${myId}`;
+            try { if (localStorage.getItem(key) === id) return; } catch (_) { /* 저장소를 못 쓰면 이 화면에서만 기억해요 */ }
+            _teacherNoticeShown.add(id);
+            try { localStorage.setItem(key, id); } catch (_) { /* 무시 */ }
+            const safe = String(n.text).slice(0, 500).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            setTimeout(() => { void window.customAlert(`📢 선생님 알림\n\n${safe}`); }, 400);
         }
 
         /* ---------- OX 랭킹 보상 ---------- */

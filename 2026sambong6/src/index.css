@@ -7156,3 +7156,10 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .plaza-seat-empty-label { font-size: 8px; font-weight: 700; opacity: 0.85; line-height: 1.1; }
         /* 부동산 자리표 이름: 글자 중간에서 끊지 않고, 너무 길 때만 줄을 바꿔 모두 보여요. */
         .estate-seat-name { word-break: keep-all; overflow-wrap: anywhere; line-height: 1.2; min-width: 0; }
+
+        /* OX 무제한 도전: 랭킹 보상 설정(선생님) */
+        .oxx-reward { border: 1px solid rgba(253, 230, 138, 0.45); border-radius: 12px; padding: 8px 10px; background: rgba(15, 23, 42, 0.6); }
+        .oxx-reward summary { cursor: pointer; font-weight: 900; color: #fde68a; }
+        .oxx-reward-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.85rem; font-weight: 700; color: #e2e8f0; }
+        .oxx-reward-input { width: 4.2rem; min-height: 32px; padding: 2px 6px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.5); background: #0f172a; color: #fff; font-weight: 800; text-align: right; }
+        .oxx-reward .ox-choice { margin-top: 8px; }

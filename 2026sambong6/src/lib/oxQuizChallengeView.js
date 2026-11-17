@@ -7,6 +7,7 @@
  *   이때 기기 저장값은 그대로 믿지 않고 검사하며, 봉은 조금만(2봉까지) 줘요.
  */
 import { OX_TIME_CHOICES, clampOxChoice } from './oxQuiz.js';
+import { OX_RANK_REWARD_PLACES, oxRankRewardNote, sanitizeOxRankReward } from './oxRankReward.js';
 import {
     OX_CHALLENGE_TOP_N,
     challengeResultNote,
@@ -74,6 +75,8 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         result: null,
         lastWrong: null,
         recovering: false,
+        rewardToday: null, // 오늘 랭킹 보상 지급 기록(선생님 화면)
+        rewardOpen: false,
     };
 
     const myId = () => String(api.studentId() || '');
@@ -228,7 +231,53 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
             <div class="ox-row">${btn('top5', `위 ${OX_CHALLENGE_TOP_N}명 보여 주기`)}${btn('off', '숨기기(내 기록만)')}</div>`;
     }
 
+    /** 랭킹 보상 안내(학생)와 마스터 설정(선생님) */
+    function rewardHtml() {
+        const cfg = sanitizeOxRankReward(api.rankReward ? api.rankReward() : null);
+        const note = oxRankRewardNote(cfg);
+        if (!api.isAdmin() || !api.saveRankReward) return note ? `<p class="oxx-note">🏆 ${esc(note)}</p>` : '';
+        const n = (name, value, min, max) => `<input type="number" inputmode="numeric" class="oxx-reward-input" data-oxx-reward="${name}" value="${value}" min="${min}" max="${max}">`;
+        const today = st.rewardToday;
+        const todayLine = today && Array.isArray(today.winners)
+            ? `오늘 지급함: ${today.winners.length ? today.winners.map((w) => `${num(w.place)}등 ${esc(api.rosterName ? api.rosterName(w.id) || w.id : w.id)}(${num(w.best)}개)`).join(', ') : '받을 학생 없음'}`
+            : '오늘은 아직 지급하지 않았어요. 시각이 되면 선생님 화면(없으면 학생 화면)이 한 번 줘요.';
+        return `<details class="oxx-reward"${st.rewardOpen ? ' open' : ''} data-oxx-reward-box>
+            <summary>🏆 랭킹 보상 설정 ${cfg.enabled ? '(켜짐)' : '(꺼짐)'}</summary>
+            <label class="oxx-reward-row"><input type="checkbox" data-oxx-reward="enabled"${cfg.enabled ? ' checked' : ''}> 평일마다 상위 ${OX_RANK_REWARD_PLACES}등까지 주기 (주말·공휴일·방학 제외, 동점은 모두)</label>
+            <label class="oxx-reward-row">시각 ${n('hour', cfg.hour, 0, 23)} 시 ${n('minute', cfg.minute, 0, 59)} 분</label>
+            ${cfg.prizes.map((p, i) => `<label class="oxx-reward-row">${i + 1}등 ${n(`xp-${i}`, p.xp, 0, 500)} XP · ${n(`bong-${i}`, p.bong, 0, 500)} 봉</label>`).join('')}
+            <button type="button" class="ox-choice is-on" data-oxx-action="reward-save">보상 설정 저장</button>
+            <p class="oxc-muted">${todayLine}</p>
+        </details>`;
+    }
+
+    async function saveReward() {
+        if (!api.isAdmin() || !api.saveRankReward) return;
+        const val = (name) => { const el = body.querySelector(`[data-oxx-reward="${name}"]`); return el ? (el.type === 'checkbox' ? el.checked : el.value) : undefined; };
+        const cfg = {
+            enabled: val('enabled') !== false,
+            hour: val('hour'),
+            minute: val('minute'),
+            prizes: Array.from({ length: OX_RANK_REWARD_PLACES }, (_, i) => ({ xp: val(`xp-${i}`), bong: val(`bong-${i}`) })),
+        };
+        try {
+            await api.saveRankReward(cfg);
+            await api.alert('랭킹 보상 설정을 저장했어요.');
+        } catch (e) {
+            console.warn('ox rank reward save', e);
+            await api.alert(`랭킹 보상 설정을 저장하지 못했어요. ${friendlyOxError(e)}`);
+        }
+        st.rewardOpen = true;
+        if (st.active) render();
+    }
+
     function renderHome() {
+        // 선생님이 보상 설정 칸에 적는 중이면 다시 그리지 않아요(랭킹이 바뀌어도 적던 값이 지워지지 않게).
+        const box = body.querySelector('[data-oxx-reward-box]');
+        if (box) {
+            st.rewardOpen = box.open;
+            if (box.contains(document.activeElement)) return;
+        }
         const today = kstDateStr();
         let note;
         if (api.isAdmin()) note = '학생들의 무제한 도전 랭킹이에요. 선생님 기기는 풀어 볼 수만 있고 기록되지 않아요.';
@@ -242,6 +291,7 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
                 <p class="oxx-note">${esc(note)}</p>
                 ${best !== null && canRecord() ? `<p class="ox-label oxx-best">내 최고 기록 ${best}개</p>` : ''}
                 ${scopeHtml()}
+                ${rewardHtml()}
                 <p class="ox-label">반 랭킹</p>
                 ${rankingHtml()}
             </div>
@@ -396,6 +446,7 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         if (!btn) return false;
         const action = btn.getAttribute('data-oxx-action');
         if (action === 'start') void start();
+        if (action === 'reward-save') void saveReward();
         if (action === 'home') {
             st.mode = 'home';
             render();
@@ -408,6 +459,9 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         st.mode = st.mode === 'play' ? 'play' : 'home';
         subscribe();
         render();
+        if (api.isAdmin() && api.rankRewardToday) {
+            api.rankRewardToday().then((d) => { st.rewardToday = d; if (st.active && st.mode === 'home') render(); }).catch(() => {});
+        }
         await recoverStaleRuns();
     }
 

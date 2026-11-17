@@ -644,6 +644,14 @@ import {
     planChallengeFinish,
     withOxRetry,
 } from './lib/oxQuizChallenge.js';
+import {
+    OX_RANK_REWARD_REASON,
+    OX_RANK_REWARD_SOURCE,
+    oxRankRewardDelayMs,
+    oxRankRewardDueYmd,
+    oxRankRewardWinners,
+    sanitizeOxRankReward,
+} from './lib/oxRankReward.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
@@ -1403,7 +1411,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.91';
+        const APP_VERSION = 'v1.92';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10361,6 +10369,23 @@ ${subjectLine}
                 return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard'), (snap) => {
                     onData(snap.exists() ? (snap.data() || null) : null);
                 }, (e) => console.warn('ox challenge settings', e));
+            },
+            // OX 랭킹 보상 설정(settings/global 의 oxRankReward)과 오늘 지급 기록
+            rankReward: () => sanitizeOxRankReward(window.globalSettings && window.globalSettings.oxRankReward),
+            saveRankReward: async (cfg) => {
+                if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 고칠 수 있어요');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const clean = sanitizeOxRankReward(cfg);
+                await setDoc(getGlobalSettingsDocRef(), { oxRankReward: clean }, { merge: true });
+                window.globalSettings = { ...(window.globalSettings || {}), oxRankReward: clean };
+                _oxRankRewardDone = '';
+                return clean;
+            },
+            rankRewardToday: async () => {
+                if (!db) return null;
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxRankRewards', kstDateStr()));
+                return snap.exists() ? (snap.data() || null) : null;
             },
             setChallengeRankScope: async (rankScope) => {
                 const authOk = await ensureAnonAuthReady();
@@ -23277,6 +23302,8 @@ ${subjectLine}
             }
             // 수업 종료 XP: 마스터 J 화면에서 다음 종 타이머를 한 번만 걸어요. 이미 걸렸으면 서버 요청 없이 바로 끝나요.
             armClassXpBellTimer();
+            // OX 랭킹 보상: 평일 14:40(마스터 설정)에 상위 5등까지. 마스터 화면이 먼저, 없으면 학생 화면이 조금 뒤에 줘요.
+            armOxRankRewardTimer();
             // 학습 온도계: 15:00 이후 마스터 접속 상태에서 하루 1회 실제 XP 반영 및 초기화
             if (window.playerState && window.playerState.isAdmin && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 checkLearningThermometerAutoSettlement();
@@ -26424,7 +26451,7 @@ ${subjectLine}
                 if (!saved) return;
                 if (amtEl) amtEl.value = '';
                 updateUI();
-                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔습니다.\n약정일 ${plan.loan.dueYmd} · 이자 ${formatBongAmount(plan.loan.interest)}`);
+                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔습니다. 지금 지갑 ${formatBongAmount(Number(window.playerState.bong) || 0)}\n약정일 ${plan.loan.dueYmd} · 이자 ${formatBongAmount(plan.loan.interest)}\n지갑에서 그대로 확인되지 않으면 바로 선생님께 알려 주세요.`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -28725,9 +28752,13 @@ ${subjectLine}
                             }
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));
-                        if (Number.isFinite(serverBong) && Math.abs(finalBong - serverBong) > 0.0001) {
+                        // 대출·예금·적금 저장은 serverBong 이 이미 바뀐 값이라, 기록은 저장 전 서버 지갑을 기준으로 남겨요(대출금이 들어온 기록이 빠지지 않게).
+                        const logBaseBong = (opts.allowBankFieldChanges || loanSave)
+                            ? normalizeBongValue(Number(serverData.bong) || 0)
+                            : serverBong;
+                        if (Number.isFinite(logBaseBong) && Math.abs(finalBong - logBaseBong) > 0.0001) {
                             const bongLogs = Array.isArray(serverData.bongChangeLog) ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
-                            bongLogs.push(buildBongChangeLogEntry(opts.operationLabel, serverBong, finalBong, {
+                            bongLogs.push(buildBongChangeLogEntry(opts.operationLabel, logBaseBong, finalBong, {
                                 source: opts.bongLogSource || 'saveDataToCloud',
                                 allowBongDecrease: !!opts.allowBongDecrease,
                             }));
@@ -33218,6 +33249,95 @@ ${subjectLine}
                 void window.checkAndDistributeClassXP();
                 scheduleClassXpBell();
             }, classXpTimerDelay(nowMs, classXpNextFireMs(nowMs)));
+        }
+
+        /* ---------- OX 랭킹 보상 ---------- */
+        // 하루 한 번: 지급 기록 문서(oxRankRewards/{날짜})를 같은 트랜잭션에 써서, 화면이 여러 개여도 한 번만 줘요.
+        let _oxRankRewardTimer = 0;
+        let _oxRankRewardArmed = false;
+        let _oxRankRewardBusy = false;
+        let _oxRankRewardDone = '';
+        const oxRankRewardCfg = () => sanitizeOxRankReward(window.globalSettings && window.globalSettings.oxRankReward);
+        function oxRankRewardOffDay(ymd) {
+            if (isWorldVacationDay(ymd)) return true;
+            const hol = (getWorldSettings().holidays || []);
+            return hol.some((h) => h && h.date === ymd);
+        }
+        function armOxRankRewardTimer() {
+            if (_oxRankRewardArmed) return;
+            if (!window.playerState || window.playerState.isGuest || typeof db === 'undefined' || !db) return;
+            if (!window.allStudentsData || window.allStudentsData.length === 0) return;
+            _oxRankRewardArmed = true;
+            const schedule = () => {
+                clearTimeout(_oxRankRewardTimer);
+                _oxRankRewardTimer = setTimeout(() => { void maybePayOxRankRewards(); schedule(); }, oxRankRewardDelayMs(classXpNowMs(), oxRankRewardCfg()));
+            };
+            void maybePayOxRankRewards();
+            schedule();
+        }
+        /** 학생 화면은 마스터 화면에 먼저 맡기고 1~3분 뒤에 봐요(여러 화면이 한꺼번에 쓰지 않게). */
+        async function maybePayOxRankRewards() {
+            const ymd = oxRankRewardDueYmd(classXpNowMs(), oxRankRewardCfg(), { offDay: oxRankRewardOffDay });
+            if (!ymd || _oxRankRewardDone === ymd || _oxRankRewardBusy) return;
+            if (!window.playerState || window.playerState.isGuest) return;
+            if (!window.playerState.isGM) await new Promise((ok) => setTimeout(ok, 60000 + Math.floor(Math.random() * 120000)));
+            if (_oxRankRewardDone === ymd || _oxRankRewardBusy) return;
+            _oxRankRewardBusy = true;
+            try {
+                const out = await payOxRankRewards(ymd);
+                _oxRankRewardDone = ymd;
+                if (out && out.paid && window.playerState.isAdmin && typeof window.showToast === 'function') {
+                    const names = out.winners.map((w) => `${w.place}등 ${getStudentDisplayLabel(w.id)}`).join(', ');
+                    window.showToast(`🏆 OX 랭킹 보상을 줬어요: ${names || '받을 학생 없음'}`, 8000);
+                }
+            } catch (e) {
+                // 사용량 초과·연결 끊김: 바로 되풀이하지 않고 15분 뒤에 한 번 더 봐요(그날 자정까지).
+                console.warn('ox rank reward', e);
+                setTimeout(() => { void maybePayOxRankRewards(); }, 15 * 60000);
+            } finally {
+                _oxRankRewardBusy = false;
+            }
+        }
+        async function payOxRankRewards(ymd) {
+            const payoutRef = doc(db, 'artifacts', appId, 'public', 'data', 'oxRankRewards', ymd);
+            const first = await getDoc(payoutRef);
+            if (first.exists()) return { paid: false };
+            const col = collection(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries');
+            const snap = await getDocs(query(col, where('best', '>', 0), orderBy('best', 'desc'), limit(OX_CHALLENGE_BOARD_MAX)));
+            const cfg = oxRankRewardCfg();
+            const winners = oxRankRewardWinners(snap.docs.map((d) => ({ id: d.id, best: (d.data() || {}).best })), cfg, { ids: getActiveStudentIds() });
+            return runTransaction(db, async (tx) => {
+                const again = await tx.get(payoutRef);
+                if (again.exists()) return { paid: false };
+                const refs = winners.map((w) => doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + w.id));
+                const docs = [];
+                for (const ref of refs) docs.push(await tx.get(ref));
+                const given = [];
+                winners.forEach((w, i) => {
+                    if (!docs[i].exists()) return;
+                    const data = docs[i].data() || {};
+                    const xp0 = Math.max(0, Math.floor(Number(data.xp) || 0));
+                    const bong0 = normalizeBongValue(Number(data.bong) || 0);
+                    const reason = `${OX_RANK_REWARD_REASON} ${w.place}등 (${w.best}개)`;
+                    const patch = {};
+                    if (w.xp > 0) {
+                        patch.xp = xp0 + w.xp;
+                        const xpLogs = Array.isArray(data.xpChangeLog) ? data.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
+                        xpLogs.push(buildXpChangeLogEntry(reason, xp0, xp0 + w.xp, { source: OX_RANK_REWARD_SOURCE, date: ymd }));
+                        patch.xpChangeLog = xpLogs;
+                    }
+                    if (w.bong > 0) {
+                        patch.bong = normalizeBongValue(bong0 + w.bong);
+                        const bongLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                        bongLogs.push(buildBongChangeLogEntry(reason, bong0, patch.bong, { source: OX_RANK_REWARD_SOURCE, date: ymd }));
+                        patch.bongChangeLog = bongLogs;
+                    }
+                    if (Object.keys(patch).length) tx.update(refs[i], patch);
+                    given.push({ id: w.id, place: w.place, best: w.best, xp: w.xp, bong: w.bong });
+                });
+                tx.set(payoutRef, { date: ymd, at: Date.now(), by: String(localStorage.getItem('sambong_student_id') || ''), winners: given, prizes: cfg.prizes });
+                return { paid: true, winners: given };
+            });
         }
 
         /** 화면을 연 뒤 한 번만: 오늘 가장 최근 종을 아직 이 기기가 안 줬으면 한 번 주고, 다음 종 타이머를 걸어요. */

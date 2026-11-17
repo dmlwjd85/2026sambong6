@@ -5,3 +5,6 @@
 import './index.css';
 import './alkkagi.css';
 import './sambongWorld.js';
+import { startAppUpdateWatch } from './appUpdateWatch.js';
+
+if (typeof window !== 'undefined') window.addEventListener('load', () => startAppUpdateWatch(), { once: true });

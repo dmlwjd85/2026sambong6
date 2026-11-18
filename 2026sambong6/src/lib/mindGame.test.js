@@ -12,15 +12,23 @@ function playing(hands, extra = {}) {
 const seeded = (seed = 7) => { let x = seed; return () => { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x80000000; }; };
 
 describe('이심전심 시작·나눠 주기', () => {
-    it('사람 수에 따라 마지막 레벨·생명이 달라요(2명 12, 3명 10, 4명 8)', () => {
+    it('6명이 12레벨을 받아도 카드가 모자라지 않고 겹치지 않아요', () => {
+        const ids = ['1', '2', '3', '4', '5', '6'];
+        const hands = M.dealMindHands(ids, 12, seeded(3));
+        const all = ids.flatMap((id) => hands[id]);
+        assert.ok(ids.every((id) => hands[id].length === 12));
+        assert.equal(new Set(all).size, 72);
+        assert.ok(all.every((c) => c >= 1 && c <= 100));
+    });
+    it('마지막 레벨은 사람 수와 상관없이 12, 생명은 사람 수만큼이에요', () => {
         assert.equal(M.mindMaxLevel(2), 12);
-        assert.equal(M.mindMaxLevel(3), 10);
-        assert.equal(M.mindMaxLevel(4), 8);
+        assert.equal(M.mindMaxLevel(3), 12);
+        assert.equal(M.mindMaxLevel(6), 12);
         const g = M.startMindGame({ players: ['1', '2', '3'], now: 100, rnd: seeded() });
         assert.equal(g.lives, 3);
         assert.equal(g.stars, 1);
         assert.equal(g.level, 1);
-        assert.equal(g.maxLevel, 10);
+        assert.equal(g.maxLevel, 12);
         assert.equal(g.phase, 'focus');
     });
 
@@ -204,10 +212,10 @@ describe('이심전심 방', async () => {
         room = join(room, '6');
         assert.equal(room.status, 'playing');
         assert.deepEqual(room.game.players, ['1', '2', '3', '4', '5', '6']);
-        assert.equal(room.game.maxLevel, 6);
+        assert.equal(room.game.maxLevel, 12);
         assert.equal(room.game.lives, 6);
         assert.equal(room.game.hands['3'].length, 1);
-        assert.deepEqual([M.mindMaxLevel(4), M.mindMaxLevel(5)], [8, 7]);
+        assert.deepEqual([2, 3, 4, 5, 6].map(M.mindMaxLevel), [12, 12, 12, 12, 12]);
     });
 
     it('2명이면 방장이 시작하고, 한 판 더 하면 1레벨부터 다시 나눠 줘요', () => {

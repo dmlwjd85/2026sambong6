@@ -9,7 +9,7 @@
  * - 누가 낸 카드보다 작은 카드를 다른 사람이 들고 있었다면 실수예요. 생명을 하나 잃고,
  *   낸 카드보다 작은 카드는 모두 옆으로 치운 뒤 그 레벨을 이어 가요.
  * - 모두의 손이 비면 레벨 통과. 마지막 레벨까지 통과하면 승리, 생명이 0이 되면 실패예요.
- * - 레벨 수: 2명 12, 3명 10, 4명 8, 5명 7, 6명 6. 시작 생명은 사람 수만큼, 수리검은 1개.
+ * - 레벨 수: 사람 수와 상관없이 12레벨까지예요(6명이어도 12장씩 72장이라 카드 100장으로 충분해요). 시작 생명은 사람 수만큼, 수리검은 1개.
  * - 보상(그 레벨을 통과하면): 2·5·8레벨 수리검 +1, 3·6·9레벨 생명 +1. 생명은 5개, 수리검은 3개까지.
  * - 수리검: 누가 쓰자고 하고 모두 동의하면, 각자 가장 작은 카드 한 장을 보이게 버려요.
  * - 레벨을 시작할 때는 카드를 보고 모두 「준비」를 눌러 마음을 모은 뒤 시작해요.
@@ -24,7 +24,7 @@ export const MIND_MAX_CARD = 100;
 export const MIND_MAX_LIVES = 6;
 export const MIND_MAX_STARS = 3;
 /** 사람 수별 마지막 레벨 */
-export const MIND_LEVELS = Object.freeze({ 2: 12, 3: 10, 4: 8, 5: 7, 6: 6 });
+export const MIND_LEVELS = Object.freeze({ 2: 12, 3: 12, 4: 12, 5: 12, 6: 12 });
 /** 그 레벨을 통과하면 받는 보상 */
 export const MIND_REWARDS = Object.freeze({ 2: 'star', 3: 'life', 5: 'star', 6: 'life', 8: 'star', 9: 'life' });
 export const MIND_PHASES = Object.freeze(['wait', 'focus', 'play', 'won', 'lost', 'left']);

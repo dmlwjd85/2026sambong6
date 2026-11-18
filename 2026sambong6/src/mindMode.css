@@ -314,3 +314,56 @@
 .mind-mates:has(> .mind-mate:nth-child(4)) .mind-mate-name { font-size: 12px; }
 .mind-star-pop-card { box-sizing: border-box; max-width: 100%; }
 .mind-star-pop-btns button { min-width: 0; flex: 1 1 0; }
+
+/* 이심전심 모든 방 한 화면 관전판 */
+.mwa-open { width: 100%; margin-bottom: 0.5rem; }
+.mwa {
+    position: fixed;
+    inset: 0;
+    z-index: 850;
+    overflow-y: auto;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    background: radial-gradient(ellipse at top, #1e1b4b, #020617 70%);
+    color: #e0e7ff;
+}
+.mwa-bar { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; max-width: 1600px; margin: 0 auto; }
+.mwa-title { margin: 0; font-size: clamp(18px, 2.4vw, 26px); font-weight: 900; color: #fff; }
+.mwa-title small { margin-left: 0.4rem; font-size: 0.6em; color: #a5b4fc; }
+.mwa-tip { max-width: 1600px; margin: 0.3rem auto 0.7rem; font-size: 12px; font-weight: 800; color: #7dd3fc; }
+.mwa-empty { text-align: center; margin-top: 3rem; font-weight: 800; color: #a5b4fc; }
+.mwa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 0.7rem; max-width: 1600px; margin: 0 auto; }
+.mwa-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.7rem 0.8rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(165, 180, 252, 0.4);
+    background: rgba(15, 23, 42, 0.85);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+.mwa-tile:hover, .mwa-tile:focus-visible { border-color: #fde047; outline: none; }
+.mwa-tile.is-over { opacity: 0.75; }
+.mwa-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; }
+.mwa-head b { font-size: 16px; color: #fff; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mwa-head i { flex-shrink: 0; font-style: normal; font-size: 11px; font-weight: 900; padding: 0.1rem 0.5rem; border-radius: 999px; background: rgba(99, 102, 241, 0.35); color: #e0e7ff; }
+.mwa-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 13px; font-weight: 800; color: #c7d2fe; font-variant-numeric: tabular-nums; }
+.mwa-stats b { color: #fff; }
+.mwa-lives { color: #fb7185; letter-spacing: 0.05em; }
+.mwa-top { margin-left: auto; padding: 0.1rem 0.5rem; border-radius: 0.5rem; background: #eef2ff; color: #1e1b4b; font-weight: 900; }
+.mwa-top small { font-size: 10px; color: #4338ca; }
+.mwa-players { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.mwa-players li { display: grid; grid-template-columns: 4.6rem 1fr; align-items: center; gap: 0.4rem; min-width: 0; }
+.mwa-name { font-size: 12px; font-weight: 900; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mwa-flag { font-style: normal; font-size: 10px; color: #4ade80; }
+.mwa-flag.is-star { color: #fde047; }
+.mwa-cards { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.mwa-card { min-width: 1.6rem; padding: 0.1rem 0.25rem; border-radius: 0.35rem; background: #eef2ff; color: #1e1b4b; font-size: 12px; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums; }
+.mwa-card.is-low { background: #fde047; color: #422006; }
+.mwa-none { font-size: 11px; font-weight: 800; color: #94a3b8; }
+.mwa-event { font-size: 12px; font-weight: 800; color: #c7d2fe; }
+.mwa-event.is-miss { color: #fda4af; }

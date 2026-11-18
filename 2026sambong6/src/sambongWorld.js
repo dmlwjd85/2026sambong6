@@ -329,6 +329,7 @@ import { ALKKAGI_LIVE_ENABLED, alkkagiLiveRecordResult, alkkagiLiveResultKey, is
 import { createAlkkagiLiveMode } from './alkkagiLiveMode.js';
 import { createChessTutorial } from './chessTutorial.js';
 import { createMindMode } from './mindMode.js';
+import { mindWatchAllHtml, mindWatchRooms } from './mindWatchAll.js';
 import { createPetMode } from './petMode.js';
 import { createMathConceptTool } from './mathConceptTool.js';
 import { createRaidCallBanner } from './raidCallBanner.js';
@@ -1411,7 +1412,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.96';
+        const APP_VERSION = 'v1.97';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -13906,8 +13907,37 @@ ${subjectLine}
             });
         }
 
+        // 이심전심 「모든 방 한 화면에」 관전판: 방 목록 화면 위에 덮어 보여 줘요(방 목록 구독을 그대로 써요).
+        let _mindWatchAllOn = false;
+        function renderMindWatchAll() {
+            const lobby = document.getElementById('boardgameLobbyView');
+            let el = document.getElementById('mindWatchAll');
+            if (!_mindWatchAllOn || _boardGameType !== 'mind' || _boardGameView !== 'lobby' || !lobby) {
+                if (el) el.remove();
+                return;
+            }
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'mindWatchAll';
+                el.className = 'mwa';
+                el.setAttribute('role', 'dialog');
+                el.setAttribute('aria-label', '이심전심 모든 방 관전');
+                el.addEventListener('click', (e) => {
+                    if (e.target.closest('[data-mwa-close]')) { _mindWatchAllOn = false; renderMindWatchAll(); return; }
+                    const tile = e.target.closest('[data-mwa-room]');
+                    if (tile) { _mindWatchAllOn = false; renderMindWatchAll(); enterBoardGameTable(tile.getAttribute('data-mwa-room')); }
+                });
+                lobby.appendChild(el);
+            }
+            const keep = el.scrollTop;
+            el.innerHTML = mindWatchAllHtml(listLobbyBoardRooms(_boardGameRooms, { gameType: 'mind', now: Date.now() }));
+            el.scrollTop = keep;
+        }
+        window.openMindWatchAll = function () { _mindWatchAllOn = true; renderMindWatchAll(); };
+
         function renderBoardGameLobby() {
             syncBoardGameLobbyChrome();
+            renderMindWatchAll();
             const resumeRow = document.getElementById('boardgameResumeRow');
             if (resumeRow) {
                 const parked = _parkedBoardAi[_boardGameType];
@@ -13987,11 +14017,19 @@ ${subjectLine}
                     ${reqs}
                 </article>`;
             }).join('');
+            // 이심전심: 진행 중인 방을 한 화면에 모두 관전해요.
+            if (_boardGameType === 'mind') {
+                const live = mindWatchRooms(rooms).filter((r) => r.status === 'playing').length;
+                if (live) box.insertAdjacentHTML('afterbegin', `<button type="button" class="boardgame-primary-btn mwa-open" data-watch-all>👀 모든 방 한 화면에 관전하기 (진행 중 ${live}개)</button>`);
+            }
             box.querySelectorAll('[data-join]').forEach((btn) => {
                 btn.addEventListener('click', () => { void window.requestJoinBoardGameRoom(btn.getAttribute('data-join')); });
             });
             box.querySelectorAll('[data-start-room]').forEach((btn) => {
                 btn.addEventListener('click', () => { btn.disabled = true; void window.startBoardGameRoomNow(btn.getAttribute('data-start-room')); });
+            });
+            box.querySelectorAll('[data-watch-all]').forEach((btn) => {
+                btn.addEventListener('click', () => window.openMindWatchAll());
             });
             box.querySelectorAll('[data-watch-room]').forEach((btn) => {
                 btn.addEventListener('click', () => enterBoardGameTable(btn.getAttribute('data-watch-room')));

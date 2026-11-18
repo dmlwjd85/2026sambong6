@@ -247,3 +247,70 @@
 @media (prefers-reduced-motion: reduce) {
     .mind-pile-card.is-top, .mind-body.ox-shake .mind-table { animation: none; }
 }
+
+/* 관전: 모두의 카드를 펼쳐 보여 줘요 */
+.mind-watch-tag { display: inline-block; margin-left: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: #0ea5e9; color: #082f49; font-size: 12px; letter-spacing: 0; vertical-align: middle; }
+.mind-mate.is-watch { flex: 1 1 45%; max-width: 360px; }
+.mind-peeks { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 0.3rem; }
+.mind-card.mind-peek { width: 30px; height: 40px; border-radius: 6px; }
+.mind-card.mind-peek b { font-size: 15px; }
+.mind-card.mind-peek.is-low { border-color: #fde047; box-shadow: 0 0 0 2px rgba(253, 224, 71, 0.55); }
+.mind-watch-tip { color: #7dd3fc; }
+
+/* 수리검 제안: 아직 답하지 않은 사람에게는 가운데 팝업 */
+.mind-star-pop {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(2, 6, 23, 0.72);
+    animation: mind-star-in 0.25s ease-out;
+}
+.mind-star-pop-card {
+    width: min(92vw, 420px);
+    padding: 1.1rem 1.2rem 1rem;
+    border-radius: 1.2rem;
+    border: 2px solid #fde047;
+    background: #1e1b4b;
+    box-shadow: 0 0 40px rgba(253, 224, 71, 0.35);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+.mind-star-pop-icon { font-size: 44px; line-height: 1; color: #fde047; }
+.mind-star-pop-title { font-size: 1.35rem; font-weight: 900; color: #fff; }
+.mind-star-pop-text { font-size: 14px; font-weight: 700; color: #e0e7ff; line-height: 1.5; word-break: keep-all; }
+.mind-star-pop-count { font-size: 13px; font-weight: 900; color: #fde68a; }
+.mind-star-pop-btns { display: flex; gap: 0.6rem; justify-content: center; margin-top: 0.3rem; }
+.mind-star-pop-btns button { min-height: 48px; min-width: 120px; font-size: 16px !important; }
+/* 이미 동의한 사람에게는 위쪽 띠 */
+.mind-star-band {
+    position: fixed;
+    z-index: 900;
+    left: 50%;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 94vw;
+    padding: 0.45rem 0.6rem 0.45rem 0.9rem;
+    border-radius: 999px;
+    border: 2px solid #fde047;
+    background: #422006;
+    color: #fef9c3;
+    font-size: 14px;
+    font-weight: 900;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+@keyframes mind-star-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mind-star-pop { animation: none; } }
+.mind-star-pop-card p { margin: 0; }
+/* 5~6명일 때 친구 칸이 세 줄로 길어지지 않게 한 줄에 세 칸씩 */
+.mind-mates:has(> .mind-mate:nth-child(4)) .mind-mate:not(.is-watch) { flex-basis: 26%; padding: 0.35rem 0.5rem; }
+.mind-mates:has(> .mind-mate:nth-child(4)) .mind-mate-name { font-size: 12px; }
+.mind-star-pop-card { box-sizing: border-box; max-width: 100%; }
+.mind-star-pop-btns button { min-width: 0; flex: 1 1 0; }

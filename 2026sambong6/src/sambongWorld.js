@@ -1411,7 +1411,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.94';
+        const APP_VERSION = 'v1.95';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -12824,7 +12824,7 @@ ${subjectLine}
             },
         });
 
-        // 이심전심(더 마인드 규칙): 2~4명 협동 카드 게임. 방은 공통 방을 쓰고 판 화면은 mindMode.js가 맡아요.
+        // 이심전심(더 마인드 규칙): 2~6명 협동 카드 게임. 방은 공통 방을 쓰고 판 화면은 mindMode.js가 맡아요.
         const _mind = createMindMode({
             selfId: () => boardGameSelfId(),
             mutateRoom: (roomId, mutator, opts) => enqueueBoardGameWrite(() => mutateBoardRoom(roomId, mutator, opts)),
@@ -13871,7 +13871,7 @@ ${subjectLine}
             if (title) title.textContent = mind ? '이심전심 방' : alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
             if (lead) {
                 lead.textContent = mind
-                    ? '2~4명이 한 팀이 되어, 말 없이 작은 수부터 카드를 내는 협동 게임이에요(더 마인드 규칙). 방을 만들고 친구의 참가 신청을 받아 줘요. 4명이 차면 바로 시작하고, 2~3명이면 방장이 「시작하기」를 눌러요. 하다가 나가면 팀 도전이 끝나요.'
+                    ? '2~6명이 한 팀이 되어, 말 없이 작은 수부터 카드를 내는 협동 게임이에요(더 마인드 규칙). 방을 만들고 친구의 참가 신청을 받아 줘요. 4명이 차면 바로 시작하고, 2~3명이면 방장이 「시작하기」를 눌러요. 하다가 나가면 팀 도전이 끝나요.'
                     : alk
                     ? (ALKKAGI_LIVE_ENABLED
                         ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 「실시간 방 만들기」는 차례 없이 둘이 동시에 쏘고, 한 번 쏘면 3초 쉬어요. 「실시간 AI」로 AI와도 동시에 쏠 수 있어요. 하다가 나가면 져요.'
@@ -13963,6 +13963,9 @@ ${subjectLine}
                     action = `<span class="boardgame-room-meta">거절됨</span>`;
                 } else if (room.status === 'waiting' && left > 0 && me) {
                     action = `<button type="button" class="boardgame-primary-btn" data-join="${escapeBoardGameText(room.id)}">참가 신청</button>`;
+                } else if (room.status === 'playing' && room.gameType === 'mind' && me) {
+                    // 이심전심은 친구들의 판을 구경할 수 있어요(누가 어떤 카드를 가졌는지도 보여요).
+                    action = `<button type="button" class="boardgame-mini-btn" data-watch-room="${escapeBoardGameText(room.id)}">👀 관전하기</button>`;
                 } else if (room.status === 'playing') {
                     action = `<span class="boardgame-room-meta">대국 중</span>`;
                 }
@@ -13989,6 +13992,9 @@ ${subjectLine}
             });
             box.querySelectorAll('[data-start-room]').forEach((btn) => {
                 btn.addEventListener('click', () => { btn.disabled = true; void window.startBoardGameRoomNow(btn.getAttribute('data-start-room')); });
+            });
+            box.querySelectorAll('[data-watch-room]').forEach((btn) => {
+                btn.addEventListener('click', () => enterBoardGameTable(btn.getAttribute('data-watch-room')));
             });
             box.querySelectorAll('[data-enter]').forEach((btn) => {
                 btn.addEventListener('click', () => enterBoardGameTable(btn.getAttribute('data-enter')));

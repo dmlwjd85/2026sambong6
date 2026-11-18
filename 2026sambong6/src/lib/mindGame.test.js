@@ -93,11 +93,11 @@ describe('이심전심 카드 내기', () => {
         assert.deepEqual(r.game.ready, []);
     });
 
-    it('3레벨 보상은 생명이고, 5개·3개를 넘지 않아요', () => {
+    it('3레벨 보상은 생명이고, 6개·3개를 넘지 않아요', () => {
         const life = M.mindPlay(playing({ a: [10], b: [] }, { level: 3 }), { id: 'a', rnd: seeded() }).game;
         assert.equal(life.lives, 3);
-        const capLife = M.mindPlay(playing({ a: [10], b: [] }, { level: 9, lives: 5 }), { id: 'a', rnd: seeded() }).game;
-        assert.equal(capLife.lives, 5);
+        const capLife = M.mindPlay(playing({ a: [10], b: [] }, { level: 9, lives: 6 }), { id: 'a', rnd: seeded() }).game;
+        assert.equal(capLife.lives, 6);
         const capStar = M.mindPlay(playing({ a: [10], b: [] }, { level: 8, stars: 3 }), { id: 'a', rnd: seeded() }).game;
         assert.equal(capStar.stars, 3);
         const none = M.mindPlay(playing({ a: [10], b: [] }, { level: 4 }), { id: 'a', rnd: seeded() }).game;
@@ -153,7 +153,7 @@ describe('이심전심 저장 형식·끝내기', () => {
         assert.deepEqual(M.sanitizeMindGame(JSON.parse(JSON.stringify(M.mindGameToDoc(g)))), g);
         const bad = M.sanitizeMindGame({ mode: 'mind', players: ['a', 'b'], phase: 'play', level: 99, lives: 9, hands: { a: [10, 10, 500, 'x'], b: [10], z: [3] } });
         assert.deepEqual(bad.hands, { a: [10], b: [] });
-        assert.equal(bad.lives, 5);
+        assert.equal(bad.lives, 6);
         assert.equal(bad.level, 12);
         assert.equal(M.sanitizeMindGame(null).phase, 'wait');
         assert.equal(M.sanitizeMindGame({ mode: 'chess' }).phase, 'wait');
@@ -193,18 +193,21 @@ describe('이심전심 방', async () => {
         return R.approveJoinBoardRoom(req, { hostId: '1', studentId: id, now: 3000 }).room;
     };
 
-    it('2~4명 방이고, 4명이 차면 바로 카드를 나눠 주며 시작해요', () => {
+    it('2~6명 방이고, 6명이 차면 바로 카드를 나눠 주며 시작해요', () => {
         let room = host();
-        assert.equal(room.maxPlayers, 4);
+        assert.equal(room.maxPlayers, 6);
         assert.equal(room.game.phase, 'wait');
         room = join(room, '2');
         assert.equal(room.status, 'waiting');
-        room = join(join(room, '3'), '4');
+        room = join(join(join(room, '3'), '4'), '5');
+        assert.equal(room.status, 'waiting', '5명이어도 아직 기다려요(방장이 시작할 수 있어요)');
+        room = join(room, '6');
         assert.equal(room.status, 'playing');
-        assert.deepEqual(room.game.players, ['1', '2', '3', '4']);
-        assert.equal(room.game.maxLevel, 8);
-        assert.equal(room.game.lives, 4);
+        assert.deepEqual(room.game.players, ['1', '2', '3', '4', '5', '6']);
+        assert.equal(room.game.maxLevel, 6);
+        assert.equal(room.game.lives, 6);
         assert.equal(room.game.hands['3'].length, 1);
+        assert.deepEqual([M.mindMaxLevel(4), M.mindMaxLevel(5)], [8, 7]);
     });
 
     it('2명이면 방장이 시작하고, 한 판 더 하면 1레벨부터 다시 나눠 줘요', () => {

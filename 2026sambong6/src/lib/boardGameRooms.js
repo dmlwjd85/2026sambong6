@@ -69,12 +69,12 @@ export const BOARD_GAME_CATALOG = Object.freeze({
         maxPlayers: 2,
         timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
     }),
-    // 이심전심(더 마인드 규칙): 2~4명이 한 팀. 차례·턴 타이머가 없어요. 4명이 차면 바로 시작하고, 2~3명이면 방장이 시작해요.
+    // 이심전심(더 마인드 규칙): 2~6명이 한 팀. 차례·턴 타이머가 없어요. 6명이 차면 바로 시작하고, 그 전에는 방장이 시작해요.
     mind: Object.freeze({
         id: 'mind',
         label: '이심전심',
         minPlayers: 2,
-        maxPlayers: 4,
+        maxPlayers: 6,
         timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
     }),
 });

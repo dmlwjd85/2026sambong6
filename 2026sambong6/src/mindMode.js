@@ -6,6 +6,8 @@
  */
 import './mindMode.css';
 import {
+    MIND_MAX_LIVES,
+    MIND_MAX_STARS,
     MIND_REWARDS,
     isMindOver,
     mindCancelStar,
@@ -43,6 +45,12 @@ export function createMindMode(deps) {
         return m ? m.name : id;
     };
     const isHost = () => !!room && room.hostId === me();
+    /** 판에 끼지 않은 사람(관전자): 모두의 카드를 볼 수 있고, 아무것도 낼 수 없어요. */
+    const watching = (g) => !g.players.includes(me());
+    const playerName = (id) => {
+        const m = ((room && room.members) || []).find((x) => x.id === id);
+        return m ? m.name : id;
+    };
 
     function bind() {
         const el = view();
@@ -147,7 +155,7 @@ export function createMindMode(deps) {
                 <li>누가 낸 카드보다 작은 카드를 다른 사람이 들고 있었으면 실수예요. <b>생명 1개</b>를 잃고, 그보다 작은 카드는 모두 치워요.</li>
                 <li>모두의 손이 비면 레벨 통과! ${g.maxLevel || 12}레벨까지 통과하면 이겨요. 생명이 0이 되면 끝나요.</li>
                 <li><b>수리검 ✦</b>: 한 사람이 쓰자고 하고 모두 동의하면, 각자 가장 작은 카드 한 장을 보이게 버려요.</li>
-                <li>보상: 2·5·8레벨을 통과하면 수리검 +1, 3·6·9레벨을 통과하면 생명 +1 (생명 5개, 수리검 3개까지).</li>
+                <li>보상: 2·5·8레벨을 통과하면 수리검 +1, 3·6·9레벨을 통과하면 생명 +1 (생명 ${MIND_MAX_LIVES}개, 수리검 ${MIND_MAX_STARS}개까지).</li>
                 <li>레벨을 시작할 때는 카드를 본 뒤 모두 「준비됐어요」를 눌러 마음을 모아요.</li>
             </ul>
             <button type="button" class="boardgame-primary-btn" data-m="rules-close">알겠어요</button>
@@ -165,7 +173,25 @@ export function createMindMode(deps) {
         return `<span class="mind-card ${cls}" ${attrs}><b>${c}</b></span>`;
     }
 
+    /** 관전자 화면: 모든 사람의 카드를 펼쳐 보여 줘요(가장 작은 카드는 밝게). */
+    function watchMatesHtml(g, over) {
+        return g.players.map((p) => {
+            const hand = g.hands[p] || [];
+            const badge = over ? '' : g.phase === 'focus'
+                ? (g.ready.includes(p) ? '<i class="mind-badge is-ready">준비 ✓</i>' : '<i class="mind-badge">카드 보는 중</i>')
+                : (g.starVotes.includes(p) ? '<i class="mind-badge is-star">✦ 쓰자!</i>' : '');
+            const cards = hand.length
+                ? hand.map((c, i) => `<span class="mind-card mind-peek${i === 0 ? ' is-low' : ''}"><b>${c}</b></span>`).join('')
+                : '<span class="mind-none">다 냈어요</span>';
+            return `<div class="mind-mate is-watch${hand.length || over ? '' : ' is-empty'}">
+                <p class="mind-mate-name"><span>${esc(playerName(p))}</span>${badge}</p>
+                ${over ? '' : `<div class="mind-peeks" aria-label="${esc(playerName(p))}의 카드 ${hand.length}장">${cards}</div>`}
+            </div>`;
+        }).join('');
+    }
+
     function matesHtml(g, over) {
+        if (watching(g)) return watchMatesHtml(g, over);
         return g.players.filter((p) => p !== me()).map((p) => {
             const n = (g.hands[p] || []).length;
             const badge = over ? '' : g.phase === 'focus'
@@ -194,22 +220,22 @@ export function createMindMode(deps) {
             const reward = MIND_REWARDS[g.level] ? `<p class="mind-focus-reward">이 레벨을 통과하면 ${MIND_REWARDS[g.level] === 'life' ? '생명 +1' : '수리검 +1'}</p>` : '';
             focus = `<div class="mind-focus">
                 <p class="mind-focus-level">레벨 ${g.level}</p>
-                <p class="mind-focus-text">내 카드를 보고 마음을 모아요. 모두 준비하면 시작해요.</p>
+                <p class="mind-focus-text">${watching(g) ? `친구들이 카드를 보고 마음을 모으고 있어요. (${g.ready.length}/${g.players.length}명 준비)` : '내 카드를 보고 마음을 모아요. 모두 준비하면 시작해요.'}</p>
                 ${reward}
-                <button type="button" class="boardgame-primary-btn mind-ready-btn" data-m="ready"${iAmReady ? ' disabled' : ''}>${iAmReady ? `친구를 기다려요 (${g.ready.length}/${g.players.length})` : '준비됐어요'}</button>
+                ${watching(g) ? '' : `<button type="button" class="boardgame-primary-btn mind-ready-btn" data-m="ready"${iAmReady ? ' disabled' : ''}>${iAmReady ? `친구를 기다려요 (${g.ready.length}/${g.players.length})` : '준비됐어요'}</button>`}
             </div>`;
         }
         let result = '';
         if (over) {
             const won = g.phase === 'won';
-            const canAgain = room.members.length >= 2 && g.leftBy !== room.hostId;
+            const canAgain = !watching(g) && room.members.length >= 2 && g.leftBy !== room.hostId;
             result = `<div class="mind-result${won ? ' is-won' : ''}">
                 <p class="mind-result-title">${won ? '모두 통과! 🎉' : g.phase === 'lost' ? '여기까지!' : '도전이 끝났어요'}</p>
                 <p class="mind-result-line">${esc(mindEndText(g, nameOf))}</p>
                 ${g.phase === 'lost' && evText ? `<p class="mind-event is-miss">${esc(evText)}</p>` : ''}
                 <div class="mind-result-actions">
                     ${canAgain ? '<button type="button" class="boardgame-primary-btn" data-m="again">한 판 더 할래요</button>' : ''}
-                    ${isHost() ? '<button type="button" class="boardgame-mini-btn" data-m="close">방 닫을게요</button>' : '<button type="button" class="boardgame-mini-btn" data-m="leave">나갈게요</button>'}
+                    ${isHost() ? '<button type="button" class="boardgame-mini-btn" data-m="close">방 닫을게요</button>' : `<button type="button" class="boardgame-mini-btn" data-m="leave">${watching(g) ? '관전 그만하기' : '나갈게요'}</button>`}
                 </div>
             </div>`;
         }
@@ -222,7 +248,7 @@ export function createMindMode(deps) {
 
     function handHtml(g, over) {
         const mine = g.hands[me()] || [];
-        if (!g.players.includes(me())) return '<p class="mind-tip">구경하고 있어요.</p>';
+        if (watching(g)) return '<p class="mind-tip mind-watch-tip">👀 관전 중이에요. 모두의 카드가 보여요. 친구들에게 알려 주면 안 돼요!</p>';
         if (over) return '';
         if (!mine.length) return '<p class="mind-tip">내 카드를 다 냈어요. 친구들을 믿고 기다려요.</p>';
         const canPlay = g.phase === 'play';
@@ -234,17 +260,42 @@ export function createMindMode(deps) {
     }
 
     function starHtml(g, over) {
-        if (over || g.phase !== 'play' || !g.players.includes(me())) return '';
-        const voted = g.starVotes.includes(me());
+        if (over || g.phase !== 'play') return '';
         const anyVote = g.starVotes.length > 0;
+        if (watching(g)) {
+            return anyVote ? `<p class="mind-tip">✦ 수리검을 쓰자는 제안이 있어요. 동의 ${g.starVotes.length}/${g.players.length}</p>` : '';
+        }
         if (!anyVote) {
             return `<button type="button" class="boardgame-mini-btn mind-star-btn" data-m="star"${g.stars > 0 ? '' : ' disabled'}>✦ 수리검 쓰자 (${g.stars}개)</button>`;
         }
+        return '';
+    }
+
+    /**
+     * 수리검 제안은 화면 아래에 있으면 큰 화면에서 안 보여서 팝업으로 띄워요.
+     * 아직 답하지 않은 사람에게는 가운데 팝업, 이미 동의한 사람에게는 위쪽 띠로 보여 줘요.
+     */
+    function starPopHtml(g, over) {
+        if (over || g.phase !== 'play' || watching(g) || !g.starVotes.length) return '';
+        const voted = g.starVotes.includes(me());
         const who = g.starVotes.map(nameOf).join(', ');
-        return `<div class="mind-star-vote">
-            <span>✦ 수리검을 쓸까요? 동의 ${g.starVotes.length}/${g.players.length} (${esc(who)})</span>
-            ${voted ? '' : '<button type="button" class="boardgame-primary-btn" data-m="star">동의</button>'}
-            <button type="button" class="boardgame-mini-btn" data-m="star-no">${voted ? '취소' : '아니요'}</button>
+        if (voted) {
+            return `<div class="mind-star-band" role="status">
+                <span>✦ 수리검 동의를 기다려요 ${g.starVotes.length}/${g.players.length}</span>
+                <button type="button" class="boardgame-mini-btn" data-m="star-no">취소</button>
+            </div>`;
+        }
+        return `<div class="mind-star-pop" role="dialog" aria-modal="true" aria-label="수리검 제안">
+            <div class="mind-star-pop-card">
+                <p class="mind-star-pop-icon">✦</p>
+                <p class="mind-star-pop-title">수리검을 쓸까요?</p>
+                <p class="mind-star-pop-text">${esc(who)}이(가) 쓰자고 했어요. 모두 동의하면 각자 가장 작은 카드 한 장을 보이게 버려요.</p>
+                <p class="mind-star-pop-count">동의 ${g.starVotes.length}/${g.players.length} · 남은 수리검 ${g.stars}개</p>
+                <div class="mind-star-pop-btns">
+                    <button type="button" class="boardgame-primary-btn" data-m="star">동의해요</button>
+                    <button type="button" class="boardgame-mini-btn" data-m="star-no">아니요</button>
+                </div>
+            </div>
         </div>`;
     }
 
@@ -273,6 +324,12 @@ export function createMindMode(deps) {
         const el = view();
         if (!el || !room) return;
         const g = game();
+        // 관전하던 판을 방장이 다시 모으면(대기 방) 관전은 끝나요.
+        if (watching(g) && room.status === 'waiting') {
+            stop();
+            deps.toLobby();
+            return;
+        }
         const over = room.status === 'finished' || isMindOver(g);
         let body = el.querySelector('[data-ox-body]');
         if (!body) {
@@ -283,7 +340,7 @@ export function createMindMode(deps) {
         body.innerHTML = `
             <div class="mind-top">
                 <button type="button" class="boardgame-mini-btn" data-m="leave">나가기</button>
-                <h2 class="mind-title">이심전심</h2>
+                <h2 class="mind-title">이심전심${watching(g) ? ' <small class="mind-watch-tag">관전</small>' : ''}</h2>
                 <button type="button" class="boardgame-mini-btn" data-m="rules">규칙</button>
             </div>
             <div class="mind-stats">
@@ -294,7 +351,8 @@ export function createMindMode(deps) {
             <div class="mind-mates">${matesHtml(g, over)}</div>
             ${tableHtml(g, over)}
             ${handHtml(g, over)}
-            <div class="mind-actions">${starHtml(g, over)}</div>`;
+            <div class="mind-actions">${starHtml(g, over)}</div>
+            ${starPopHtml(g, over)}`;
         react(g);
     }
 

@@ -3,13 +3,13 @@
  * 시중 보드게임 「더 마인드」와 같은 규칙이에요.
  *
  * 규칙
- * - 2~4명이 한 팀이에요. 1~100 카드 100장을 섞어, 레벨 N에서는 한 사람에게 N장씩 나눠 줘요.
+ * - 2~6명이 한 팀이에요. 1~100 카드 100장을 섞어, 레벨 N에서는 한 사람에게 N장씩 나눠 줘요.
  * - 차례가 없어요. 말이나 신호 없이, 모두의 카드가 작은 수부터 차례로 나오게 한 장씩 내요.
  *   자기 손에서는 가장 작은 카드부터 내요.
  * - 누가 낸 카드보다 작은 카드를 다른 사람이 들고 있었다면 실수예요. 생명을 하나 잃고,
  *   낸 카드보다 작은 카드는 모두 옆으로 치운 뒤 그 레벨을 이어 가요.
  * - 모두의 손이 비면 레벨 통과. 마지막 레벨까지 통과하면 승리, 생명이 0이 되면 실패예요.
- * - 레벨 수: 2명 12, 3명 10, 4명 8. 시작 생명은 사람 수만큼, 수리검은 1개.
+ * - 레벨 수: 2명 12, 3명 10, 4명 8, 5명 7, 6명 6. 시작 생명은 사람 수만큼, 수리검은 1개.
  * - 보상(그 레벨을 통과하면): 2·5·8레벨 수리검 +1, 3·6·9레벨 생명 +1. 생명은 5개, 수리검은 3개까지.
  * - 수리검: 누가 쓰자고 하고 모두 동의하면, 각자 가장 작은 카드 한 장을 보이게 버려요.
  * - 레벨을 시작할 때는 카드를 보고 모두 「준비」를 눌러 마음을 모은 뒤 시작해요.
@@ -18,12 +18,13 @@
  */
 
 export const MIND_MIN_PLAYERS = 2;
-export const MIND_MAX_PLAYERS = 4;
+export const MIND_MAX_PLAYERS = 6;
 export const MIND_MAX_CARD = 100;
-export const MIND_MAX_LIVES = 5;
+/** 생명은 사람 수만큼 시작하니 6명일 때도 담기게 6개까지예요. */
+export const MIND_MAX_LIVES = 6;
 export const MIND_MAX_STARS = 3;
 /** 사람 수별 마지막 레벨 */
-export const MIND_LEVELS = Object.freeze({ 2: 12, 3: 10, 4: 8 });
+export const MIND_LEVELS = Object.freeze({ 2: 12, 3: 10, 4: 8, 5: 7, 6: 6 });
 /** 그 레벨을 통과하면 받는 보상 */
 export const MIND_REWARDS = Object.freeze({ 2: 'star', 3: 'life', 5: 'star', 6: 'life', 8: 'star', 9: 'life' });
 export const MIND_PHASES = Object.freeze(['wait', 'focus', 'play', 'won', 'lost', 'left']);

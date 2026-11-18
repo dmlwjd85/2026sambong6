@@ -23,6 +23,13 @@ function busyNow() {
     return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable));
 }
 
+/** 모아 둔 펫 저장(먹이·강화·봉)이 아직 서버에 안 갔는지 */
+function petQueuePending() {
+    try {
+        return typeof window.petSavesPending === 'function' && !!window.petSavesPending();
+    } catch (_) { return false; }
+}
+
 export function startAppUpdateWatch() {
     const mine = currentBundle();
     if (!mine || typeof fetch !== 'function') return;
@@ -36,6 +43,36 @@ export function startAppUpdateWatch() {
     const reload = () => {
         try { location.reload(); } catch (_) { /* 무시 */ }
     };
+    let reloading = false;
+    /**
+     * 새 버전으로 바꾸기 전에 모아 둔 펫 저장을 끝내요.
+     * 태블릿이 잠깐 다른 앱에 갔다 오면(화면이 가려졌다 다시 보임) 바로 새로 고치는데,
+     * 그때 15초짜리 펫 저장이 아직이면 강화 성공과 봉 차감이 같이 사라져요.
+     */
+    async function reloadIfSafe({ hidden = false } = {}) {
+        if (!stale || reloading) return;
+        if (busyNow()) return;
+        const idleMs = Date.now() - lastInput;
+        if (!canReloadNow({ hidden, idleMs, busy: false })) return;
+        reloading = true;
+        try {
+            if (typeof window.flushPetSaves === 'function') {
+                await Promise.race([
+                    Promise.resolve(window.flushPetSaves()),
+                    new Promise((ok) => setTimeout(ok, 8000)),
+                ]);
+            }
+        } catch (_) { /* 저장이 거절돼도 아래에서 아직 남은 일이 있는지 다시 봐요 */ }
+        if (
+            !stale
+            || busyNow()
+            || !canReloadNow({ hidden, idleMs: Date.now() - lastInput, busy: false, petPending: petQueuePending() })
+        ) {
+            reloading = false;
+            return;
+        }
+        reload();
+    }
     async function check() {
         if (stale) return;
         lastCheck = Date.now();
@@ -53,12 +90,13 @@ export function startAppUpdateWatch() {
     }
     function tryReload() {
         if (!stale) return;
-        if (canReloadNow({ hidden: false, idleMs: Date.now() - lastInput, busy: busyNow() })) reload();
+        void reloadIfSafe({ hidden: false });
     }
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible') return;
         // 다른 앱에 갔다 돌아왔을 때: 새 버전이면 하던 일이 없을 때 바로 새로 고쳐요.
-        if (stale && !busyNow()) { reload(); return; }
+        // 펫 저장이 남아 있으면 reloadIfSafe 가 저장을 끝낸 뒤에 고쳐요.
+        if (stale && !busyNow()) { void reloadIfSafe({ hidden: true }); return; }
         if (Date.now() - lastCheck > CHECK_MS / 2) void check();
     });
     setInterval(() => {

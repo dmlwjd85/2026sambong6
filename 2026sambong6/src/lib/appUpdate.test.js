@@ -22,4 +22,9 @@ describe('새 버전 알아보기', () => {
         assert.equal(canReloadNow({ idleMs: 120000 }), true);
         assert.equal(canReloadNow({ idleMs: 999999, busy: true }), false);
     });
+    it('펫 저장이 아직 서버에 안 갔으면 가려진 화면이어도 새로 고치지 않아요', () => {
+        assert.equal(canReloadNow({ hidden: true, petPending: true }), false);
+        assert.equal(canReloadNow({ idleMs: 999999, petPending: true }), false);
+        assert.equal(canReloadNow({ hidden: true, petPending: false }), true);
+    });
 });

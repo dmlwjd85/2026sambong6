@@ -1,7 +1,7 @@
 /**
  * 메이트 펫 탐험(보스 레이드): 반 친구들의 대표 펫이 모여 보스를 잡는 방치형 전투(순수 모듈, DOM·Firestore 없음).
  *
- * - 2명부터, 많게는 학급 인원(최대 13명)까지 한 팀이 돼요. 스테이지는 11개, 보스마다 속성이 달라요.
+ * - 2명부터, 많게는 학급 인원(최대 13명)까지 한 팀이 돼요. 스테이지는 22개(12~22는 색다른 보스), 보스마다 속성이 달라요.
  * - 전투는 자동이에요. 같은 팀·같은 보스·같은 씨앗(seed)이면 어느 기기에서 돌려도 결과가 똑같아요.
  *   그래서 방장이 '출발'을 누르면 모두의 화면에서 같은 전투가 펼쳐져요.
  * - 사람이 많을수록 유리해요: 공격이 늘고, 한 명 늘 때마다 팀 전체 공격력이 조금씩(기본 6%) 더 세져요.
@@ -12,15 +12,16 @@
  * - 혼자 있는 방은 1분 뒤 없애고, 모두 준비했는데 한 명만 10초 넘게 준비하지 않으면 내보내요(화면 쪽에서 시간을 재요).
  * - 5턴마다 OX 퀴즈: 참가자의 반 이상이 맞히면 합동 필살기, 아니면 보스 필살기를 맞아요.
  */
-import { PET_GUARD_LEVEL, PET_GUARD_SKILLS, PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
+import { PET_GUARD_LEVEL, PET_GUARD_SKILLS, PET_HEAL_LEVEL, PET_HEAL_LOW_PCT, PET_HEAL_SKILLS, PET_MAX_LEVEL, PET_MAX_POWER, PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
 
 /** 전투 규칙 판: 2부터 막기 기술(공격받을 때 발동)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
 /** 3부터 OX 퀴즈(합동 필살기·보스 필살기)가 들어가요. */
-export const RAID_RULES = 3;
+/** 4부터 회복 기술(Lv.40)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
+export const RAID_RULES = 4;
 
 export const RAID_MIN_PARTY = 2;
 export const RAID_MAX_PARTY = 13;
-export const RAID_STAGE_COUNT = 11;
+export const RAID_STAGE_COUNT = 22;
 export const RAID_MAX_ROUNDS = 18;
 /** 열어 둔 채 이만큼 지난 탐험 방은 지난 방으로 봐요(30분). */
 export const RAID_PARTY_TTL_MS = 30 * 60 * 1000;
@@ -45,7 +46,7 @@ export function raidTypeMult(attacker, defender) {
 }
 
 /**
- * 기본 스테이지 11개. 11스테이지 챔피루는 격투(상성 없음)라 누구나 같은 데미지로 싸워요. art 는 보스 그림(펫 일러스트를 크게·어둡게 써요), 나머지는 마스터가 고칠 수 있어요.
+ * 기본 스테이지 22개(12~22는 1~11 보스의 색다른 판). 11스테이지 챔피루는 격투(상성 없음)라 누구나 같은 데미지로 싸워요. art 는 보스 그림(펫 일러스트를 크게·어둡게 써요), 나머지는 마스터가 고칠 수 있어요.
  * hp·atk: 보스 체력·공격력, aoe: 전체 공격을 쓸 확률(%), first: 첫 클리어 봉, repeat: 반복 클리어 봉
  * (hits 는 예전 규칙에서 쓰던 값이라 남겨만 둬요.)
  */
@@ -61,6 +62,17 @@ export const RAID_DEFAULT_STAGES = Object.freeze([
     { name: '화산의 염호랑', type: 'fire', art: 'emberkit_3', hp: 90000, atk: 520, hits: 3, aoe: 45, first: 18, repeat: 4 },
     { name: '암흑 성룡', type: 'star', art: 'stardrake_3', hp: 125000, atk: 540, hits: 4, aoe: 50, first: 25, repeat: 5 },
     { name: '전설의 챔피루', type: 'fight', art: 'punchroo_3', hp: 200000, atk: 650, hits: 4, aoe: 50, first: 30, repeat: 6 },
+    { name: '빛나는 큰 싹록', type: 'grass', art: 'sproutdeer_1_s', hp: 230000, atk: 680, hits: 4, aoe: 50, first: 32, repeat: 6 },
+    { name: '빛나는 몽달 대장', type: 'water', art: 'dropotter_1_s', hp: 250000, atk: 700, hits: 4, aoe: 50, first: 34, repeat: 6 },
+    { name: '빛나는 화르냥', type: 'fire', art: 'emberkit_2_s', hp: 270000, atk: 720, hits: 4, aoe: 50, first: 36, repeat: 7 },
+    { name: '빛나는 번쩍부엉', type: 'electric', art: 'zapowl_2_s', hp: 290000, atk: 740, hits: 4, aoe: 50, first: 38, repeat: 7 },
+    { name: '빛나는 서리토', type: 'ice', art: 'snowbun_2_s', hp: 310000, atk: 760, hits: 4, aoe: 50, first: 40, repeat: 8 },
+    { name: '빛나는 바위북', type: 'rock', art: 'pebbletle_2_s', hp: 330000, atk: 780, hits: 4, aoe: 50, first: 42, repeat: 8 },
+    { name: '빛나는 숲왕록', type: 'grass', art: 'sproutdeer_3_s', hp: 350000, atk: 800, hits: 4, aoe: 50, first: 44, repeat: 9 },
+    { name: '빛나는 해달왕', type: 'water', art: 'dropotter_3_s', hp: 365000, atk: 820, hits: 4, aoe: 50, first: 46, repeat: 9 },
+    { name: '빛나는 염호랑', type: 'fire', art: 'emberkit_3_s', hp: 380000, atk: 840, hits: 4, aoe: 50, first: 48, repeat: 10 },
+    { name: '빛나는 챔피루', type: 'fight', art: 'punchroo_3_s', hp: 400000, atk: 860, hits: 4, aoe: 55, first: 50, repeat: 10 },
+    { name: '빛나는 암흑 성룡', type: 'star', art: 'stardrake_3_s', hp: 480000, atk: 900, hits: 4, aoe: 55, first: 60, repeat: 12 },
 ].map((x) => Object.freeze(x)));
 
 export const RAID_DEFAULT_SETTINGS = Object.freeze({
@@ -88,6 +100,8 @@ export const RAID_DEFAULT_SETTINGS = Object.freeze({
     teamUlt: 300,
     /** 보스 필살기: 살아 있는 모두에게 보스 공격력의 이만큼(%) */
     bossUlt: 120,
+    /** 첫 클리어 보상 시즌. 1 올리면 모두 첫 보상을 다시 받을 수 있어요. */
+    rewardSeason: 1,
 });
 
 /** 한 사람이 더 데려갈 수 있는 펫의 최대(설정으로 더 줄일 수 있어요) */
@@ -148,6 +162,7 @@ export function sanitizeRaidSettings(raw) {
         quizSec: num(src.quizSec, d.quizSec, 5, 60),
         teamUlt: num(src.teamUlt, d.teamUlt, 0, 1000),
         bossUlt: num(src.bossUlt, d.bossUlt, 0, 500),
+        rewardSeason: num(src.rewardSeason, d.rewardSeason, 1, 999),
     };
 }
 
@@ -165,6 +180,13 @@ export function raidUnlockedStage(progress) {
     let n = 1;
     while (n < RAID_STAGE_COUNT && p.firsts.includes(n)) n += 1;
     return n;
+}
+
+/** 이번 보상 시즌 기준으로 첫 보상을 받은 스테이지 목록(시즌이 바뀌었으면 빈 목록) */
+export function raidPaidFirsts(progressRaw, settings = null) {
+    const p = sanitizeRaidProgress(progressRaw);
+    const cfg = sanitizeRaidSettings(settings);
+    return p.season === cfg.rewardSeason ? p.paid : [];
 }
 
 /* ---------- 팀원 ---------- */
@@ -202,10 +224,10 @@ function sanitizeMember(raw) {
         species: sp.id,
         stage: int(raw.stage, 1, 3),
         shiny: raw.shiny === true,
-        level: int(raw.level, 1, 30),
+        level: int(raw.level, 1, PET_MAX_LEVEL),
         enhance: int(raw.enhance, 0, 10),
         type: sp.type,
-        power: int(raw.power, 0, 1000),
+        power: int(raw.power, 0, PET_MAX_POWER),
         ...(raw.ready === true ? { ready: true } : {}), // 방에서 '준비'를 눌렀는지
     };
 }
@@ -235,7 +257,7 @@ function makeRng(seed) {
 
 /** 펫의 체력·공격력 */
 export function raidPetStats(power) {
-    const p = int(power, 0, 1000);
+    const p = int(power, 0, PET_MAX_POWER);
     return { hp: 200 + p * 2, atk: 20 + Math.round(p * 0.5) };
 }
 
@@ -254,16 +276,19 @@ export const RAID_BOSS_ALL_MULT = 0.5;
  * - quiz(규칙 3): { every, results, teamUlt, bossUlt }. every 턴마다 퀴즈를 내요. results[k] 가 true 면 합동 필살기, false 면 보스 필살기,
  *   아직 없으면 거기서 멈추고 pending: true 로 돌려줘요(답이 모이면 results 를 채워 처음부터 다시 돌려요. 앞부분은 똑같이 나와요).
  *   퀴즈 결과는 rounds 에 { quiz: k, ok, hits, bossHp, bossMove: ''|'ult', boss } 로 끼워 넣어요. turns 는 퀴즈를 뺀 진짜 턴 수예요.
+ * - heal(규칙 4): 보스 공격 뒤 Lv.40 펫이 회복 기술을 확률로 써요. 그 라운드에 heals: [{ by, target, amount }] 가 붙어요(퀴즈 라운드에는 없어요).
+ *   healed[id]: 그 펫이 회복 기술로 채운 체력 합계
  */
-export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false, quiz = null } = {}) {
+export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false, quiz = null, heal = false } = {}) {
     const members = (Array.isArray(membersRaw) ? membersRaw : []).map(sanitizeMember).filter(Boolean).slice(0, RAID_MAX_PARTY);
     const boss = { type: PET_TYPES[bossRaw && bossRaw.type] ? bossRaw.type : 'grass', hp: int(bossRaw && bossRaw.hp, 1), atk: int(bossRaw && bossRaw.atk), aoe: int(bossRaw && bossRaw.aoe, 0, 100) };
     const rnd = makeRng(seed);
     const teamMult = 1 + (Math.max(0, members.length - 1) * int(teamBonus, 0, 50)) / 100;
-    const state = members.map((m) => ({ ...m, ...raidPetStats(m.power), mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type), skills: petSkillCount(m.level) }));
+    const state = members.map((m) => ({ ...m, ...raidPetStats(m.power), max: raidPetStats(m.power).hp, mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type), skills: petSkillCount(m.level) }));
     const dealt = {};
     const blocked = {};
-    members.forEach((m) => { dealt[m.id] = 0; blocked[m.id] = 0; });
+    const healed = {};
+    members.forEach((m) => { dealt[m.id] = 0; blocked[m.id] = 0; healed[m.id] = 0; });
     let bossHp = boss.hp;
     const rounds = [];
     const every = quiz ? int(quiz.every, 0, 9) : 0;
@@ -309,7 +334,29 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
                 if (bossHp <= 0) break;
             }
         }
-        rounds.push({ hits, bossHp, bossMove, boss: bossHits });
+        const heals = [];
+        if (heal && bossHp > 0) {
+            for (const m of state) {
+                if (m.hp <= 0 || m.level < PET_HEAL_LEVEL) continue;
+                const h = PET_HEAL_SKILLS[m.species];
+                if (!h) continue;
+                if (h.when === 'low' && m.hp > (m.max * PET_HEAL_LOW_PCT) / 100) continue; // 조건이 안 되면 주사위를 굴리지 않아요
+                if (rnd() * 100 >= h.chance) continue;
+                const alive = state.filter((x) => x.hp > 0);
+                let targets;
+                if (h.target === 'self') targets = [m];
+                else if (h.target === 'all') targets = alive;
+                else targets = [alive.reduce((lo, x) => (x.hp / x.max < lo.hp / lo.max ? x : lo), alive[0])]; // 같으면 앞 사람
+                for (const t of targets) {
+                    const amount = Math.min(t.max - t.hp, Math.round((t.max * h.pct) / 100));
+                    if (amount <= 0) continue;
+                    t.hp += amount;
+                    healed[m.id] += amount;
+                    heals.push({ by: m.id, target: t.id, amount });
+                }
+            }
+        }
+        rounds.push({ hits, bossHp, bossMove, boss: bossHits, ...(heals.length ? { heals } : {}) });
         turns += 1;
         // OX 퀴즈: 정해진 턴마다(마지막 턴 뒤에는 안 내요)
         if (every > 0 && bossHp > 0 && (r + 1) % every === 0 && r + 1 < RAID_MAX_ROUNDS) {
@@ -349,6 +396,7 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
         bossMaxHp: boss.hp,
         dealt,
         blocked,
+        healed,
         alive: state.filter((m) => m.hp > 0).map((m) => m.id),
         teamMult,
     };
@@ -584,7 +632,7 @@ export function replayRaidRun(run) {
     if (!run) return null;
     const rules = int(run.rules);
     const quiz = rules >= 3 && int(run.quizEvery) > 0 ? { every: run.quizEvery, results: run.results || [], teamUlt: run.teamUlt, bossUlt: run.bossUlt } : null;
-    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: rules >= 2, quiz });
+    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: rules >= 2, quiz, heal: rules >= 4 });
 }
 
 /**
@@ -688,21 +736,27 @@ export function claimRaidReward(progressRaw, run, { id, today = '', settings = n
     const cfg = sanitizeRaidSettings(settings);
     const day = String(today || '');
     const dayRewards = progress.day === day ? progress.dayRewards : 0;
-    const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30) };
+    const paidNow = raidPaidFirsts(progress, cfg);
+    const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30), season: cfg.rewardSeason, paid: paidNow.slice() };
     // 하루 보상 횟수를 다 쓰면 봉도 경험치도 더 주지 않아요(도전은 계속 할 수 있어요).
     const used = dayRewards >= cfg.dailyRewards;
     if (!run.win) return { ok: true, error: '', bong: 0, exp: used ? 0 : run.stage, first: false, limited: used, fee, progress: next };
-    const first = !progress.firsts.includes(run.stage);
+    const first = !paidNow.includes(run.stage);
     let bong = 0;
     let limited = false;
     if (first) {
         bong = run.boss.first;
-        next.firsts = progress.firsts.concat(run.stage).sort((a, b) => a - b);
-    } else if (dayRewards < cfg.dailyRewards) {
-        bong = run.boss.repeat;
-        next.dayRewards = dayRewards + 1;
+        next.paid = paidNow.concat(run.stage).sort((a, b) => a - b);
+        if (!progress.firsts.includes(run.stage)) next.firsts = progress.firsts.concat(run.stage).sort((a, b) => a - b);
     } else {
-        limited = true;
+        // 옛 데이터 보호: 깬 스테이지 기록에 없으면 넣어 줘요.
+        if (!progress.firsts.includes(run.stage)) next.firsts = progress.firsts.concat(run.stage).sort((a, b) => a - b);
+        if (dayRewards < cfg.dailyRewards) {
+            bong = run.boss.repeat;
+            next.dayRewards = dayRewards + 1;
+        } else {
+            limited = true;
+        }
     }
     return { ok: true, error: '', bong, exp: limited ? 0 : run.stage * 4, first, limited, fee, progress: next };
 }

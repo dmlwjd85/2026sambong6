@@ -128,9 +128,9 @@ describe('펫: 놀기·레벨·진화', () => {
         assert.equal(P.petView(e2.pet, T0, DAY).canEvolve, false);
     });
 
-    it('최고 레벨은 30이고 넘치는 경험치는 버려요', () => {
-        const r = P.feedPet(pet({ level: 29, exp: 180, full: 0 }), { food: 'feast', bong: 9, now: T0, today: DAY });
-        assert.equal(r.pet.level, 30);
+    it('최고 레벨은 40이고 넘치는 경험치는 버려요', () => {
+        const r = P.feedPet(pet({ level: 39, exp: 240, full: 0 }), { food: 'feast', bong: 9, now: T0, today: DAY });
+        assert.equal(r.pet.level, 40);
         assert.equal(r.pet.exp, 0);
         assert.equal(P.petView(r.pet, T0, DAY).expNeed, 0);
     });
@@ -203,7 +203,7 @@ describe('펫: 강화·산책·랭킹', () => {
         assert.equal(P.sanitizePet(null).phase, 'none');
         assert.equal(P.sanitizePet({ phase: 'pet', species: 'pikachu' }).phase, 'none');
         const p = P.sanitizePet({ phase: 'pet', species: 'snowbun', level: 99, stage: 7, enhance: -3, full: 500, name: '<script>' });
-        assert.equal(p.level, 30);
+        assert.equal(p.level, 40);
         assert.equal(p.stage, 3);
         assert.equal(p.enhance, 0);
         assert.equal(p.full, 100);
@@ -510,5 +510,31 @@ describe('놓아주기 되돌리기', () => {
         let box = P.releaseBoxPet(P.sanitizePetBox({ v: 2, slots: 2, main: 0, list: [pet('zapowl'), { phase: 'none' }], dex: {} }), 0, { now: T }).box;
         box = { ...box, list: [{ phase: 'none' }, pet('zapowl', 1)] };
         assert.equal(P.restoreReleasedPet(box, 0, { now: T }).error, 'owned');
+    });
+});
+
+describe('레벨 40 · 회복 기술', () => {
+    it('최고 레벨 40, 전투력은 최대 1150이에요', () => {
+        assert.equal(P.sanitizePet({ phase: 'pet', species: 'snowbun', level: 45 }).level, 40);
+        const best = P.sanitizePet({ phase: 'pet', species: 'stardrake', shiny: true, stage: 3, level: 40, enhance: 10 });
+        assert.equal(P.petPower(best), 1150);
+        assert.equal(P.PET_MAX_POWER, 1150);
+        const up = P.grantPetExp(pet({ level: 39, exp: 0 }), P.petExpNeed(39));
+        assert.equal(up.pet.level, 40);
+        assert.equal(up.levelUps, 1);
+        const stay = P.grantPetExp(up.pet, 9999);
+        assert.equal(stay.pet.level, 40);
+        assert.equal(stay.levelUps, 0);
+        assert.equal(stay.pet.exp, 0);
+    });
+
+    it('회복 기술은 8종 모두 있고 이름이 서로 달라요. Lv.40에 배워요', () => {
+        const ids = Object.keys(P.PET_SPECIES);
+        assert.equal(ids.length, 8);
+        ids.forEach((id) => assert.ok(P.PET_HEAL_SKILLS[id], id));
+        assert.equal(new Set(ids.map((id) => P.PET_HEAL_SKILLS[id].name)).size, 8);
+        assert.equal(P.petHealSkill('zapowl', 39).learned, false);
+        assert.equal(P.petHealSkill('zapowl', 40).learned, true);
+        assert.ok(P.petHealText(P.petHealSkill('zapowl', 40)).includes('35%'));
     });
 });

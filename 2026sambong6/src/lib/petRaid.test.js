@@ -15,18 +15,19 @@ const winRate = (n, power, stage, tries = 60) => {
 };
 
 describe('탐험 설정', () => {
-    it('기본 스테이지는 11개이고, 뒤로 갈수록 세고 보상이 커요', () => {
+    it('기본 스테이지는 22개이고, 뒤로 갈수록 세고 보상이 커요', () => {
         const s = R.sanitizeRaidSettings(null);
-        assert.equal(s.stages.length, 11);
+        assert.equal(s.stages.length, 22);
         assert.deepEqual([s.stages[10].name, s.stages[10].type, s.stages[10].art], ['전설의 챔피루', 'fight', 'punchroo_3']);
-        for (let i = 1; i < 11; i += 1) {
+        assert.deepEqual([s.stages[20].art, s.stages[21].art], ['punchroo_3_s', 'stardrake_3_s']);
+        for (let i = 1; i < 22; i += 1) {
             assert.ok(s.stages[i].hp > s.stages[i - 1].hp);
             assert.ok(s.stages[i].first >= s.stages[i - 1].first);
         }
         assert.ok(new Set(s.stages.map((x) => x.type)).size >= 6, '보스 속성이 다양해요');
         assert.equal(s.dailyRewards, 3);
-        // 보상을 너무 많이 주지 않아요: 첫 보상을 다 모아도 140봉 안쪽
-        assert.ok(s.stages.reduce((sum, x) => sum + x.first, 0) <= 140);
+        // 보상을 너무 많이 주지 않아요: 첫 보상을 다 모아도 620봉 안쪽(1~11: 135, 12~22: 470)
+        assert.ok(s.stages.reduce((sum, x) => sum + x.first, 0) <= 620);
     });
 
     it('마스터가 고친 값은 범위 안으로 맞추고, 빈 값은 기본값을 써요', () => {
@@ -174,7 +175,10 @@ describe('탐험 보상', () => {
         assert.equal(R.raidUnlockedStage({ firsts: [1, 3] }), 2);
         assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9] }), 10);
         assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), 11);
-        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] }), 11);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] }), 12);
+        const upTo = (n) => Array.from({ length: n }, (_, i) => i + 1);
+        assert.equal(R.raidUnlockedStage({ firsts: upTo(21) }), 22);
+        assert.equal(R.raidUnlockedStage({ firsts: upTo(22) }), 22);
     });
 });
 
@@ -437,5 +441,107 @@ describe('펫 더 데려가기 · 방 정리 · OX 퀴즈', () => {
         const run = R.sanitizeRaidParty({ leaderId: '1', run: old }).run;
         assert.deepEqual(R.replayRaidRun(run).rounds, R.simulateRaid(team(3, 300), R.RAID_DEFAULT_STAGES[0], 11, { guard: true }).rounds);
         assert.equal(R.claimRaidReward(null, run, { id: '1', today: DAY }).fee, 0);
+    });
+});
+
+describe('색다른 보스 12~22 · 보상 시즌 · 회복 기술', () => {
+    const SP8 = ['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake', 'punchroo'];
+    const squad = (n, level, power) => Array.from({ length: n }, (_, i) => ({ id: String(i + 1), name: `학생${i + 1}`, species: SP8[i % 8], stage: 3, level, enhance: 10, power }));
+    const QUIZ = (results) => ({ every: 5, results, teamUlt: 300, bossUlt: 120 });
+    const rate = (team, stage, results) => {
+        let w = 0;
+        for (let s = 1; s <= 60; s += 1) w += R.simulateRaid(team, R.RAID_DEFAULT_STAGES[stage - 1], s, { guard: true, heal: true, quiz: QUIZ(results) }).win ? 1 : 0;
+        return w / 60;
+    };
+
+    it('색다른 보스(12~22)는 모두 11스테이지보다 세고, 뒤로 갈수록 체력이 커요', () => {
+        const s = R.sanitizeRaidSettings(null).stages;
+        for (let i = 11; i < 22; i += 1) {
+            assert.ok(s[i].hp > 200000, `${i + 1} 체력`);
+            assert.ok(s[i].atk > 650, `${i + 1} 공격력`);
+            if (i > 11) assert.ok(s[i].hp > s[i - 1].hp, `${i + 1} 체력 증가`);
+        }
+    });
+
+    it('보상 시즌: 시즌이 바뀌면 첫 클리어 보상을 다시 받아요(깬 기록은 그대로)', () => {
+        const run = (id) => ({ id, stage: 1, win: true, boss: { first: 3, repeat: 1 }, members: [member(0), member(1)] });
+        const r = R.claimRaidReward({ firsts: [1, 2, 3], paid: [] }, run('a1'), { id: '1', today: DAY });
+        assert.equal(r.first, true);
+        assert.equal(r.bong, 3);
+        assert.equal(r.progress.season, 1);
+        assert.ok(r.progress.paid.includes(1));
+        assert.deepEqual(r.progress.firsts, [1, 2, 3]);
+        const again = R.claimRaidReward(r.progress, run('a2'), { id: '1', today: DAY });
+        assert.equal(again.first, false);
+        assert.equal(again.bong, 1);
+        const s2 = R.claimRaidReward(again.progress, run('a3'), { id: '1', today: DAY, settings: { rewardSeason: 2 } });
+        assert.equal(s2.first, true);
+        assert.equal(s2.bong, 3);
+        assert.equal(s2.progress.season, 2);
+        assert.deepEqual(s2.progress.paid, [1]);
+        assert.deepEqual(R.raidPaidFirsts(again.progress, null), [1]);
+        assert.deepEqual(R.raidPaidFirsts(again.progress, { rewardSeason: 2 }), []);
+        assert.equal(R.sanitizeRaidSettings(null).rewardSeason, 1);
+    });
+
+    it('Lv.39 팀은 회복을 켜도 전투가 똑같아요(주사위를 더 굴리지 않아요)', () => {
+        const boss = { type: 'star', hp: 480000, atk: 900, aoe: 55 };
+        for (let seed = 1; seed <= 10; seed += 1) {
+            const on = R.simulateRaid(squad(8, 39, 1135), boss, seed, { guard: true, heal: true });
+            const off = R.simulateRaid(squad(8, 39, 1135), boss, seed, { guard: true, heal: false });
+            assert.deepEqual(on.rounds, off.rounds);
+        }
+    });
+
+    it('Lv.40 팀은 보스 공격 뒤 회복 기술을 쓰고, 체력은 최대를 넘지 않아요', () => {
+        const boss = { type: 'star', hp: 480000, atk: 900, aoe: 55 };
+        const team8 = squad(8, 40, 1150);
+        const max = R.raidPetStats(1150).hp;
+        let count = 0;
+        for (let seed = 1; seed <= 30; seed += 1) {
+            const sim = R.simulateRaid(team8, boss, seed, { guard: true, heal: true });
+            const left = {};
+            team8.forEach((m) => { left[m.id] = max; });
+            sim.rounds.forEach((rd) => {
+                rd.boss.forEach((h) => { left[h.target] = h.faint ? 0 : Math.max(0, left[h.target] - h.dmg); });
+                (rd.heals || []).forEach((h) => {
+                    count += 1;
+                    assert.ok(h.amount > 0);
+                    assert.ok(left[h.target] > 0, '쓰러진 펫은 회복하지 않아요');
+                    left[h.target] += h.amount;
+                    assert.ok(left[h.target] <= max, '최대 체력을 넘지 않아요');
+                });
+            });
+            const sum = Object.values(sim.healed).reduce((a, b) => a + b, 0);
+            assert.equal(sum, sim.rounds.reduce((t, rd) => t + (rd.heals || []).reduce((x, h) => x + h.amount, 0), 0));
+        }
+        assert.ok(count >= 1);
+    });
+
+    it('예전 규칙(3)으로 적힌 전투는 Lv.40 팀이어도 회복이 없어요', () => {
+        const boss = { ...R.RAID_DEFAULT_STAGES[21] };
+        const base = { id: 'h', seed: 3, stage: 22, boss, teamBonus: 6, win: false, startedAt: T0, members: squad(8, 40, 1150), quizEvery: 0 };
+        let healsNew = 0;
+        for (let seed = 1; seed <= 10; seed += 1) {
+            assert.ok(R.replayRaidRun({ ...base, seed, rules: 3 }).rounds.every((rd) => !rd.heals));
+            healsNew += R.replayRaidRun({ ...base, seed, rules: 4 }).rounds.filter((rd) => rd.heals).length;
+        }
+        assert.ok(healsNew >= 1);
+        assert.equal(R.RAID_RULES, 4);
+    });
+
+    it('균형: 12스테이지는 Lv.40 13마리면 거의 이기고, 22스테이지는 퀴즈를 맞혀야 해요', () => {
+        const T = [true, true, true];
+        const F = [false, false, false];
+        const lv40 = squad(13, 40, 1150);
+        const lv30 = squad(13, 30, 1000);
+        const r12 = rate(lv40, 12, T);
+        const r22ok = rate(lv40, 22, T);
+        const r22no = rate(lv40, 22, F);
+        const r22lv30 = rate(lv30, 22, T);
+        assert.ok(r12 >= 0.9, `12스테이지 ${r12}`);
+        assert.ok(r22ok >= 0.5 && r22ok <= 1, `22스테이지 퀴즈 성공 ${r22ok}`);
+        assert.ok(r22no <= 0.1, `22스테이지 퀴즈 실패 ${r22no}`);
+        assert.ok(r22lv30 <= 0.1, `22스테이지 Lv.30 ${r22lv30}`);
     });
 });

@@ -5,7 +5,7 @@
  * 흐름
  * - 알 사기(30봉) → 품어 주기(10번 쓰다듬기) → 부화(일곱 종 가운데 하나, 드물게 색이 다른 펫)
  * - 먹이(1~3봉)로 배를 채우고 경험치를 올려요. 배가 거의 차 있으면 못 먹여요(하루에 올릴 수 있는 양이 정해져요).
- * - 놀아 주기는 공짜, 4시간에 한 번·하루 5번까지. 레벨 10·20에서 진화해요(최고 레벨 30).
+ * - 놀아 주기는 공짜, 4시간에 한 번·하루 5번까지. 레벨 10·20에서 진화해요(최고 레벨 40).
  * - 강화(+10까지)는 봉을 내고 확률로 성공해요. 실패해도 펫은 그대로예요.
  * - 산책은 하루 한 번, 펫이 봉을 조금 벌어 와요(단계·레벨·강화에 따라).
  * - 배가 텅 빈 채로 3일이 지나면 가출해요. 10봉을 내면 다시 데려와요(레벨·강화는 그대로).
@@ -14,7 +14,7 @@
 
 export const PET_EGG_PRICE = 30;
 export const PET_HATCH_TAPS = 10;
-export const PET_MAX_LEVEL = 30;
+export const PET_MAX_LEVEL = 40;
 export const PET_EVOLVE_LEVELS = Object.freeze([10, 20]); // 1단계→2단계, 2단계→3단계
 export const PET_MAX_ENHANCE = 10;
 export const PET_PLAY_PER_DAY = 5;
@@ -163,6 +163,35 @@ export function petGuardText(g) {
     return `${what}${g.counter ? ` · 되받아치기(공격력 ${g.counter}%)` : ''}`;
 }
 
+/**
+ * 회복 기술: Lv.40에 배워요. 탐험 전투에서 보스가 공격한 뒤, 살아 있으면 chance% 확률로 저절로 써요.
+ * target: 'self'(나) · 'all'(살아 있는 우리 팀 모두) · 'lowest'(체력 비율이 가장 낮은 친구 하나)
+ * pct: 대상 최대 체력의 몇 %를 채우는지, when: 'any'(언제나) · 'low'(내 체력이 35% 이하일 때만)
+ */
+export const PET_HEAL_LEVEL = 40;
+export const PET_HEAL_LOW_PCT = 35;
+export const PET_HEAL_SKILLS = Object.freeze({
+    emberkit: Object.freeze({ name: '불사조의 숨결', chance: 20, target: 'self', pct: 40, when: 'any' }),
+    dropotter: Object.freeze({ name: '치유의 샘', chance: 25, target: 'all', pct: 10, when: 'any' }),
+    sproutdeer: Object.freeze({ name: '생명의 숲', chance: 30, target: 'lowest', pct: 35, when: 'any' }),
+    zapowl: Object.freeze({ name: '번개 재충전', chance: 50, target: 'self', pct: 50, when: 'low' }),
+    snowbun: Object.freeze({ name: '눈꽃 치유', chance: 25, target: 'all', pct: 8, when: 'any' }),
+    pebbletle: Object.freeze({ name: '대지의 숨결', chance: 30, target: 'self', pct: 30, when: 'any' }),
+    stardrake: Object.freeze({ name: '별빛 축복', chance: 20, target: 'all', pct: 12, when: 'any' }),
+    punchroo: Object.freeze({ name: '투지의 회복', chance: 60, target: 'self', pct: 45, when: 'low' }),
+});
+/** 회복 기술(배웠는지 포함) */
+export function petHealSkill(species, level) {
+    const h = PET_HEAL_SKILLS[species] || PET_HEAL_SKILLS.emberkit;
+    return { ...h, level: PET_HEAL_LEVEL, learned: Number(level) >= PET_HEAL_LEVEL };
+}
+/** 회복 기술 설명 한 줄 */
+export function petHealText(h) {
+    const who = h.target === 'self' ? '내 체력' : h.target === 'all' ? '우리 팀 모두의 체력' : '가장 다친 친구의 체력';
+    const when = h.when === 'low' ? `체력 ${PET_HEAL_LOW_PCT}% 이하일 때 ` : '';
+    return `${when}${h.chance}% 확률로 ${who}을 ${h.pct}% 채워요`;
+}
+
 /** 이 레벨에서 배운 기술 수(1~3) */
 export function petSkillCount(level) {
     return Math.max(1, PET_SKILL_LEVELS.filter((lv) => Number(level) >= lv).length);
@@ -190,7 +219,7 @@ export const PET_MAX_CAGE_SIZE = 5;
 export const PET_DEFAULT_SETTINGS = Object.freeze({
     /** 칸 늘리기: [두 번째 칸, 세 번째 칸] — 필요한 내 레벨과 값(봉) */
     slotRules: Object.freeze([Object.freeze({ level: 35, price: 50 }), Object.freeze({ level: 60, price: 100 })]),
-    /** 산책 보상: 기본 최소·최대 봉, 전투력 step마다 최대 +1(전투력은 최대 1000), 하루 상한 cap */
+    /** 산책 보상: 기본 최소·최대 봉, 전투력 step마다 최대 +1(전투력은 최대 1150), 하루 상한 cap */
     walk: Object.freeze({ min: 1, max: 3, step: 150, cap: 15 }),
     /** 경험치 팩: 봉으로 사서 바로 경험치를 줘요(비쌀수록 조금 이득) */
     expPacks: Object.freeze([Object.freeze({ price: 50, exp: 50 }), Object.freeze({ price: 100, exp: 110 }), Object.freeze({ price: 500, exp: 600 })]),
@@ -299,11 +328,11 @@ export function petSpeciesName(pet) {
 }
 
 /** 전투력의 최댓값 */
-export const PET_MAX_POWER = 1000;
+export const PET_MAX_POWER = 1150;
 
 /**
- * 전투력(랭킹·탐험 기준): 단계·레벨·강화를 합쳐요. 최대 1000이에요.
- * 단계 100씩(300) + 레벨 15씩(450) + 강화 20씩(200) + 색다름 20 + 희귀 30 = 1000
+ * 전투력(랭킹·탐험 기준): 단계·레벨·강화를 합쳐요. 최대 1150이에요.
+ * 단계 100씩(300) + 레벨 15씩(600) + 강화 20씩(200) + 색다름 20 + 희귀 30 = 1150
  */
 export function petPower(pet) {
     const p = pet && pet.phase === 'pet' && PET_SPECIES[pet.species] ? pet : sanitizePet(pet);
@@ -641,11 +670,20 @@ export function sanitizeRaidProgress(raw) {
         const v = int(n, 0, 99);
         if (v >= 1 && !firsts.includes(v)) firsts.push(v);
     });
+    const paid = [];
+    (Array.isArray(src.paid) ? src.paid : []).forEach((n) => {
+        const v = int(n, 0, 99);
+        if (v >= 1 && !paid.includes(v)) paid.push(v);
+    });
     return {
         firsts: firsts.sort((a, b) => a - b).slice(0, 40),
         day: String(src.day || '').slice(0, 10),
         dayRewards: int(src.dayRewards, 0, 999),
         claimed: (Array.isArray(src.claimed) ? src.claimed : []).map((x) => String(x || '').slice(0, 60)).filter(Boolean).slice(-30),
+        /** 이번 보상 시즌에 첫 클리어 보상을 받은 스테이지 */
+        paid: paid.sort((a, b) => a - b).slice(0, 40),
+        /** paid 가 어느 보상 시즌 것인지(0 = 시즌 기능 전) */
+        season: int(src.season, 0, 999),
     };
 }
 
@@ -684,7 +722,7 @@ function sanitizeKeep(src, slots) {
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */

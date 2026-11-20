@@ -48,6 +48,8 @@ import {
     petNextSlotRule,
     petGuardSkill,
     petGuardText,
+    petHealSkill,
+    petHealText,
     petSkills,
     petView,
     playWithPet,
@@ -887,8 +889,8 @@ export function createPetMode(deps) {
             ${v.canEvolve
                 ? '<button type="button" class="pet-btn is-evolve" data-p="evolve">🌟 진화하기!</button>'
                 : (nextEvo ? `<p class="pet-note">Lv.${nextEvo}이 되면 진화할 수 있어요.</p>` : '<p class="pet-note">마지막 단계까지 진화했어요!</p>')}
-            <p class="pet-sub">기술 <em>(공격 기술은 무작위로, 🛡️ 막기 기술은 공격받을 때 확률로 써요)</em></p>
-            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}${(() => { const g = petGuardSkill(v.species, v.level); return `<span class="pet-skill is-guard${g.learned ? ' is-on' : ''} type-${sp.type}"><b>${g.learned ? '🛡️ ' : '🔒 '}${esc(g.name)}</b><i>${g.learned ? `공격받을 때 ${g.chance}% · ${esc(petGuardText(g))}` : `Lv.${g.level}에 배워요 · 공격받을 때 저절로 써요`}</i></span>`; })()}</div>
+            <p class="pet-sub">기술 <em>(공격 기술은 무작위로, 🛡️ 막기 기술은 공격받을 때, 💚 회복 기술은 보스 공격 뒤에 확률로 써요)</em></p>
+            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}${(() => { const g = petGuardSkill(v.species, v.level); return `<span class="pet-skill is-guard${g.learned ? ' is-on' : ''} type-${sp.type}"><b>${g.learned ? '🛡️ ' : '🔒 '}${esc(g.name)}</b><i>${g.learned ? `공격받을 때 ${g.chance}% · ${esc(petGuardText(g))}` : `Lv.${g.level}에 배워요 · 공격받을 때 저절로 써요`}</i></span>`; })()}${(() => { const h = petHealSkill(v.species, v.level); return h.learned ? `<span class="pet-skill is-on is-heal type-${sp.type}"><b>💚 ${esc(h.name)}</b><i>${esc(petHealText(h))}</i></span>` : `<span class="pet-skill is-heal type-${sp.type}"><b>🔒 💚 ${esc(h.name)}</b><i>Lv.40에 배워요</i></span>`; })()}</div>
             <p class="pet-sub">먹이 주기 ${v.fullNow > 90 ? '<em>(배가 불러요. 조금 있다가 줘요)</em>' : ''}</p>
             <div class="pet-foods">${foods}</div>
             ${v.level >= PET_MAX_LEVEL ? '' : `<p class="pet-sub">경험치 팩</p>

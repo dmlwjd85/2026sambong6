@@ -527,7 +527,7 @@ describe('색다른 보스 12~22 · 보상 시즌 · 회복 기술', () => {
             healsNew += R.replayRaidRun({ ...base, seed, rules: 4 }).rounds.filter((rd) => rd.heals).length;
         }
         assert.ok(healsNew >= 1);
-        assert.equal(R.RAID_RULES, 4);
+        assert.equal(R.RAID_RULES, 5);
     });
 
     it('균형: 12스테이지는 Lv.40 13마리면 거의 이기고, 22스테이지는 퀴즈를 맞혀야 해요', () => {
@@ -554,5 +554,26 @@ describe('강화석과 탐험', () => {
         assert.equal(b.power - a.power, 150);
         const party = R.sanitizeRaidParty({ leaderId: '1', members: [{ ...b, power: 1300 }, { ...b, id: '2', power: 5000 }] });
         assert.deepEqual(party.members.map((m) => m.power), [1300, 1300]);
+    });
+});
+
+describe('전투 최대 턴 수(규칙 판 5부터 20턴)', () => {
+    const tank = team(2, 100);
+    const wall = { type: 'rock', hp: 99999999, atk: 0, aoe: 0 };
+    it('새 전투는 20턴까지 싸워요', () => {
+        assert.equal(R.RAID_MAX_ROUNDS, 20);
+        assert.equal(R.RAID_RULES, 5);
+        const sim = R.replayRaidRun({ members: tank, boss: wall, seed: 3, rules: R.RAID_RULES, teamBonus: 0 });
+        assert.equal(sim.rounds.length, 20);
+        assert.equal(sim.win, false);
+    });
+    it('예전 규칙(4 이하) 전투 기록은 그대로 18턴으로 다시 보여요', () => {
+        [0, 2, 3, 4].forEach((rules) => {
+            const sim = R.replayRaidRun({ members: tank, boss: wall, seed: 3, rules, teamBonus: 0 });
+            assert.equal(sim.rounds.length, 18);
+        });
+        const a = R.replayRaidRun({ members: tank, boss: wall, seed: 9, rules: 4, teamBonus: 0 });
+        const b = R.replayRaidRun({ members: tank, boss: wall, seed: 9, rules: 5, teamBonus: 0 });
+        assert.deepEqual(b.rounds.slice(0, 18).map((r) => r.bossHp), a.rounds.map((r) => r.bossHp));
     });
 });

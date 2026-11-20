@@ -17,12 +17,17 @@ import { PET_GUARD_LEVEL, PET_GUARD_SKILLS, PET_HEAL_LEVEL, PET_HEAL_LOW_PCT, PE
 /** 전투 규칙 판: 2부터 막기 기술(공격받을 때 발동)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
 /** 3부터 OX 퀴즈(합동 필살기·보스 필살기)가 들어가요. */
 /** 4부터 회복 기술(Lv.40)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
-export const RAID_RULES = 4;
+/** 5부터 전투가 최대 20턴이에요(4까지는 18턴). 예전 전투는 예전 턴 수로 다시 돌려요. */
+export const RAID_RULES = 5;
 
 export const RAID_MIN_PARTY = 2;
 export const RAID_MAX_PARTY = 13;
 export const RAID_STAGE_COUNT = 22;
-export const RAID_MAX_ROUNDS = 18;
+export const RAID_MAX_ROUNDS = 20;
+/** 규칙 판 4까지의 최대 턴 수(지난 전투 기록을 그대로 다시 보여 주려고 남겨 둬요). */
+export const RAID_OLD_MAX_ROUNDS = 18;
+/** 규칙 판에 맞는 최대 턴 수. */
+export const raidMaxRounds = (rules) => (int(rules) >= 5 ? RAID_MAX_ROUNDS : RAID_OLD_MAX_ROUNDS);
 /** 열어 둔 채 이만큼 지난 탐험 방은 지난 방으로 봐요(30분). */
 export const RAID_PARTY_TTL_MS = 30 * 60 * 1000;
 
@@ -279,7 +284,8 @@ export const RAID_BOSS_ALL_MULT = 0.5;
  * - heal(규칙 4): 보스 공격 뒤 Lv.40 펫이 회복 기술을 확률로 써요. 그 라운드에 heals: [{ by, target, amount }] 가 붙어요(퀴즈 라운드에는 없어요).
  *   healed[id]: 그 펫이 회복 기술로 채운 체력 합계
  */
-export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false, quiz = null, heal = false } = {}) {
+export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false, quiz = null, heal = false, maxRounds = RAID_MAX_ROUNDS } = {}) {
+    const limit = Math.max(1, Math.min(RAID_MAX_ROUNDS, Math.floor(Number(maxRounds)) || RAID_MAX_ROUNDS));
     const members = (Array.isArray(membersRaw) ? membersRaw : []).map(sanitizeMember).filter(Boolean).slice(0, RAID_MAX_PARTY);
     const boss = { type: PET_TYPES[bossRaw && bossRaw.type] ? bossRaw.type : 'grass', hp: int(bossRaw && bossRaw.hp, 1), atk: int(bossRaw && bossRaw.atk), aoe: int(bossRaw && bossRaw.aoe, 0, 100) };
     const rnd = makeRng(seed);
@@ -295,7 +301,7 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
     const results = quiz && Array.isArray(quiz.results) ? quiz.results : [];
     let pending = false;
     let turns = 0;
-    for (let r = 0; r < RAID_MAX_ROUNDS && bossHp > 0; r += 1) {
+    for (let r = 0; r < limit && bossHp > 0; r += 1) {
         const alive = state.filter((m) => m.hp > 0);
         if (!alive.length) break;
         const hits = [];
@@ -359,7 +365,7 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
         rounds.push({ hits, bossHp, bossMove, boss: bossHits, ...(heals.length ? { heals } : {}) });
         turns += 1;
         // OX 퀴즈: 정해진 턴마다(마지막 턴 뒤에는 안 내요)
-        if (every > 0 && bossHp > 0 && (r + 1) % every === 0 && r + 1 < RAID_MAX_ROUNDS) {
+        if (every > 0 && bossHp > 0 && (r + 1) % every === 0 && r + 1 < limit) {
             const left = state.filter((m) => m.hp > 0);
             if (!left.length) break;
             const k = (r + 1) / every - 1;
@@ -632,7 +638,7 @@ export function replayRaidRun(run) {
     if (!run) return null;
     const rules = int(run.rules);
     const quiz = rules >= 3 && int(run.quizEvery) > 0 ? { every: run.quizEvery, results: run.results || [], teamUlt: run.teamUlt, bossUlt: run.bossUlt } : null;
-    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: rules >= 2, quiz, heal: rules >= 4 });
+    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: rules >= 2, quiz, heal: rules >= 4, maxRounds: raidMaxRounds(rules) });
 }
 
 /**

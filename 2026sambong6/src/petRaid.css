@@ -1,5 +1,14 @@
 /* 메이트 펫 탐험(보스 레이드): 스테이지·팀 모으기·전투 연출 */
 .raid-stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.4rem; }
+/* 두 묶음 모두 한 줄 6칸(폰 400px 이하는 4칸). 마지막(22) 스테이지는 한 줄을 다 쓰는 낮은 띠예요. */
+.raid-stages { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 400px) { .raid-stages { grid-template-columns: repeat(4, 1fr); } }
+.raid-stages.is-shiny > .raid-stage:last-child { grid-column: 1 / -1; aspect-ratio: auto; height: clamp(56px, 16vw, 92px); }
+.raid-stages.is-shiny > .raid-stage:last-child .raid-stage-art { inset: 6% 0 6%; }
+.raid-stages.is-shiny > .raid-stage:last-child::after { content: 'FINAL'; position: absolute; right: 0.5rem; top: 0.25rem; font-size: 11px; font-weight: 900; letter-spacing: 0.12em; color: #fde047; text-shadow: 0 1px 2px #000; }
+/* 색다른 보스 칸: 반짝이 테두리와 ✨ */
+.raid-stage.is-shiny { border-color: rgba(253, 224, 71, 0.45); }
+.raid-stage.is-shiny::before { content: '✨'; position: absolute; left: 50%; top: 0.1rem; transform: translateX(-50%); font-size: 11px; }
 .raid-stage {
     position: relative; aspect-ratio: 1; border-radius: 0.8rem; border: 2px solid rgba(255, 255, 255, 0.12);
     background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--boss) 35%, transparent), rgba(15, 23, 42, 0.9) 75%);
@@ -261,6 +270,12 @@
 @keyframes raid-guard { 0% { filter: drop-shadow(0 0 0 #93c5fd); } 30% { filter: drop-shadow(0 0 14px #60a5fa) brightness(1.4); transform: scale(1.08); } 100% { filter: none; transform: none; } }
 .raid-fx-num.is-guard, .raid-fx-num.is-guard b { color: #93c5fd; }
 .raid-fx-feed-row.is-guard i { color: #93c5fd; }
+/* 회복 기술(Lv.40) */
+.raid-fx-num.is-heal b { color: #4ade80; text-shadow: 0 2px 0 #064e3b, 0 0 12px rgba(74, 222, 128, 0.7); }
+.raid-fx-pet.is-heal { animation: raid-heal 0.6s ease-out; }
+@keyframes raid-heal { 0% { filter: brightness(1); } 40% { filter: brightness(1.6) drop-shadow(0 0 12px #4ade80); } 100% { filter: brightness(1); } }
+.raid-fx-feed-row.is-heal i { color: #4ade80; }
+@media (prefers-reduced-motion: reduce) { .raid-fx-pet.is-heal { animation: none; } }
 @media (orientation: landscape) and (max-height: 520px) {
     .raid-fx-meter { grid-template-columns: repeat(auto-fill, minmax(9.4rem, 1fr)); }
     .raid-fx-mbar { height: 10px; } .raid-fx-mbar em { line-height: 10px; font-size: 9px; }

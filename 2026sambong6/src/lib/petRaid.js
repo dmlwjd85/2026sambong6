@@ -1,7 +1,7 @@
 /**
  * 메이트 펫 탐험(보스 레이드): 반 친구들의 대표 펫이 모여 보스를 잡는 방치형 전투(순수 모듈, DOM·Firestore 없음).
  *
- * - 2명부터, 많게는 학급 인원(최대 13명)까지 한 팀이 돼요. 스테이지는 10개, 보스마다 속성이 달라요.
+ * - 2명부터, 많게는 학급 인원(최대 13명)까지 한 팀이 돼요. 스테이지는 11개, 보스마다 속성이 달라요.
  * - 전투는 자동이에요. 같은 팀·같은 보스·같은 씨앗(seed)이면 어느 기기에서 돌려도 결과가 똑같아요.
  *   그래서 방장이 '출발'을 누르면 모두의 화면에서 같은 전투가 펼쳐져요.
  * - 사람이 많을수록 유리해요: 공격이 늘고, 한 명 늘 때마다 팀 전체 공격력이 조금씩(기본 6%) 더 세져요.
@@ -20,7 +20,7 @@ export const RAID_RULES = 3;
 
 export const RAID_MIN_PARTY = 2;
 export const RAID_MAX_PARTY = 13;
-export const RAID_STAGE_COUNT = 10;
+export const RAID_STAGE_COUNT = 11;
 export const RAID_MAX_ROUNDS = 18;
 /** 열어 둔 채 이만큼 지난 탐험 방은 지난 방으로 봐요(30분). */
 export const RAID_PARTY_TTL_MS = 30 * 60 * 1000;
@@ -45,7 +45,7 @@ export function raidTypeMult(attacker, defender) {
 }
 
 /**
- * 기본 스테이지 10개. art 는 보스 그림(펫 일러스트를 크게·어둡게 써요), 나머지는 마스터가 고칠 수 있어요.
+ * 기본 스테이지 11개. 11스테이지 챔피루는 격투(상성 없음)라 누구나 같은 데미지로 싸워요. art 는 보스 그림(펫 일러스트를 크게·어둡게 써요), 나머지는 마스터가 고칠 수 있어요.
  * hp·atk: 보스 체력·공격력, aoe: 전체 공격을 쓸 확률(%), first: 첫 클리어 봉, repeat: 반복 클리어 봉
  * (hits 는 예전 규칙에서 쓰던 값이라 남겨만 둬요.)
  */
@@ -60,6 +60,7 @@ export const RAID_DEFAULT_STAGES = Object.freeze([
     { name: '깊은 바다 해달왕', type: 'water', art: 'dropotter_3', hp: 55000, atk: 420, hits: 3, aoe: 40, first: 15, repeat: 3 },
     { name: '화산의 염호랑', type: 'fire', art: 'emberkit_3', hp: 90000, atk: 520, hits: 3, aoe: 45, first: 18, repeat: 4 },
     { name: '암흑 성룡', type: 'star', art: 'stardrake_3', hp: 125000, atk: 540, hits: 4, aoe: 50, first: 25, repeat: 5 },
+    { name: '전설의 챔피루', type: 'fight', art: 'punchroo_3', hp: 200000, atk: 650, hits: 4, aoe: 50, first: 30, repeat: 6 },
 ].map((x) => Object.freeze(x)));
 
 export const RAID_DEFAULT_SETTINGS = Object.freeze({

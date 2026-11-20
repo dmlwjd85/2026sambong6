@@ -15,17 +15,18 @@ const winRate = (n, power, stage, tries = 60) => {
 };
 
 describe('탐험 설정', () => {
-    it('기본 스테이지는 10개이고, 뒤로 갈수록 세고 보상이 커요', () => {
+    it('기본 스테이지는 11개이고, 뒤로 갈수록 세고 보상이 커요', () => {
         const s = R.sanitizeRaidSettings(null);
-        assert.equal(s.stages.length, 10);
-        for (let i = 1; i < 10; i += 1) {
+        assert.equal(s.stages.length, 11);
+        assert.deepEqual([s.stages[10].name, s.stages[10].type, s.stages[10].art], ['전설의 챔피루', 'fight', 'punchroo_3']);
+        for (let i = 1; i < 11; i += 1) {
             assert.ok(s.stages[i].hp > s.stages[i - 1].hp);
             assert.ok(s.stages[i].first >= s.stages[i - 1].first);
         }
         assert.ok(new Set(s.stages.map((x) => x.type)).size >= 6, '보스 속성이 다양해요');
         assert.equal(s.dailyRewards, 3);
-        // 보상을 너무 많이 주지 않아요: 첫 보상을 다 모아도 110봉 안쪽
-        assert.ok(s.stages.reduce((sum, x) => sum + x.first, 0) <= 110);
+        // 보상을 너무 많이 주지 않아요: 첫 보상을 다 모아도 140봉 안쪽
+        assert.ok(s.stages.reduce((sum, x) => sum + x.first, 0) <= 140);
     });
 
     it('마스터가 고친 값은 범위 안으로 맞추고, 빈 값은 기본값을 써요', () => {
@@ -171,7 +172,9 @@ describe('탐험 보상', () => {
         assert.equal(R.raidUnlockedStage(null), 1);
         assert.equal(R.raidUnlockedStage({ firsts: [1, 2] }), 3);
         assert.equal(R.raidUnlockedStage({ firsts: [1, 3] }), 2);
-        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), 10);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9] }), 10);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), 11);
+        assert.equal(R.raidUnlockedStage({ firsts: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] }), 11);
     });
 });
 

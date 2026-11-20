@@ -1,5 +1,9 @@
 /* 메이트 펫 탐험(보스 레이드): 스테이지·팀 모으기·전투 연출 */
 .raid-stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.4rem; }
+/* 11번째(마지막) 스테이지는 한 줄을 다 쓰는 낮은 띠예요(그림은 가운데, 보통 칸 높이). */
+.raid-stages > .raid-stage:nth-child(11) { grid-column: 1 / -1; aspect-ratio: auto; height: clamp(56px, 16vw, 92px); }
+.raid-stages > .raid-stage:nth-child(11) .raid-stage-art { inset: 6% 0 6%; }
+.raid-stages > .raid-stage:nth-child(11)::after { content: 'FINAL'; position: absolute; right: 0.5rem; top: 0.25rem; font-size: 11px; font-weight: 900; letter-spacing: 0.12em; color: #fde047; text-shadow: 0 1px 2px #000; }
 .raid-stage {
     position: relative; aspect-ratio: 1; border-radius: 0.8rem; border: 2px solid rgba(255, 255, 255, 0.12);
     background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--boss) 35%, transparent), rgba(15, 23, 42, 0.9) 75%);

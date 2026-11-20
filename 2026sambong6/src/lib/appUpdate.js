@@ -24,9 +24,12 @@ export function isNewBundle(current, latest) {
  * 지금 새로 고쳐도 되는지.
  * - 화면이 가려져 있으면 언제든 돼요(다시 볼 때 새 화면).
  * - 보고 있으면 2분 넘게 손대지 않았고, 하던 일(창·전투·퀴즈·입력)이 없을 때만 돼요.
+ * - 펫 먹이·강화처럼 아직 서버에 안 간 일이 있으면 안 돼요. 그 상태로 새로 고치면
+ *   화면에만 있던 강화 결과와 봉 차감이 사라져요. 실패한 강화도 봉이 되돌아와
+ *   「실패해도 봉은 돌아오지 않아요」와 어긋나요.
  */
-export function canReloadNow({ hidden = false, idleMs = 0, busy = false } = {}) {
-    if (busy) return false;
+export function canReloadNow({ hidden = false, idleMs = 0, busy = false, petPending = false } = {}) {
+    if (busy || petPending) return false;
     if (hidden) return true;
     return idleMs >= 120000;
 }

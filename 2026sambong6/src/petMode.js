@@ -343,6 +343,11 @@ export function createPetMode(deps) {
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void flush(); });
         window.addEventListener('pagehide', () => { void flush(); });
     }
+    // 새 버전 새로고침(appUpdateWatch)이 이 저장이 끝나기 전에 화면을 지우지 않게 알려 줘요.
+    if (typeof window !== 'undefined') {
+        window.petSavesPending = () => queue.length > 0 || !!flushing;
+        window.flushPetSaves = () => flush();
+    }
 
     /**
      * 펫 상자를 바꾸고 저장해요. mutate(box) → { ok, error, box, cost, gain, ... }

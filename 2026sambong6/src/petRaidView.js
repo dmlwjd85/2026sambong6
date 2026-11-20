@@ -22,6 +22,7 @@ import {
     kickRaidIdle,
     leaveRaidParty,
     raidErrorText,
+    RAID_MAX_ROUNDS,
     raidMaxParty,
     raidMemberFromPet,
     raidOwner,
@@ -1161,7 +1162,7 @@ export function createPetRaidView(ctx) {
                     <thead><tr><th>#</th><th>보스 이름</th><th>속성</th><th>체력</th><th>공격력</th><th>전체 공격 %</th><th>첫 보상</th><th>반복 보상</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table></div>
-                <p class="pet-note">펫 한 마리: 체력 200 + 전투력×2, 공격력 20 + 전투력×0.5 (전투력은 최대 ${PET_MAX_POWER}). 전투는 최대 18턴이에요.</p>
+                <p class="pet-note">펫 한 마리: 체력 200 + 전투력×2, 공격력 20 + 전투력×0.5 (전투력은 최대 ${PET_MAX_POWER}). 전투는 최대 ${RAID_MAX_ROUNDS}턴이에요.</p>
                 <p class="pet-note">OX 퀴즈 문제는 「OX 퀴즈」에 올려 둔 문제에서 무작위로 나와요. 참가자의 반 이상이 맞히면 살아 있는 펫이 모두 합동 필살기를 쓰고, 아니면 모두가 보스 필살기를 맞아요(막기 기술이 안 통해요).</p>
                 <p class="pet-note">보스는 턴마다 「전체 공격 %」 확률로 모두에게 공격력의 절반을, 아니면 한 마리에게 공격력의 1.5배를 줘요. 펫은 배운 기술(Lv.1·10·20, 1배·1.3배·1.7배) 중 하나를 무작위로 써요.</p>
                 <p class="pet-note">Lv.40이 되면 종마다 다른 💚 회복 기술을 배워요(보스 공격 뒤 확률로 체력을 채워요).</p>

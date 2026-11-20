@@ -343,7 +343,7 @@ export const PET_MAX_POWER = 1300;
 export function petPower(pet) {
     const p = pet && pet.phase === 'pet' && PET_SPECIES[pet.species] ? pet : sanitizePet(pet);
     if (p.phase !== 'pet') return 0;
-    return Math.min(PET_MAX_POWER, p.stage * 100 + p.level * 15 + p.enhance * 20 + (p.shiny ? 20 : 0) + (PET_SPECIES[p.species].rare ? 30 : 0) + p.boost);
+    return Math.min(PET_MAX_POWER, p.stage * 100 + p.level * 15 + p.enhance * 20 + (p.shiny ? 20 : 0) + (PET_SPECIES[p.species].rare ? 30 : 0) + (Math.max(0, Math.min(PET_MAX_BOOST, Math.floor(Number(p.boost) || 0)))));
 }
 
 /**

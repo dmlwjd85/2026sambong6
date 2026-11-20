@@ -565,7 +565,7 @@ export function createPetRaidView(ctx) {
         const estMs = (rounds) => rounds.reduce((t, rd) => {
             if (rd.quiz !== undefined) return t + 2700;
             const gap = Math.max(130, Math.min(220, 1900 / Math.max(1, rd.hits.length)));
-            return t + rd.hits.length * gap + 420 + (rd.boss.length ? 1090 : 0);
+            return t + rd.hits.length * gap + 420 + (rd.boss.length ? 1090 : 0) + (rd.heals && rd.heals.length ? 520 : 0);
         }, 0);
 
         /** 퀴즈 결과: 합동 필살기(성공) 또는 보스 필살기(실패) */
@@ -1186,7 +1186,7 @@ export function createPetRaidView(ctx) {
         const el = ctx.root();
         if (!el || !deps.isAdmin || !deps.isAdmin() || !deps.saveSettings) return;
         const val = (name) => { const i = el.querySelector(`[data-raid-set="${name}"]`); return i ? i.value : ''; };
-        const raid = reset ? sanitizeRaidSettings(null) : sanitizeRaidSettings({
+        const raid = reset ? sanitizeRaidSettings({ rewardSeason: raidCfg().rewardSeason }) : sanitizeRaidSettings({
             dailyRewards: val('dailyRewards'),
             minParty: val('minParty'),
             maxParty: val('maxParty'),

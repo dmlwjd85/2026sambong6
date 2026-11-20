@@ -30,9 +30,11 @@ function petQueuePending() {
     } catch (_) { return false; }
 }
 
-export function startAppUpdateWatch() {
+export function startAppUpdateWatch(options = {}) {
     const mine = currentBundle();
-    if (!mine || typeof fetch !== 'function') return;
+    if (!mine || typeof fetch !== 'function') return {};
+
+    const flushWaitMs = options.flushWaitMs ?? 8000;
     let stale = false;
     let lastCheck = 0;
     let lastInput = Date.now();
@@ -41,7 +43,7 @@ export function startAppUpdateWatch() {
     ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((ev) => window.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true }));
 
     const reload = () => {
-        try { location.reload(); } catch (_) { /* 무시 */ }
+        try { location.reload(); } catch (_) { reloading = false; }
     };
     let reloading = false;
     /**
@@ -54,25 +56,39 @@ export function startAppUpdateWatch() {
         if (busyNow()) return;
         const idleMs = Date.now() - lastInput;
         if (!canReloadNow({ hidden, idleMs, busy: false })) return;
+
         reloading = true;
+        let flushPromise = null;
+        let flushDone = false;
+        let tracked = null;
         try {
             if (typeof window.flushPetSaves === 'function') {
+                flushPromise = Promise.resolve(window.flushPetSaves());
+                tracked = flushPromise.finally(() => { flushDone = true; });
                 await Promise.race([
-                    Promise.resolve(window.flushPetSaves()),
-                    new Promise((ok) => setTimeout(ok, 8000)),
+                    tracked,
+                    new Promise((ok) => setTimeout(ok, flushWaitMs)),
                 ]);
             }
         } catch (_) { /* 저장이 거절돼도 아래에서 아직 남은 일이 있는지 다시 봐요 */ }
+
         if (
             !stale
             || busyNow()
             || !canReloadNow({ hidden, idleMs: Date.now() - lastInput, busy: false, petPending: petQueuePending() })
         ) {
             reloading = false;
+            // 아직 저장이 끝나지 않았을 때만 끝나면 바로 다시 시도해요. 이미 실패한 약속에 다시 걸면 무한 반복이 돼요.
+            if (!flushDone && tracked && petQueuePending()) {
+                void tracked.finally(() => {
+                    if (!reloading) void reloadIfSafe({ hidden });
+                });
+            }
             return;
         }
         reload();
     }
+
     async function check() {
         if (stale) return;
         lastCheck = Date.now();
@@ -88,10 +104,12 @@ export function startAppUpdateWatch() {
             }
         } catch (_) { /* 연결이 없으면 다음에 다시 봐요 */ }
     }
+
     function tryReload() {
         if (!stale) return;
         void reloadIfSafe({ hidden: false });
     }
+
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible') return;
         // 다른 앱에 갔다 돌아왔을 때: 새 버전이면 하던 일이 없을 때 바로 새로 고쳐요.
@@ -99,10 +117,21 @@ export function startAppUpdateWatch() {
         if (stale && !busyNow()) { void reloadIfSafe({ hidden: true }); return; }
         if (Date.now() - lastCheck > CHECK_MS / 2) void check();
     });
-    setInterval(() => {
+
+    const intervalId = setInterval(() => {
         if (document.visibilityState !== 'visible') return;
         if (Date.now() - lastCheck >= CHECK_MS) void check();
         tryReload();
     }, 60000);
-    setTimeout(() => { void check(); }, 30000);
+    if (intervalId && typeof intervalId.unref === 'function') intervalId.unref();
+
+    const firstTimeout = setTimeout(() => { void check(); }, 30000);
+    if (firstTimeout && typeof firstTimeout.unref === 'function') firstTimeout.unref();
+
+    function stop() {
+        clearInterval(intervalId);
+        clearTimeout(firstTimeout);
+    }
+
+    return { check, reloadIfSafe, tryReload, stop };
 }

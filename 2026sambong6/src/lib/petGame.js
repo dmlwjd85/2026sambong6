@@ -17,6 +17,10 @@ export const PET_HATCH_TAPS = 10;
 export const PET_MAX_LEVEL = 40;
 export const PET_EVOLVE_LEVELS = Object.freeze([10, 20]); // 1단계→2단계, 2단계→3단계
 export const PET_MAX_ENHANCE = 10;
+/** 강화석: 하나에 전투력 +10, 한 펫에 15개(+150)까지, 보관은 99개까지 */
+export const PET_STONE_POWER = 10;
+export const PET_MAX_BOOST = 150;
+export const PET_MAX_STONES = 99;
 export const PET_PLAY_PER_DAY = 5;
 /** 놀아 주기는 한 번 하면 이만큼 기다려야 다시 할 수 있어요(4시간). */
 export const PET_PLAY_COOLDOWN_MS = 4 * 3600000;
@@ -228,7 +232,7 @@ export const PET_DEFAULT_SETTINGS = Object.freeze({
     /** 배가 고파지는 시간: start시부터 end시까지(밤에는 배고프지 않아요) */
     awake: PET_AWAKE_DEFAULT,
     /** 펫 상점(봉으로 바로 사기): 일반 펫·색다른 펫, 희귀(별빛룡)·희귀 색다른 */
-    shop: Object.freeze({ normal: 50, shiny: 70, rare: 500, rareShiny: 700 }),
+    shop: Object.freeze({ normal: 50, shiny: 70, rare: 500, rareShiny: 700, stone: 100 }),
 });
 
 export function sanitizePetSettings(raw) {
@@ -258,7 +262,7 @@ export function sanitizePetSettings(raw) {
     const start = num(aw.start, d.awake.start, 0, 23);
     const end = Math.max(start + 1, num(aw.end, d.awake.end, 1, 24));
     const sh = src.shop && typeof src.shop === 'object' ? src.shop : {};
-    const shop = { normal: num(sh.normal, d.shop.normal, 1, 100000), shiny: num(sh.shiny, d.shop.shiny, 1, 100000), rare: num(sh.rare, d.shop.rare, 1, 100000), rareShiny: num(sh.rareShiny, d.shop.rareShiny, 1, 100000) };
+    const shop = { normal: num(sh.normal, d.shop.normal, 1, 100000), shiny: num(sh.shiny, d.shop.shiny, 1, 100000), rare: num(sh.rare, d.shop.rare, 1, 100000), rareShiny: num(sh.rareShiny, d.shop.rareShiny, 1, 100000), stone: num(sh.stone, d.shop.stone, 1, 100000) };
     return { slotRules, walk: { min, max, step: num(w.step, d.walk.step, 10, 1000), cap }, expPacks, shop, cageSize: num(src.cageSize, d.cageSize, 1, PET_MAX_CAGE_SIZE), awake: { start, end }, ...(raid ? { raid } : {}) };
 }
 
@@ -304,6 +308,8 @@ export function sanitizePet(raw) {
         level,
         exp: level >= PET_MAX_LEVEL ? 0 : int(src.exp, 0, petExpNeed(level) - 1),
         enhance: int(src.enhance, 0, PET_MAX_ENHANCE),
+        /** 강화석으로 올린 전투력(10씩, 최대 150) */
+        boost: Math.floor(int(src.boost, 0, PET_MAX_BOOST) / PET_STONE_POWER) * PET_STONE_POWER,
         full: clamp(src.full, 0, 100),
         fedAt: int(src.fedAt),
         playDate: String(src.playDate || '').slice(0, 10),
@@ -328,16 +334,16 @@ export function petSpeciesName(pet) {
 }
 
 /** 전투력의 최댓값 */
-export const PET_MAX_POWER = 1150;
+export const PET_MAX_POWER = 1300;
 
 /**
- * 전투력(랭킹·탐험 기준): 단계·레벨·강화를 합쳐요. 최대 1150이에요.
- * 단계 100씩(300) + 레벨 15씩(600) + 강화 20씩(200) + 색다름 20 + 희귀 30 = 1150
+ * 전투력(랭킹·탐험 기준): 단계·레벨·강화·강화석을 합쳐요. 최대 1300이에요.
+ * 단계 100씩(300) + 레벨 15씩(600) + 강화 20씩(200) + 색다름 20 + 희귀 30 + 강화석 최대 150 = 1300
  */
 export function petPower(pet) {
     const p = pet && pet.phase === 'pet' && PET_SPECIES[pet.species] ? pet : sanitizePet(pet);
     if (p.phase !== 'pet') return 0;
-    return Math.min(PET_MAX_POWER, p.stage * 100 + p.level * 15 + p.enhance * 20 + (p.shiny ? 20 : 0) + (PET_SPECIES[p.species].rare ? 30 : 0));
+    return Math.min(PET_MAX_POWER, p.stage * 100 + p.level * 15 + p.enhance * 20 + (p.shiny ? 20 : 0) + (PET_SPECIES[p.species].rare ? 30 : 0) + p.boost);
 }
 
 /**
@@ -624,6 +630,9 @@ export const PET_ERROR_TEXT = Object.freeze({
     no_stored_egg: '보관한 알이 없어요.',
     egg_store_full: '알 보관함이 꽉 찼어요.',
     no_mat: '이 펫에게 쓸 강화 재료가 없어요.',
+    no_stone: '강화석이 없어요.',
+    stone_full: '강화석은 99개까지 가질 수 있어요.',
+    max_boost: '이 펫은 강화석을 15개(전투력 +150) 다 썼어요.',
     no_gift: '받을 선물이 없어요.',
     quota: '오늘 학급 서버 사용량이 다 찼어요. 오후 5시가 지나면 다시 저장돼요.',
     bad_species: '그런 펫은 없어요.',
@@ -716,13 +725,13 @@ function sanitizeKeep(src, slots) {
         const gp = sanitizePet(g.pet);
         if (gp.phase === 'pet') gone = { pet: stripDex(gp), at: int(g.at) };
     }
-    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7), gone };
+    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7), gone, stones: int(src.stones, 0, PET_MAX_STONES) };
 }
 
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null, stones: b.stones };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
@@ -964,6 +973,31 @@ export function enhancePetWithMat(box, i, { now = 0, today = '' } = {}) {
     const pet = { ...p, enhance: p.enhance + 1 };
     const list = b.list.map((cur, k) => (k === idx ? pet : cur));
     return boxDone({ ...b, list, mats: { ...b.mats, [p.species]: b.mats[p.species] - 1 } }, { pet, success: true });
+}
+
+/** 펫 상점: 강화석 사기(count개, 봉은 cost 로 돌려줘요) */
+export function buyEnhanceStones(box, { count = 1, bong = 0, settings = null } = {}) {
+    const b = sanitizePetBox(box);
+    const n = int(count, 1, PET_MAX_STONES);
+    if (b.stones + n > PET_MAX_STONES) return boxFail(b, 'stone_full');
+    const cost = sanitizePetSettings(settings).shop.stone * n;
+    if (Number(bong) < cost) return boxFail(b, 'no_bong');
+    return boxDone({ ...b, stones: b.stones + n }, { cost, count: n });
+}
+
+/** 강화석 쓰기: i번째 칸 펫의 전투력 +10(영구). 봉은 들지 않아요. */
+export function useEnhanceStone(box, i, { now = 0, today = '' } = {}) {
+    const b = sanitizePetBox(box);
+    const idx = slotIndex(b, i);
+    if (idx < 0) return boxFail(b, 'bad_slot');
+    const p = b.list[idx];
+    if (p.phase !== 'pet') return boxFail(b, 'no_pet');
+    if (petView(p, now, today).away) return boxFail(b, 'away');
+    if (p.boost >= PET_MAX_BOOST) return boxFail(b, 'max_boost');
+    if (!(b.stones > 0)) return boxFail(b, 'no_stone');
+    const pet = { ...p, boost: p.boost + PET_STONE_POWER };
+    const list = b.list.map((cur, k) => (k === idx ? pet : cur));
+    return boxDone({ ...b, list, stones: b.stones - 1 }, { pet, added: PET_STONE_POWER });
 }
 
 /* ---------- 펫 상점: 봉으로 펫을 바로 사요 ---------- */

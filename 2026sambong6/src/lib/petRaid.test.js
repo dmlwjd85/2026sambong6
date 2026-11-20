@@ -545,3 +545,14 @@ describe('색다른 보스 12~22 · 보상 시즌 · 회복 기술', () => {
         assert.ok(r22lv30 <= 0.1, `22스테이지 Lv.30 ${r22lv30}`);
     });
 });
+
+describe('강화석과 탐험', () => {
+    it('대표 펫의 전투력이 강화석만큼 커지고, 팀원 전투력은 1300까지 받아요', () => {
+        const base = { phase: 'pet', species: 'emberkit', stage: 3, level: 40, enhance: 10, full: 90, fedAt: T0 };
+        const a = R.raidMemberFromPet(base, { id: '1', name: 'a', now: T0, today: DAY });
+        const b = R.raidMemberFromPet({ ...base, boost: 150 }, { id: '1', name: 'a', now: T0, today: DAY });
+        assert.equal(b.power - a.power, 150);
+        const party = R.sanitizeRaidParty({ leaderId: '1', members: [{ ...b, power: 1300 }, { ...b, id: '2', power: 5000 }] });
+        assert.deepEqual(party.members.map((m) => m.power), [1300, 1300]);
+    });
+});

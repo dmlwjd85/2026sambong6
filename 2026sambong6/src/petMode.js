@@ -12,6 +12,9 @@ import {
     PET_MAX_LEVEL,
     PET_MAX_POWER,
     PET_MAX_SLOTS,
+    PET_MAX_STONES,
+    PET_MAX_BOOST,
+    PET_STONE_POWER,
     PET_NAME_MAX,
     PET_PLAY_EXP,
     PET_PLAY_PER_DAY,
@@ -22,6 +25,8 @@ import {
     addStoredEggs,
     receivePetGifts,
     buyShopPet,
+    buyEnhanceStones,
+    useEnhanceStone,
     petBoxOwnedSpecies,
     petShopPrice,
     bringPetBack,
@@ -203,6 +208,8 @@ export function createPetMode(deps) {
             else if (act === 'enhance-mat') void enhanceMat();
             else if (act === 'gift') void gift();
             else if (act === 'shop-buy') void shopBuy(t.getAttribute('data-sp'), t.getAttribute('data-shiny') === '1');
+            else if (act === 'shop-stone') void shopStone(Number(t.getAttribute('data-n')) || 1);
+            else if (act === 'use-stone') void useStone();
         });
         el.addEventListener('change', (e) => raid.onChange(e));
         // 펫 상점을 펼치거나 접은 상태는 다시 그려도 그대로 둬요(toggle 은 거품이 안 올라와서 capture 로 받아요).
@@ -420,7 +427,7 @@ export function createPetMode(deps) {
             slotRules: [{ level: val('s2-level'), price: val('s2-price') }, { level: val('s3-level'), price: val('s3-price') }],
             walk: { min: val('walk-min'), max: val('walk-max'), step: val('walk-step'), cap: val('walk-cap') },
             expPacks: [0, 1, 2].map((i) => ({ price: val(`pack${i}-price`), exp: val(`pack${i}-exp`) })),
-            shop: { normal: val('shop-normal'), shiny: val('shop-shiny'), rare: val('shop-rare'), rareShiny: val('shop-rareShiny') },
+            shop: { normal: val('shop-normal'), shiny: val('shop-shiny'), rare: val('shop-rare'), rareShiny: val('shop-rareShiny'), stone: val('shop-stone') },
             cageSize: val('cage-size'),
             awake: { start: val('awake-start'), end: val('awake-end') },
         });
@@ -482,6 +489,26 @@ export function createPetMode(deps) {
             show(r.upgraded ? `✨ ${sp.names[0]}이(가) 색다른 모습이 되었어요!` : `${name}이(가) 왔어요! 잘 키워 줘요.`, 'good');
             if (feedback) feedback.play('ok');
         });
+    }
+
+    /** 강화석 사기 */
+    async function shopStone(n) {
+        const price = settings().shop.stone * n;
+        const ok = await deps.confirm(`💠 강화석 ${n}개를 살까요?${free() ? '' : `\n${deps.bong(price)}이 들어요.`}\n펫에게 쓰면 전투력이 영구로 +${PET_STONE_POWER} 올라요.`);
+        if (!ok) return;
+        await runBox('펫 상점: 강화석', (b) => buyEnhanceStones(b, { count: n, bong: myBong(), settings: settings() }), (r) => {
+            show(`💠 강화석 ${r.count}개를 샀어요!`, 'good');
+            if (feedback) feedback.play('ok');
+        });
+    }
+
+    /** 강화석 쓰기(보고 있는 칸의 펫) */
+    async function useStone() {
+        const p = myPet();
+        if (p.phase !== 'pet') return;
+        const ok = await deps.confirm(`💠 강화석 1개를 써서 ${p.name}의 전투력을 +${PET_STONE_POWER} 올릴까요?\n(강화석 ${myBox().stones}개 있어요 · 이 펫에 지금 +${p.boost} / +${PET_MAX_BOOST})`);
+        if (!ok) return;
+        await runBox('펫 강화석 쓰기', (b) => useEnhanceStone(b, slot, { now: now(), today: today() }), (r) => { react('enhanceOk'); show(`전투력 +${r.added}! (강화석 +${r.pet.boost})`, 'good'); if (feedback) feedback.play('ok'); });
     }
 
     /** 보고 있는 칸의 펫을 케이지에 넣어요. */
@@ -708,10 +735,20 @@ export function createPetMode(deps) {
             <span class="pet-shop-name"><b>${esc(sp.names[0])}</b>${typeBadge(sp.type)}${sp.rare ? '<em>희귀</em>' : ''}</span>
             ${btn(sp, false)}${btn(sp, true)}
         </div>`).join('');
+        const stoneBtn = (n) => {
+            const price = settings().shop.stone * n;
+            return `<button type="button" class="pet-shop-buy" data-p="shop-stone" data-n="${n}"${(!free() && myBong() < price) || box.stones + n > PET_MAX_STONES ? ' disabled' : ''}><b>${n}개</b><i>${free() ? '무료' : esc(deps.bong(price))}</i></button>`;
+        };
         return `<details class="pet-shop-box"${(shopOpen == null ? empty : shopOpen) ? ' open' : ''}>
-            <summary>🛒 펫 상점 <i>알 대신 원하는 펫을 바로 데려와요</i></summary>
+            <summary>🛒 펫 상점 <i>펫과 강화석을 사요</i></summary>
             <p class="pet-note">${empty ? `${slot + 1}번 칸에 데려와요.` : '새 펫은 빈 칸을 고른 뒤 살 수 있어요.'} 같은 종류는 한 마리씩만 가질 수 있고, 가진 펫은 색다른 모습으로 바꿀 수 있어요(레벨·강화 그대로).</p>
             <div class="pet-shop-list">${rows}</div>
+            <div class="pet-shop-row pet-shop-stone">
+                <span class="pet-shop-art pet-stone-icon" aria-hidden="true">💠</span>
+                <span class="pet-shop-name"><b>강화석</b><em>내 강화석 ${box.stones}개</em></span>
+                ${stoneBtn(1)}${stoneBtn(5)}
+            </div>
+            <p class="pet-note">💠 강화석: 펫 하나의 전투력을 영구로 +${PET_STONE_POWER} 올려요. 한 펫에 ${PET_MAX_BOOST / PET_STONE_POWER}개(+${PET_MAX_BOOST})까지, 보관은 ${PET_MAX_STONES}개까지예요.</p>
         </details>`;
     }
 
@@ -738,7 +775,7 @@ export function createPetMode(deps) {
         return `<div class="pet-keep">
             <p class="pet-keep-head"><b>🏠 케이지</b><span>${box.cage.length} / ${cap}마리 · 쉬는 동안은 배고프지 않아요 · 누르면 꺼내요</span></p>
             <div class="pet-cage" style="--n:${Math.min(cap, size * 2)}">${cells.join('')}</div>
-            <p class="pet-keep-items"><span class="pet-chip${box.eggs > 0 ? ' is-ok' : ''}">🥚 보관한 알 ${box.eggs}개</span>${mats || '<span class="pet-chip">💎 강화 재료 없음</span>'}</p>
+            <p class="pet-keep-items"><span class="pet-chip${box.eggs > 0 ? ' is-ok' : ''}">🥚 보관한 알 ${box.eggs}개</span>${mats || '<span class="pet-chip">💎 강화 재료 없음</span>'}<span class="pet-chip${box.stones > 0 ? ' is-ok' : ''}">💠 강화석 ${box.stones}개</span></p>
         </div>`;
     }
 
@@ -787,6 +824,7 @@ export function createPetMode(deps) {
                 ${cfg.expPacks.map((pk, i) => `<label class="pet-set-row"><span>${i + 1}번 팩</span>${num(`pack${i}-price`, pk.price, 1, 5000)} 봉 → 경험치 ${num(`pack${i}-exp`, pk.exp, 1, 100000)}</label>`).join('')}
                 <p class="pet-sub">펫 상점 값</p>
                 <label class="pet-set-row"><span>일반 펫</span>${num('shop-normal', cfg.shop.normal, 1, 100000)} 봉 · 색다른 ${num('shop-shiny', cfg.shop.shiny, 1, 100000)} 봉</label>
+                <label class="pet-set-row"><span>강화석</span>1개 ${num('shop-stone', cfg.shop.stone, 1, 100000)} 봉</label>
                 <label class="pet-set-row"><span>별빛룡(희귀)</span>${num('shop-rare', cfg.shop.rare, 1, 100000)} 봉 · 색다른 ${num('shop-rareShiny', cfg.shop.rareShiny, 1, 100000)} 봉</label>
                 <p class="pet-sub">케이지와 배고픔</p>
                 <label class="pet-set-row"><span>케이지 크기</span>케이지 하나에 ${num('cage-size', cfg.cageSize, 1, 5)} 마리 (펫 칸마다 케이지 하나)</label>
@@ -844,7 +882,7 @@ export function createPetMode(deps) {
                 <span class="pet-chip">No.${dexNo(sp.id)} ${esc(sp.names[v.stage - 1])} · ${v.stage}단계</span>
                 <span class="pet-chip is-lv">Lv.${v.level}</span>
                 ${v.enhance ? `<span class="pet-chip is-enh">+${v.enhance}</span>` : ''}
-                <span class="pet-chip">전투력 ${v.power}</span>
+                <span class="pet-chip">전투력 ${v.power}${v.boost > 0 ? ` <small>(💠+${v.boost})</small>` : ''}</span>
             </p>
             ${petBoxMainIndex(myBox()) === slot
                 ? '<p class="pet-main-row"><span class="pet-chip is-main">⭐ 대표 펫</span><i>광장 카드와 반 펫 랭킹에 보여요</i></p>'
@@ -902,6 +940,7 @@ export function createPetMode(deps) {
                 <button type="button" class="pet-btn" data-p="walk"${v.walked || v.fullNow < 30 ? ' disabled' : ''}><b>🐾 산책 보내기</b><i>${v.walked ? '오늘은 다녀왔어요' : v.fullNow < 30 ? '배고파서 못 가요' : `하루 한 번 · ${v.walkRange.min === v.walkRange.max ? esc(deps.bong(v.walkRange.max)) : `${v.walkRange.min}~${esc(deps.bong(v.walkRange.max))}`} 벌어 와요`}</i></button>
                 <button type="button" class="pet-btn" data-p="enhance"${maxEnh || myBong() < v.enhanceCost ? ' disabled' : ''}><b>🔨 강화 ${maxEnh ? '끝!' : `+${v.enhance} → +${v.enhance + 1}`}</b><i>${maxEnh ? '끝까지 강화했어요' : `${esc(deps.bong(v.enhanceCost))} · 성공 ${Math.round(v.enhanceChance * 100)}%`}</i></button>
                 ${(myBox().mats[v.species] || 0) > 0 && !maxEnh ? `<button type="button" class="pet-btn is-mat" data-p="enhance-mat"><b>💎 재료로 강화 +${v.enhance} → +${v.enhance + 1}</b><i>재료 ${myBox().mats[v.species]}개 · 봉 없이 반드시 성공</i></button>` : ''}
+                ${myBox().stones > 0 && v.boost < PET_MAX_BOOST ? `<button type="button" class="pet-btn is-mat is-stone" data-p="use-stone"><b>💠 강화석 쓰기 · 전투력 +${PET_STONE_POWER}</b><i>이 펫 +${v.boost} / +${PET_MAX_BOOST} · 강화석 ${myBox().stones}개</i></button>` : ''}
                 <button type="button" class="pet-btn" data-p="cage"><b>🏠 케이지에서 쉬게 하기</b><i>쉬는 동안은 배고프지 않아요</i></button>
             </div>
             <p class="pet-note">지금까지 벌어 온 봉 ${esc(deps.bong(v.earned))} · 배는 ${settings().awake.start}시~${settings().awake.end}시에만 고파져요(밤에는 그대로) · 텅 빈 채 3일이 지나면 가출해요.</p>
@@ -934,7 +973,7 @@ export function createPetMode(deps) {
                 </span>
                 <span class="pet-rank-power"><small>전투력</small>${r.view.power}</span>
             </div>`;
-        }).join('')}</div><p class="pet-note">전투력 = 단계·레벨·강화를 합친 점수예요. 가장 높으면 ${PET_MAX_POWER}이에요.</p>`;
+        }).join('')}</div><p class="pet-note">전투력 = 단계·레벨·강화·강화석을 합친 점수예요. 가장 높으면 ${PET_MAX_POWER}이에요.</p>`;
     }
 
     function dexHtml() {

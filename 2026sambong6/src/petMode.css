@@ -554,3 +554,7 @@ button.pet-cage-cell:active { transform: scale(0.97); }
 
 .pet-skill.is-guard { grid-column: 1 / -1; border-style: solid; border-color: #60a5fa; }
 .pet-skill.is-guard.is-on b { color: #bfdbfe; }
+
+/* 펫 상점: 강화석 */
+.pet-stone-icon { display: grid; place-items: center; font-size: 2rem; }
+.pet-btn.is-stone { border-color: #67e8f9; }

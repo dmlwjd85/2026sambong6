@@ -514,11 +514,11 @@ describe('놓아주기 되돌리기', () => {
 });
 
 describe('레벨 40 · 회복 기술', () => {
-    it('최고 레벨 40, 전투력은 최대 1150이에요', () => {
+    it('최고 레벨 40, 강화석 없이 전투력은 최대 1150이에요', () => {
         assert.equal(P.sanitizePet({ phase: 'pet', species: 'snowbun', level: 45 }).level, 40);
         const best = P.sanitizePet({ phase: 'pet', species: 'stardrake', shiny: true, stage: 3, level: 40, enhance: 10 });
         assert.equal(P.petPower(best), 1150);
-        assert.equal(P.PET_MAX_POWER, 1150);
+        assert.equal(P.PET_MAX_POWER, 1300); // 강화석(최대 +150)까지 더하면 1300
         const up = P.grantPetExp(pet({ level: 39, exp: 0 }), P.petExpNeed(39));
         assert.equal(up.pet.level, 40);
         assert.equal(up.levelUps, 1);
@@ -536,5 +536,72 @@ describe('레벨 40 · 회복 기술', () => {
         assert.equal(P.petHealSkill('zapowl', 39).learned, false);
         assert.equal(P.petHealSkill('zapowl', 40).learned, true);
         assert.ok(P.petHealText(P.petHealSkill('zapowl', 40)).includes('35%'));
+    });
+});
+
+describe('펫 상점: 강화석(전투력 +10)', () => {
+    const boxOf = (list, extra = {}) => P.sanitizePetBox({ v: 2, slots: list.length, main: 0, list, dex: {}, ...extra });
+    const raw = (species, extra = {}) => ({ phase: 'pet', species, stage: 1, level: 5, exp: 0, enhance: 3, full: 60, fedAt: T0, ...extra });
+
+    it('boost 는 10 단위로 내리고 150을 넘지 않아요', () => {
+        assert.equal(P.sanitizePet(raw('emberkit', { boost: 37 })).boost, 30);
+        assert.equal(P.sanitizePet(raw('emberkit', { boost: 999 })).boost, 150);
+        assert.equal(P.sanitizePet(raw('emberkit')).boost, 0);
+    });
+
+    it('전투력에 boost 가 더해지고, 최대는 1300이에요', () => {
+        assert.equal(P.petPower(P.sanitizePet(raw('emberkit', { boost: 50 }))) - P.petPower(P.sanitizePet(raw('emberkit'))), 50);
+        const best = { phase: 'pet', species: 'stardrake', shiny: true, stage: 3, level: 40, enhance: 10, boost: 150 };
+        assert.equal(P.petPower(best), 1300);
+        assert.equal(P.PET_MAX_POWER, 1300);
+    });
+
+    it('강화석 사기: 기본 100봉, 봉이 모자라거나 99개를 넘으면 못 사요', () => {
+        assert.equal(P.sanitizePetSettings(null).shop.stone, 100);
+        const box = boxOf([raw('emberkit')]);
+        const r = P.buyEnhanceStones(box, { count: 5, bong: 600 });
+        assert.equal(r.ok, true);
+        assert.equal(r.cost, 500);
+        assert.equal(r.box.stones, 5);
+        assert.equal(P.buyEnhanceStones(box, { count: 5, bong: 499 }).error, 'no_bong');
+        assert.equal(P.buyEnhanceStones(boxOf([raw('emberkit')], { stones: 98 }), { count: 2, bong: 9999 }).error, 'stone_full');
+        assert.equal(P.buyEnhanceStones(box, { count: 2, bong: 9999, settings: { shop: { stone: 30 } } }).cost, 60);
+        assert.equal(P.petErrorText('stone_full'), '강화석은 99개까지 가질 수 있어요.');
+    });
+
+    it('강화석 쓰기: 전투력 +10, 강화 단계는 그대로예요', () => {
+        const box = boxOf([raw('zapowl'), { phase: 'none' }], { stones: 2 });
+        const r = P.useEnhanceStone(box, 0, { now: T0, today: DAY });
+        assert.equal(r.ok, true);
+        assert.equal(r.box.list[0].boost, 10);
+        assert.equal(r.box.stones, 1);
+        assert.equal(r.cost, 0);
+        assert.equal(r.added, 10);
+        assert.equal(r.box.list[0].enhance, 3);
+        assert.equal(P.useEnhanceStone(boxOf([raw('zapowl', { boost: 150 })], { stones: 3 }), 0, { now: T0, today: DAY }).error, 'max_boost');
+        assert.equal(P.useEnhanceStone(boxOf([raw('zapowl')], { stones: 0 }), 0, { now: T0, today: DAY }).error, 'no_stone');
+        const late = T0 + 51 * H + 73 * H;
+        assert.equal(P.useEnhanceStone(boxOf([raw('zapowl', { full: 100 })], { stones: 3 }), 0, { now: late, today: DAY }).error, 'away');
+        assert.equal(P.useEnhanceStone(box, 1, { now: T0, today: DAY }).error, 'no_pet');
+        const max = P.useEnhanceStone(boxOf([raw('zapowl', { enhance: 10 })], { stones: 1 }), 0, { now: T0, today: DAY });
+        assert.equal(max.ok, true);
+        assert.equal(max.box.list[0].boost, 10);
+    });
+
+    it('저장했다 다시 읽어도 강화석과 boost 가 남고, 옛 상자는 둘 다 0이에요', () => {
+        const doc = P.petBoxToDoc(boxOf([raw('emberkit', { boost: 40 })], { stones: 7 }));
+        const back = P.sanitizePetBox(JSON.parse(JSON.stringify(doc)));
+        assert.equal(back.stones, 7);
+        assert.equal(back.list[0].boost, 40);
+        const old = P.sanitizePetBox({ v: 2, slots: 1, main: 0, list: [raw('emberkit')], dex: {} });
+        assert.equal(old.stones, 0);
+        assert.equal(old.list[0].boost, 0);
+    });
+
+    it('가진 펫을 색다르게 바꿔도 boost 가 그대로예요', () => {
+        const r = P.buyShopPet(boxOf([raw('emberkit', { boost: 60 })]), 0, { species: 'emberkit', shiny: true, bong: 9999, now: T0 });
+        assert.equal(r.ok, true);
+        assert.equal(r.box.list[0].shiny, true);
+        assert.equal(r.box.list[0].boost, 60);
     });
 });

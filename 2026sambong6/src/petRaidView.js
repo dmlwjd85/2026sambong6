@@ -27,6 +27,8 @@ import {
     raidMemberFromPet,
     raidOwner,
     raidOwners,
+    raidClearCount,
+    raidMaxedStages,
     raidPaidFirsts,
     raidPetStats,
     raidTypeMult,
@@ -96,6 +98,9 @@ export function createPetRaidView(ctx) {
         }).catch((e) => { console.warn('petRaid quiz bank', e); });
     }
     const unlocked = () => (ctx.free() ? RAID_STAGE_COUNT : raidUnlockedStage(box().raid));
+    /** 이길 수 있는 횟수를 다 쓴 스테이지(선생님은 제한 없음) */
+    const maxed = () => (ctx.free() ? [] : raidMaxedStages(box().raid, raidCfg()));
+    const clears = (stage) => raidClearCount(box().raid, raidCfg(), stage);
     const liveParties = () => parties.filter((p) => !isRaidPartyStale(p, ctx.now()));
     // 내가 들어 있는 방은 오래돼도 내 방이에요(오래됐다고 안 보이면 '방 없애기'가 먹통이 돼요). 다른 사람에게만 안 보여요.
     const myParty = () => parties.find((p) => p.members.some((m) => m.id === me())) || null;
@@ -233,7 +238,7 @@ export function createPetRaidView(ctx) {
         lastResult = null;
         await tx(me(), (cur) => {
             const old = sanitizeRaidParty(cur);
-            const made = createRaidParty({ member: m, stage, unlocked: unlocked(), now: ctx.now() });
+            const made = createRaidParty({ member: m, stage, unlocked: unlocked(), maxed: maxed(), now: ctx.now() });
             // 내 지난 방의 마지막 전투 기록은 남겨요(늦게 온 친구의 보상용).
             if (made.ok && old && old.run) made.party.run = old.run;
             return made;
@@ -244,7 +249,7 @@ export function createPetRaidView(ctx) {
         const m = myMember();
         if (!m) { deps.toast(raidErrorText('no_pet')); return; }
         lastResult = null;
-        await tx(partyId, (cur) => joinRaidParty(cur, { member: m, max: maxParty(), now: ctx.now() }));
+        await tx(partyId, (cur) => joinRaidParty(cur, { member: m, max: maxParty(), maxed: maxed(), now: ctx.now() }));
     }
 
     async function leave() {
@@ -266,7 +271,7 @@ export function createPetRaidView(ctx) {
     async function changeStage(stage) {
         const p = myParty();
         if (!p) return;
-        await tx(p.id, (cur) => setRaidStage(cur, { id: me(), stage, unlocked: unlocked(), now: ctx.now() }));
+        await tx(p.id, (cur) => setRaidStage(cur, { id: me(), stage, unlocked: unlocked(), maxed: maxed(), now: ctx.now() }));
     }
 
     /** 준비 / 준비 취소. 내가 마지막으로 준비해서 모두 준비가 되면(인원도 맞으면) 바로 출발해요. */
@@ -278,7 +283,7 @@ export function createPetRaidView(ctx) {
         const seed = Math.floor(Math.random() * 2147483646) + 1;
         const question = randQuiz();
         await tx(p.id, (cur) => {
-            const rd = readyRaidParty(cur, { id: me(), ready: want, now: ctx.now() });
+            const rd = readyRaidParty(cur, { id: me(), ready: want, maxed: maxed(), now: ctx.now() });
             if (!rd.ok || !rd.allReady || raidOwners(rd.party.members).length < raidCfg().minParty) return rd;
             const started = startRaid(rd.party, { id: me(), settings: raidCfg(), seed, now: ctx.now(), question });
             return started.ok ? started : rd;
@@ -970,7 +975,7 @@ export function createPetRaidView(ctx) {
                 <i>STAGE ${stage}${firsts.includes(stage) ? ` · 깼어요 ✓${paid.includes(stage) ? ' · 첫 보상 받음' : ''}` : ''}</i>
                 <b>${esc(s.name)}</b>
                 <span>${typeBadge(s.type)} <em>체력 ${s.hp.toLocaleString()}</em></span>
-                <span class="raid-boss-reward">첫 보상 ${esc(deps.bong(s.first))} · 반복 ${esc(deps.bong(s.repeat))}</span>
+                <span class="raid-boss-reward">첫 보상 ${esc(deps.bong(s.first))} · 반복 ${esc(deps.bong(s.repeat))}${cfg.maxClears && !ctx.free() ? ` · 이긴 횟수 ${Math.min(clears(stage), cfg.maxClears)}/${cfg.maxClears}` : ''}</span>
             </span>
         </div>`;
     }
@@ -982,6 +987,7 @@ export function createPetRaidView(ctx) {
         let line = '';
         if (!reward) line = '보상은 이미 받았어요.';
         else if (!run.win) line = reward.exp > 0 ? `다음엔 친구를 더 모아 봐요! 대표 펫 경험치 +${reward.exp}` : '다음엔 친구를 더 모아 봐요!';
+        else if (reward.maxed) line = `이 보스는 ${raidCfg().maxClears}번을 다 이겨서 보상이 없어요. 다른 보스에 도전해요!`;
         else if (reward.limited) line = `오늘 반복 보상 ${raidCfg().dailyRewards}번을 다 받았어요. 내일 또 받을 수 있어요.`;
         else if (ctx.free()) line = `대표 펫 경험치 +${reward.exp} (선생님은 봉을 받지 않아요)`;
         else if (reward.first) line = `첫 클리어 보상 ${deps.bong(reward.bong)} · 대표 펫 경험치 +${reward.exp}`;
@@ -1052,7 +1058,8 @@ export function createPetRaidView(ctx) {
         const leader = p.leaderId === me();
         const max = maxParty();
         const total = p.members.reduce((s, m) => s + m.power, 0);
-        const stageOpts = Array.from({ length: unlocked() }, (_, i) => `<option value="${i + 1}"${p.stage === i + 1 ? ' selected' : ''}>STAGE ${i + 1} · ${esc(cfg.stages[i].name)}</option>`).join('');
+        const maxedNow = maxed();
+        const stageOpts = Array.from({ length: unlocked() }, (_, i) => `<option value="${i + 1}"${p.stage === i + 1 ? ' selected' : ''}${maxedNow.includes(i + 1) && p.stage !== i + 1 ? ' disabled' : ''}>STAGE ${i + 1} · ${esc(cfg.stages[i].name)}${maxedNow.includes(i + 1) ? ' (⛔ 다 이김)' : ''}</option>`).join('');
         const waiting = p.status === 'fight';
         return `<div class="pet-card raid-party">
             ${bossCard(p.stage, cfg)}
@@ -1065,7 +1072,8 @@ export function createPetRaidView(ctx) {
             ${waiting ? `<p class="pet-lead">${p.run && p.run.pending ? '전투 중이에요.' : '전투가 끝났어요. 방장이 다시 모으면 또 갈 수 있어요.'}</p>`
                 : `<p class="pet-lead">${people >= cfg.minParty ? `모두 「준비」를 누르면 바로 출발해요! (${readyCount}/${people}명 준비)` : `${cfg.minParty}명이 모여야 출발할 수 있어요. 친구를 기다려요! (${readyCount}/${people}명 준비)`}</p>
                     <p class="raid-clock" data-raid-clock hidden></p>
-                    <button type="button" class="pet-btn ${iAmReady ? '' : 'is-main'}" data-p="raid-ready">${iAmReady ? '준비 취소' : '⚔️ 준비!'}</button>`}
+                    ${!iAmReady && maxed().includes(p.stage) ? `<p class="pet-lead is-warn">⛔ 이 보스는 ${cfg.maxClears}번을 다 이겨서 준비할 수 없어요.${leader ? ' 스테이지를 바꿔 봐요.' : ' 방장에게 스테이지를 바꿔 달라고 하거나 다른 방에 가요.'}</p>`
+                        : `<button type="button" class="pet-btn ${iAmReady ? '' : 'is-main'}" data-p="raid-ready">${iAmReady ? '준비 취소' : '⚔️ 준비!'}</button>`}`}
             ${leader && waiting && !(p.run && p.run.pending) ? '<button type="button" class="pet-btn is-main" data-p="raid-again">같은 팀으로 다시 모으기</button>' : ''}
             <button type="button" class="pet-link" data-p="raid-leave">${leader ? '방 없애기' : '팀에서 나가기'}</button>
         </div>`;
@@ -1078,13 +1086,15 @@ export function createPetRaidView(ctx) {
         const un = unlocked();
         const sel = Math.min(pickedStage || un, un);
         const m = myMember();
+        const maxedList = maxed();
         const stageBtn = (s, i) => {
             const n = i + 1;
             const locked = n > un;
             const done = box().raid.firsts.includes(n);
-            return `<button type="button" class="raid-stage type-${s.type}${n >= 12 ? ' is-shiny' : ''}${sel === n ? ' is-on' : ''}${locked ? ' is-locked' : ''}${done ? ' is-done' : ''}" data-p="raid-pick" data-stage="${n}"${locked ? ' disabled' : ''} style="--boss:${TYPE_COLOR[s.type]}">
+            const full = maxedList.includes(n);
+            return `<button type="button" class="raid-stage type-${s.type}${n >= 12 ? ' is-shiny' : ''}${sel === n ? ' is-on' : ''}${locked ? ' is-locked' : ''}${done ? ' is-done' : ''}${full ? ' is-maxed' : ''}" data-p="raid-pick" data-stage="${n}"${locked ? ' disabled' : ''} style="--boss:${TYPE_COLOR[s.type]}">
                 <span class="raid-stage-art"><img src="${bossArtUrl(s.art)}" alt="" loading="lazy" draggable="false"></span>
-                <b>${n}</b><i>${locked ? '🔒' : done ? '✓' : PET_TYPES[s.type].emoji}</i>
+                <b>${n}</b><i>${locked ? '🔒' : full ? '⛔' : done ? '✓' : PET_TYPES[s.type].emoji}</i>
             </button>`;
         };
         const stages = cfg.stages.slice(0, 11).map((s, i) => stageBtn(s, i)).join('');
@@ -1093,7 +1103,7 @@ export function createPetRaidView(ctx) {
         const day = box().raid.day === ctx.today() ? box().raid.dayRewards : 0;
         return `<div class="pet-card raid-lobby">
             <h3 class="pet-title">⚔️ 보스 탐험</h3>
-            <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${cfg.minParty}명부터 ${maxParty()}명까지, 도전은 몇 번이든 할 수 있어요.</p>
+            <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${cfg.minParty}명부터 ${maxParty()}명까지${cfg.maxClears ? `, 같은 보스는 ${cfg.maxClears}번까지 이길 수 있어요.` : ', 도전은 몇 번이든 할 수 있어요.'}</p>
             <p class="pet-sub">보스 1~11</p>
             <div class="raid-stages">${stages}</div>
             <p class="pet-sub">✨ 색다른 보스 12~22</p>
@@ -1101,14 +1111,15 @@ export function createPetRaidView(ctx) {
             ${bossCard(sel, cfg)}
             <p class="pet-note">오늘 반복 보상 ${Math.min(day, cfg.dailyRewards)} / ${cfg.dailyRewards}번 받음 · 첫 클리어 보상(이번 시즌 ${paidCount}/${RAID_STAGE_COUNT}개 받음)은 따로 받아요. 방은 내가 깬 다음 스테이지까지 만들 수 있고, 친구 방에는 어느 스테이지든 참가할 수 있어요.</p>
             ${petPickHtml(cfg.stages[sel - 1].type)}
-            ${m ? `<button type="button" class="pet-btn is-main" data-p="raid-create">🚩 STAGE ${sel} 탐험 방 만들기</button>`
+            ${m && maxedList.includes(sel) ? `<p class="pet-lead is-warn">⛔ STAGE ${sel} 보스는 ${cfg.maxClears}번을 다 이겼어요. 다른 보스에 도전해요!</p>`
+                : m ? `<button type="button" class="pet-btn is-main" data-p="raid-create">🚩 STAGE ${sel} 탐험 방 만들기</button>`
                 : `<p class="pet-lead is-warn">${esc(raidErrorText('no_pet'))}</p>`}
         </div>
         <div class="pet-card">
             <p class="pet-sub">모이는 중인 탐험 방</p>
             ${open.length ? open.map((p) => `<div class="raid-room type-${cfg.stages[p.stage - 1].type}">
                 <span class="raid-room-text"><b>${esc(p.leaderName)}의 탐험대</b><i>STAGE ${p.stage} · ${esc(cfg.stages[p.stage - 1].name)} · ${raidOwners(p.members).length}/${maxParty()}명</i></span>
-                <button type="button" class="pet-btn is-food" data-p="raid-join" data-party="${esc(p.id)}"${m && raidOwners(p.members).length < maxParty() ? '' : ' disabled'}>함께 가기</button>
+                <button type="button" class="pet-btn is-food" data-p="raid-join" data-party="${esc(p.id)}"${m && raidOwners(p.members).length < maxParty() && !maxedList.includes(p.stage) ? '' : ' disabled'}>${maxedList.includes(p.stage) ? '⛔ 다 이김' : '함께 가기'}</button>
             </div>`).join('') : '<p class="pet-note">아직 모이는 방이 없어요. 방을 만들고 친구를 불러 봐요!</p>'}
         </div>`;
     }
@@ -1150,6 +1161,7 @@ export function createPetRaidView(ctx) {
             <summary>⚙️ 탐험 마스터 설정 (선생님만 보여요)</summary>
             <div class="pet-admin-body">
                 <label class="pet-set-row"><span>하루 보상 횟수</span>${n('dailyRewards', cfg.dailyRewards, 0, 99)} 번 (도전은 무제한)</label>
+                <label class="pet-set-row"><span>같은 보스 이기기</span>한 사람이 ${n('maxClears', cfg.maxClears, 0, 99)} 번까지 (첫 클리어 포함, 0 = 제한 없음)</label>
                 <label class="pet-set-row"><span>출발 최소</span>${n('minParty', cfg.minParty, 1, RAID_MAX_PARTY)} 명</label>
                 <label class="pet-set-row"><span>한 팀 최대</span>${n('maxParty', cfg.maxParty, 0, RAID_MAX_PARTY)} 명 (0 = 학급 인원, 최대 13)</label>
                 <label class="pet-set-row"><span>인원 보너스</span>펫 한 마리 늘 때마다 공격력 +${n('teamBonus', cfg.teamBonus, 0, 50)} %</label>
@@ -1166,7 +1178,7 @@ export function createPetRaidView(ctx) {
                 <p class="pet-note">OX 퀴즈 문제는 「OX 퀴즈」에 올려 둔 문제에서 무작위로 나와요. 참가자의 반 이상이 맞히면 살아 있는 펫이 모두 합동 필살기를 쓰고, 아니면 모두가 보스 필살기를 맞아요(막기 기술이 안 통해요).</p>
                 <p class="pet-note">보스는 턴마다 「전체 공격 %」 확률로 모두에게 공격력의 절반을, 아니면 한 마리에게 공격력의 1.5배를 줘요. 펫은 배운 기술(Lv.1·10·20, 1배·1.3배·1.7배) 중 하나를 무작위로 써요.</p>
                 <p class="pet-note">Lv.40이 되면 종마다 다른 💚 회복 기술을 배워요(보스 공격 뒤 확률로 체력을 채워요).</p>
-                <div class="pet-set-row"><span>첫 보상 시즌</span>지금 ${cfg.rewardSeason}번째 · <button type="button" class="pet-btn" data-p="raid-season-next">모두 첫 보상 다시 받게 하기</button></div>
+                <div class="pet-set-row"><span>첫 보상 시즌</span>지금 ${cfg.rewardSeason}번째 · <button type="button" class="pet-btn" data-p="raid-season-next">모두 첫 보상 다시 받게 하기</button> <i class="pet-note">(이긴 횟수도 0부터 다시 세요)</i></div>
                 <div class="pet-foods">
                     <button type="button" class="pet-btn is-main" data-p="raid-settings-save">탐험 설정 저장</button>
                     <button type="button" class="pet-btn" data-p="raid-settings-reset">기본값으로</button>
@@ -1189,6 +1201,7 @@ export function createPetRaidView(ctx) {
         const val = (name) => { const i = el.querySelector(`[data-raid-set="${name}"]`); return i ? i.value : ''; };
         const raid = reset ? sanitizeRaidSettings({ rewardSeason: raidCfg().rewardSeason }) : sanitizeRaidSettings({
             dailyRewards: val('dailyRewards'),
+            maxClears: val('maxClears'),
             minParty: val('minParty'),
             maxParty: val('maxParty'),
             teamBonus: val('teamBonus'),
@@ -1216,7 +1229,7 @@ export function createPetRaidView(ctx) {
     /** 첫 보상 시즌을 1 올려요: 모든 학생이 1~22스테이지 첫 클리어 보상을 다시 받을 수 있어요. */
     async function nextRewardSeason() {
         if (!deps.isAdmin || !deps.isAdmin() || !deps.saveSettings) return;
-        const ok = await deps.confirm('모든 학생이 1~22스테이지 첫 클리어 보상을 다시 받을 수 있게 할까요?\n(깬 스테이지 기록과 열린 스테이지는 그대로예요)');
+        const ok = await deps.confirm('모든 학생이 1~22스테이지 첫 클리어 보상을 다시 받을 수 있게 할까요?\n(보스마다 이긴 횟수도 0부터 다시 세요. 깬 스테이지 기록과 열린 스테이지는 그대로예요)');
         if (!ok) return;
         const raid = sanitizeRaidSettings({ ...raidCfg(), rewardSeason: raidCfg().rewardSeason + 1 });
         try {

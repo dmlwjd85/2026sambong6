@@ -22,6 +22,8 @@
 .raid-stage.is-locked { cursor: not-allowed; }
 .raid-stage.is-locked img { filter: brightness(0) opacity(0.55); }
 .raid-stage.is-done i { color: #86efac; font-weight: 900; }
+.raid-stage.is-maxed .raid-stage-art img { filter: grayscale(0.85) brightness(0.7); }
+.raid-stage.is-maxed i { color: #fca5a5; }
 
 .raid-boss {
     display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.7rem; border-radius: 1rem;

@@ -684,8 +684,17 @@ export function sanitizeRaidProgress(raw) {
         const v = int(n, 0, 99);
         if (v >= 1 && !paid.includes(v)) paid.push(v);
     });
+    /** 스테이지마다 이긴 횟수(이번 보상 시즌 것) { '3': 2 } */
+    const wins = {};
+    const w = src.wins && typeof src.wins === 'object' && !Array.isArray(src.wins) ? src.wins : {};
+    Object.keys(w).forEach((k) => {
+        const s = int(k, 0, 99);
+        const c = int(w[k], 0, 999);
+        if (s >= 1 && c > 0) wins[String(s)] = c;
+    });
     return {
         firsts: firsts.sort((a, b) => a - b).slice(0, 40),
+        wins,
         day: String(src.day || '').slice(0, 10),
         dayRewards: int(src.dayRewards, 0, 999),
         claimed: (Array.isArray(src.claimed) ? src.claimed : []).map((x) => String(x || '').slice(0, 60)).filter(Boolean).slice(-30),
@@ -731,7 +740,7 @@ function sanitizeKeep(src, slots) {
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null, stones: b.stones };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, wins: { ...b.raid.wins }, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null, stones: b.stones };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */

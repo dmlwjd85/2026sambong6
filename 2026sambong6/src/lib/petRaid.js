@@ -83,6 +83,8 @@ export const RAID_DEFAULT_STAGES = Object.freeze([
 export const RAID_DEFAULT_SETTINGS = Object.freeze({
     /** 하루에 보상을 받을 수 있는 횟수(도전 자체는 무제한) */
     dailyRewards: 3,
+    /** 같은 보스를 이길 수 있는 횟수(첫 클리어 포함, 보상 시즌마다 새로 세요. 0이면 제한 없음) */
+    maxClears: 3,
     /** 출발할 수 있는 가장 적은 인원 */
     minParty: 2,
     /** 한 팀 최대 인원(0이면 학급 인원에 맞춰요, 최대 13) */
@@ -156,6 +158,7 @@ export function sanitizeRaidSettings(raw) {
     return {
         stages,
         dailyRewards: num(src.dailyRewards, d.dailyRewards, 0, 99),
+        maxClears: num(src.maxClears, d.maxClears, 0, 99),
         minParty: num(src.minParty, d.minParty, 1, RAID_MAX_PARTY),
         maxParty: num(src.maxParty, d.maxParty, 0, RAID_MAX_PARTY),
         teamBonus: num(src.teamBonus, d.teamBonus, 0, 50),
@@ -192,6 +195,27 @@ export function raidPaidFirsts(progressRaw, settings = null) {
     const p = sanitizeRaidProgress(progressRaw);
     const cfg = sanitizeRaidSettings(settings);
     return p.season === cfg.rewardSeason ? p.paid : [];
+}
+
+/**
+ * 이번 보상 시즌에 그 스테이지를 이긴 횟수.
+ * 횟수를 세기 전(v2.01 전)에 첫 보상을 받은 스테이지는 1번 이긴 것으로 쳐요.
+ */
+export function raidClearCount(progressRaw, settings, stage) {
+    const p = sanitizeRaidProgress(progressRaw);
+    const cfg = sanitizeRaidSettings(settings);
+    if (p.season !== cfg.rewardSeason) return 0;
+    const s = int(stage, 1, RAID_STAGE_COUNT);
+    return Math.max(p.wins[String(s)] || 0, p.paid.includes(s) ? 1 : 0);
+}
+
+/** 이길 수 있는 횟수를 다 쓴 스테이지 목록(제한이 0이면 빈 목록) */
+export function raidMaxedStages(progressRaw, settings = null) {
+    const cfg = sanitizeRaidSettings(settings);
+    if (!cfg.maxClears) return [];
+    const out = [];
+    for (let s = 1; s <= RAID_STAGE_COUNT; s += 1) if (raidClearCount(progressRaw, cfg, s) >= cfg.maxClears) out.push(s);
+    return out;
 }
 
 /* ---------- 팀원 ---------- */
@@ -522,13 +546,14 @@ function stamp(next, prev, now) {
 }
 
 /** 탐험 방 만들기(방장이 첫 팀원) */
-export function createRaidParty({ member, stage, unlocked = 1, now = 0 } = {}) {
+export function createRaidParty({ member, stage, unlocked = 1, maxed = [], now = 0 } = {}) {
     const m = sanitizeMember(member);
     if (!m) return bad('no_pet');
     delete m.owner;
     delete m.ready;
     const st = int(stage, 1, RAID_STAGE_COUNT);
     if (st > int(unlocked, 1, RAID_STAGE_COUNT)) return bad('locked_stage');
+    if (Array.isArray(maxed) && maxed.includes(st)) return bad('max_clears');
     return { ok: true, error: '', party: stamp({ id: m.id, leaderId: m.id, leaderName: m.name, stage: st, status: 'open', members: [m], createdAt: int(now), updatedAt: int(now), run: null }, null, now) };
 }
 
@@ -537,7 +562,7 @@ export function createRaidParty({ member, stage, unlocked = 1, now = 0 } = {}) {
  * extras: 더 데려갈 내 펫들(maxExtra 마리까지). 봉은 출발할 때 내요.
  * 펫이 13마리로 꽉 찼을 때 새 사람이 오면, 마지막에 더 데려온 펫 한 마리가 자리를 비켜 줘요(사람이 먼저예요).
  */
-export function joinRaidParty(partyRaw, { member, extras = [], max = RAID_MAX_PARTY, maxExtra = 0, now = 0 } = {}) {
+export function joinRaidParty(partyRaw, { member, extras = [], max = RAID_MAX_PARTY, maxExtra = 0, maxed = [], now = 0 } = {}) {
     const party = sanitizeRaidParty(partyRaw);
     const m = sanitizeMember(member);
     if (!party) return bad('no_party');
@@ -558,6 +583,7 @@ export function joinRaidParty(partyRaw, { member, extras = [], max = RAID_MAX_PA
     const notMine = (x) => raidOwner(x) !== m.id;
     let before = (at >= 0 ? party.members.slice(0, at) : party.members).filter(notMine);
     let after = (at >= 0 ? party.members.slice(at) : []).filter(notMine);
+    if (at < 0 && Array.isArray(maxed) && maxed.includes(party.stage)) return bad('max_clears', party);
     if (at < 0) {
         if (raidOwners(party.members).length >= Math.min(RAID_MAX_PARTY, int(max, RAID_MIN_PARTY))) return bad('full', party);
         if (before.length >= RAID_MAX_PARTY) {
@@ -581,13 +607,14 @@ export function leaveRaidParty(partyRaw, { id, now = 0 } = {}) {
 }
 
 /** 방장이 스테이지를 바꿔요. */
-export function setRaidStage(partyRaw, { id, stage, unlocked = 1, now = 0 } = {}) {
+export function setRaidStage(partyRaw, { id, stage, unlocked = 1, maxed = [], now = 0 } = {}) {
     const party = sanitizeRaidParty(partyRaw);
     if (!party) return bad('no_party');
     if (party.leaderId !== cleanId(id)) return bad('leader_only', party);
     if (party.status !== 'open') return bad('fighting', party);
     const st = int(stage, 1, RAID_STAGE_COUNT);
     if (st > int(unlocked, 1, RAID_STAGE_COUNT)) return bad('locked_stage', party);
+    if (st !== party.stage && Array.isArray(maxed) && maxed.includes(st)) return bad('max_clears', party);
     // 스테이지가 바뀌면 모두 다시 준비해야 해요.
     const members = st === party.stage ? party.members : party.members.map((m) => { const x = { ...m }; delete x.ready; return x; });
     return { ok: true, error: '', party: stamp({ ...party, stage: st, members, updatedAt: int(now) }, party, now) };
@@ -599,12 +626,13 @@ export function isRaidAllReady(party) {
 }
 
 /** 준비 / 준비 취소 */
-export function readyRaidParty(partyRaw, { id, ready = true, now = 0 } = {}) {
+export function readyRaidParty(partyRaw, { id, ready = true, maxed = [], now = 0 } = {}) {
     const party = sanitizeRaidParty(partyRaw);
     if (!party) return bad('no_party');
     if (party.status !== 'open') return bad('fighting', party);
     const me = cleanId(id);
     if (!party.members.some((m) => m.id === me)) return bad('not_member', party);
+    if (ready && Array.isArray(maxed) && maxed.includes(party.stage)) return bad('max_clears', party);
     const members = party.members.map((m) => { if (m.id !== me) return m; const x = { ...m }; if (ready) x.ready = true; else delete x.ready; return x; });
     const next = stamp({ ...party, members, updatedAt: int(now) }, party, now);
     return { ok: true, error: '', party: next, allReady: isRaidAllReady(next) };
@@ -743,10 +771,15 @@ export function claimRaidReward(progressRaw, run, { id, today = '', settings = n
     const day = String(today || '');
     const dayRewards = progress.day === day ? progress.dayRewards : 0;
     const paidNow = raidPaidFirsts(progress, cfg);
-    const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30), season: cfg.rewardSeason, paid: paidNow.slice() };
+    const winsNow = progress.season === cfg.rewardSeason ? { ...progress.wins } : {};
+    const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30), season: cfg.rewardSeason, paid: paidNow.slice(), wins: winsNow };
     // 하루 보상 횟수를 다 쓰면 봉도 경험치도 더 주지 않아요(도전은 계속 할 수 있어요).
     const used = dayRewards >= cfg.dailyRewards;
     if (!run.win) return { ok: true, error: '', bong: 0, exp: used ? 0 : run.stage, first: false, limited: used, fee, progress: next };
+    // 같은 보스는 maxClears 번까지만 이길 수 있어요. 그 뒤에 이긴 전투는 보상이 없어요(방·준비에서 먼저 막아요).
+    const before = raidClearCount(progress, cfg, run.stage);
+    if (cfg.maxClears && before >= cfg.maxClears) return { ok: true, error: '', bong: 0, exp: 0, first: false, limited: false, maxed: true, fee, progress: next };
+    next.wins = { ...winsNow, [String(run.stage)]: before + 1 };
     const first = !paidNow.includes(run.stage);
     let bong = 0;
     let limited = false;
@@ -784,6 +817,7 @@ export const RAID_ERROR_TEXT = Object.freeze({
     answered: '이미 답했어요.',
     bad_answer: 'O나 X를 골라 줘요.',
     pending: '아직 전투가 끝나지 않았어요.',
+    max_clears: '이 보스는 이길 수 있는 횟수를 다 썼어요. 다른 보스에 도전해요!',
 });
 
 export function raidErrorText(code) {

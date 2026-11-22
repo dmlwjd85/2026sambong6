@@ -142,24 +142,25 @@ describe('탐험 보상', () => {
     const run = (extra = {}) => ({ id: 'r1', stage: 2, win: true, boss: { first: 4, repeat: 1 }, members: [member(0), member(1)], ...extra });
 
     it('첫 클리어는 첫 보상, 그다음은 반복 보상(하루 3번), 도전은 계속할 수 있어요', () => {
-        let r = R.claimRaidReward(null, run(), { id: '1', today: DAY });
+        const NOCAP = { maxClears: 0 }; // 하루 횟수만 보려고 이기기 횟수 제한은 꺼요
+        let r = R.claimRaidReward(null, run(), { id: '1', today: DAY, settings: NOCAP });
         assert.equal(r.bong, 4);
         assert.equal(r.first, true);
         assert.deepEqual(r.progress.firsts, [2]);
-        assert.equal(R.claimRaidReward(r.progress, run(), { id: '1', today: DAY }).error, 'claimed');
+        assert.equal(R.claimRaidReward(r.progress, run(), { id: '1', today: DAY, settings: NOCAP }).error, 'claimed');
         let p = r.progress;
         for (let i = 2; i <= 4; i += 1) {
-            r = R.claimRaidReward(p, run({ id: `r${i}` }), { id: '1', today: DAY });
+            r = R.claimRaidReward(p, run({ id: `r${i}` }), { id: '1', today: DAY, settings: NOCAP });
             assert.equal(r.bong, 1);
             p = r.progress;
         }
-        r = R.claimRaidReward(p, run({ id: 'r5' }), { id: '1', today: DAY });
+        r = R.claimRaidReward(p, run({ id: 'r5' }), { id: '1', today: DAY, settings: NOCAP });
         assert.equal(r.ok, true);
         assert.equal(r.bong, 0);
         assert.equal(r.limited, true);
         assert.equal(r.exp, 0); // 하루 횟수를 넘기면 경험치도 없어요
         // 다음 날에는 다시 받아요
-        assert.equal(R.claimRaidReward(r.progress, run({ id: 'r6' }), { id: '1', today: '2026-11-17' }).bong, 1);
+        assert.equal(R.claimRaidReward(r.progress, run({ id: 'r6' }), { id: '1', today: '2026-11-17', settings: NOCAP }).bong, 1);
     });
 
     it('지면 봉은 없고, 팀원이 아니면 못 받아요', () => {
@@ -575,5 +576,49 @@ describe('전투 최대 턴 수(규칙 판 5부터 20턴)', () => {
         const a = R.replayRaidRun({ members: tank, boss: wall, seed: 9, rules: 4, teamBonus: 0 });
         const b = R.replayRaidRun({ members: tank, boss: wall, seed: 9, rules: 5, teamBonus: 0 });
         assert.deepEqual(b.rounds.slice(0, 18).map((r) => r.bossHp), a.rounds.map((r) => r.bossHp));
+    });
+});
+
+describe('같은 보스 이기기 횟수 제한', async () => {
+    const R = await import('./petRaid.js');
+    const cfg = R.sanitizeRaidSettings({ maxClears: 3 });
+    const mem = (id) => ({ id, name: id, petName: 'p', species: 'emberkit', stage: 1, level: 5, enhance: 0, type: 'fire', power: 200 });
+    const winRun = (id, n) => ({ id: `r${n}`, stage: 2, win: true, pending: false, members: [mem(id)], boss: cfg.stages[1], extraFee: 0 });
+    it('기본값은 3번, 0이면 제한 없음', () => {
+        assert.equal(R.sanitizeRaidSettings(null).maxClears, 3);
+        assert.equal(R.raidMaxedStages({ season: 1, wins: { 2: 9 } }, { maxClears: 0 }).length, 0);
+    });
+    it('3번 이기면 그 보스는 방·참가·준비·스테이지 바꾸기가 막히고, 4번째 승리는 보상이 없어요', () => {
+        let prog = {};
+        for (let i = 1; i <= 3; i += 1) {
+            const r = R.claimRaidReward(prog, winRun('a', i), { id: 'a', today: 'd', settings: cfg });
+            assert.equal(r.ok, true);
+            assert.ok(r.bong > 0);
+            prog = r.progress;
+            assert.equal(R.raidClearCount(prog, cfg, 2), i);
+        }
+        const maxed = R.raidMaxedStages(prog, cfg);
+        assert.deepEqual(maxed, [2]);
+        assert.equal(R.createRaidParty({ member: mem('a'), stage: 2, unlocked: 3, maxed }).error, 'max_clears');
+        assert.equal(R.createRaidParty({ member: mem('a'), stage: 1, unlocked: 3, maxed }).ok, true);
+        const party = R.createRaidParty({ member: mem('b'), stage: 2, unlocked: 3 }).party;
+        assert.equal(R.joinRaidParty(party, { member: mem('a'), maxed }).error, 'max_clears');
+        const p1 = R.createRaidParty({ member: mem('b'), stage: 1, unlocked: 3 }).party;
+        const joined = R.joinRaidParty(p1, { member: mem('a'), maxed }).party;
+        const moved = R.setRaidStage(joined, { id: 'b', stage: 2, unlocked: 3 }).party;
+        assert.equal(R.readyRaidParty(moved, { id: 'a', maxed }).error, 'max_clears');
+        assert.equal(R.readyRaidParty(moved, { id: 'a', ready: false, maxed }).ok, true);
+        assert.equal(R.setRaidStage(p1, { id: 'b', stage: 2, unlocked: 3, maxed: [2] }).error, 'max_clears');
+        const r4 = R.claimRaidReward(prog, winRun('a', 4), { id: 'a', today: 'd', settings: cfg });
+        assert.equal(r4.maxed, true);
+        assert.equal(r4.bong, 0);
+        assert.equal(r4.exp, 0);
+    });
+    it('예전에 첫 보상을 받은 스테이지는 1번 이긴 것으로 세고, 보상 시즌이 바뀌면 0부터 다시 세요', () => {
+        const old = { season: 1, paid: [2], firsts: [1, 2] };
+        assert.equal(R.raidClearCount(old, cfg, 2), 1);
+        const r = R.claimRaidReward(old, winRun('a', 1), { id: 'a', today: 'd', settings: cfg });
+        assert.equal(R.raidClearCount(r.progress, cfg, 2), 2);
+        assert.equal(R.raidClearCount(r.progress, { ...cfg, rewardSeason: 2 }, 2), 0);
     });
 });

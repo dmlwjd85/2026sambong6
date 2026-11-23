@@ -854,6 +854,7 @@ import {
     PASSWORD_CHANGE_BONG,
     planPasswordChange,
 } from './lib/studentPassword.js';
+import { buildGroupBuyOrder, groupBuyOrderHtml, pendingGroupBuyOrders } from './lib/groupBuyOrder.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -1412,7 +1413,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v2.03';
+        const APP_VERSION = 'v2.04';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -23260,6 +23261,7 @@ ${subjectLine}
                                     window._refreshShopGroupBuyModalIfOpen();
                                 }
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
+                                maybeShowGroupBuyOrders();
                                 updateUI();
                             }
                         );
@@ -31732,7 +31734,17 @@ ${subjectLine}
                         const v = toNaturalShopContribution(contributions[k]);
                         if (v > 0) savedContribs[k] = v;
                     });
-                    writeShopGroupBuyPoolInTransaction(transaction, poolRef, poolSnap, {}, { lastExecuteAt: Date.now() });
+                    const execAt = Date.now();
+                    const extra = { lastExecuteAt: execAt };
+                    // 랜덤 박스는 봉으로 바로 나눠서 주문할 게 없어요. 나머지는 마스터 화면에 주문서 팝업을 띄워요.
+                    if (shopId !== 'item_random') {
+                        const myId = localStorage.getItem('sambong_student_id') || '';
+                        extra.lastOrder = buildGroupBuyOrder({
+                            shopId, shopName: shop.name, price: target, contributions: savedContribs,
+                            by: myId, byName: (window.playerState && window.playerState.name) || STUDENT_NAMES[myId] || myId, at: execAt,
+                        });
+                    }
+                    writeShopGroupBuyPoolInTransaction(transaction, poolRef, poolSnap, {}, extra);
                 });
                 applyShopGroupBuyPoolLocal(shopId, {});
                 await refreshShopGroupBuyPoolFromServer(shopId);
@@ -33300,6 +33312,57 @@ ${subjectLine}
                 scheduleClassXpBell();
             }, classXpTimerDelay(nowMs, classXpNextFireMs(nowMs)));
         }
+
+        /* ---------- 공동구매 주문서 팝업(마스터) ---------- */
+        // 학생이 공동구매를 실행하면 모금 문서에 lastOrder 가 적혀요. 마스터 화면은 확인하지 않은 주문을 하나씩 팝업으로 띄워요.
+        // 「주문 확인」을 누르면 lastOrderSeen 을 적어서 다른 마스터 화면에서도 다시 뜨지 않아요. 「나중에」는 이 화면에서만 닫아요.
+        const _groupBuyOrderLater = new Set();
+        let _groupBuyOrderOpen = '';
+        function ensureGroupBuyOrderStyle() {
+            if (document.getElementById('gbo-style')) return;
+            const st = document.createElement('style');
+            st.id = 'gbo-style';
+            st.textContent = `.gbo{text-align:left;color:#e2e8f0}.gbo-title{font-size:1.15rem;font-weight:900;text-align:center;color:#fde68a}
+.gbo-item{margin:.35rem 0 .6rem;font-size:1.3rem;font-weight:900;text-align:center;color:#fff}
+.gbo-info{display:grid;grid-template-columns:auto 1fr;gap:.2rem .7rem;font-size:.82rem;margin:0 0 .6rem}.gbo-info dt{color:#94a3b8}.gbo-info dd{margin:0;font-weight:700}
+.gbo-table{max-height:45vh;overflow:auto;border:1px solid #334155;border-radius:.7rem}.gbo-table table{width:100%;border-collapse:collapse;font-size:.82rem}
+.gbo-table th,.gbo-table td{padding:.3rem .5rem;border-bottom:1px solid #1e293b}.gbo-table thead th{position:sticky;top:0;background:#0f172a;color:#94a3b8;text-align:left}
+.gbo-table tbody td{color:#f1f5f9}.gbo-table thead th:last-child{text-align:right}.gbo-table tfoot td{font-weight:900;color:#fde68a;border-bottom:0}.gbo-num{text-align:right;white-space:nowrap}`;
+            document.head.appendChild(st);
+        }
+        function maybeShowGroupBuyOrders() {
+            if (!window.playerState || !window.playerState.isAdmin || _groupBuyOrderOpen) return;
+            const next = pendingGroupBuyOrders(window.shopGroupBuyPools || {}).find((o) => !_groupBuyOrderLater.has(o.id));
+            if (!next) return;
+            _groupBuyOrderOpen = next.id;
+            ensureGroupBuyOrderStyle();
+            const d = document.createElement('div');
+            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+            d.innerHTML = `<div class="bg-sb-panel p-5 rounded-3xl border border-amber-500/60 max-w-md w-full space-y-4 shadow-2xl">
+                    ${groupBuyOrderHtml(next, { nameOf: (id) => STUDENT_NAMES[id] || id, bong: (n) => formatBongAmount(n) })}
+                    <div class="flex gap-2">
+                        <button type="button" class="js-gbo-later flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-full">나중에</button>
+                        <button type="button" class="js-gbo-ok flex-[2] bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-2 rounded-full">✅ 주문 확인</button>
+                    </div>
+                </div>`;
+            sambongModalHost().appendChild(d);
+            const close = () => { d.remove(); _groupBuyOrderOpen = ''; setTimeout(maybeShowGroupBuyOrders, 300); };
+            d.querySelector('.js-gbo-later').onclick = () => { _groupBuyOrderLater.add(next.id); close(); };
+            d.querySelector('.js-gbo-ok').onclick = async () => {
+                _groupBuyOrderLater.add(next.id);
+                const pool = window.shopGroupBuyPools && window.shopGroupBuyPools[next.shopId];
+                if (pool) pool.lastOrderSeen = next.id;
+                close();
+                try {
+                    // 같은 주문일 때만 확인 표시를 적어요(그 사이 새 주문이 왔으면 그 주문은 다시 떠요).
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', next.shopId), { lastOrderSeen: next.id }, { merge: true });
+                } catch (e) {
+                    console.warn('groupBuyOrderSeen', e);
+                    if (typeof window.showToast === 'function') window.showToast('주문 확인 표시를 저장하지 못했어요. 이 화면에서는 다시 뜨지 않아요.');
+                }
+            };
+        }
+        window.maybeShowGroupBuyOrders = maybeShowGroupBuyOrders;
 
         /* ---------- 선생님 알림 팝업 ---------- */
         // 학생 문서의 teacherNotice { id, text, at } 를 그 학생 화면에 한 번 띄워요(기기마다 한 번, 3일 지나면 안 띄워요).

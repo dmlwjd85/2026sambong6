@@ -237,6 +237,7 @@
 }
 .pet-lead, .pet-mood { font-size: 13px; font-weight: 700; line-height: 1.5; color: #cbd5e1; text-align: center; word-break: keep-all; }
 .pet-lead.is-warn, .pet-mood.is-warn { color: #fca5a5; }
+.pet-note.is-warn { color: #fca5a5; }
 .pet-note { font-size: 11px; font-weight: 700; color: #94a3b8; text-align: center; word-break: keep-all; }
 .pet-sub { font-size: 12px; font-weight: 900; color: #fde68a; margin-top: 0.2rem; }
 .pet-sub em { font-style: normal; color: #94a3b8; font-weight: 700; }

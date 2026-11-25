@@ -99,8 +99,8 @@ export function createPetRaidView(ctx) {
     }
     const unlocked = () => (ctx.free() ? RAID_STAGE_COUNT : raidUnlockedStage(box().raid));
     /** 이길 수 있는 횟수를 다 쓴 스테이지(선생님은 제한 없음) */
-    const maxed = () => (ctx.free() ? [] : raidMaxedStages(box().raid, raidCfg()));
-    const clears = (stage) => raidClearCount(box().raid, raidCfg(), stage);
+    const maxed = () => (ctx.free() ? [] : raidMaxedStages(box().raid, raidCfg(), ctx.today()));
+    const clears = (stage) => raidClearCount(box().raid, raidCfg(), stage, ctx.today());
     const liveParties = () => parties.filter((p) => !isRaidPartyStale(p, ctx.now()));
     // 내가 들어 있는 방은 오래돼도 내 방이에요(오래됐다고 안 보이면 '방 없애기'가 먹통이 돼요). 다른 사람에게만 안 보여요.
     const myParty = () => parties.find((p) => p.members.some((m) => m.id === me())) || null;
@@ -1103,7 +1103,7 @@ export function createPetRaidView(ctx) {
         const day = box().raid.day === ctx.today() ? box().raid.dayRewards : 0;
         return `<div class="pet-card raid-lobby">
             <h3 class="pet-title">⚔️ 보스 탐험</h3>
-            <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${cfg.minParty}명부터 ${maxParty()}명까지${cfg.maxClears ? `, 같은 보스의 보상은 ${cfg.maxClears}번 이길 때까지 받아요(그 뒤엔 보상 없이 함께 도전해요).` : ', 도전은 몇 번이든 할 수 있어요.'}</p>
+            <p class="pet-lead">친구들의 대표 펫과 팀을 만들어 보스를 잡아요. ${cfg.minParty}명부터 ${maxParty()}명까지${cfg.maxClears ? `, 같은 보스의 보상은 일주일에 ${cfg.maxClears}번 이길 때까지 받아요(그 뒤엔 보상 없이 함께 도전해요. 월요일마다 새로 세요).` : ', 도전은 몇 번이든 할 수 있어요.'}</p>
             <p class="pet-sub">보스 1~11</p>
             <div class="raid-stages">${stages}</div>
             <p class="pet-sub">✨ 색다른 보스 12~22</p>
@@ -1161,7 +1161,7 @@ export function createPetRaidView(ctx) {
             <summary>⚙️ 탐험 마스터 설정 (선생님만 보여요)</summary>
             <div class="pet-admin-body">
                 <label class="pet-set-row"><span>하루 보상 횟수</span>${n('dailyRewards', cfg.dailyRewards, 0, 99)} 번 (도전은 무제한)</label>
-                <label class="pet-set-row"><span>같은 보스 보상</span>한 사람이 ${n('maxClears', cfg.maxClears, 0, 99)} 번 이길 때까지 (첫 클리어 포함, 그 뒤엔 보상 없이 도전만, 0 = 제한 없음)</label>
+                <label class="pet-set-row"><span>같은 보스 보상</span>한 사람이 일주일에 ${n('maxClears', cfg.maxClears, 0, 99)} 번 이길 때까지 (첫 클리어 포함, 그 뒤엔 보상 없이 도전만, 매주 월요일에 새로 세요 · 0 = 제한 없음)</label>
                 <label class="pet-set-row"><span>출발 최소</span>${n('minParty', cfg.minParty, 1, RAID_MAX_PARTY)} 명</label>
                 <label class="pet-set-row"><span>한 팀 최대</span>${n('maxParty', cfg.maxParty, 0, RAID_MAX_PARTY)} 명 (0 = 학급 인원, 최대 13)</label>
                 <label class="pet-set-row"><span>인원 보너스</span>펫 한 마리 늘 때마다 공격력 +${n('teamBonus', cfg.teamBonus, 0, 50)} %</label>

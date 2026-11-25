@@ -68,6 +68,7 @@ import {
     setPetBoxMain,
     walkPet,
     warmPetEgg,
+    rollGiftFireEggs,
 } from './lib/petGame.js';
 import { petArtHtml, petEggHtml, petEggSvg, petSvg } from './lib/petArt.js';
 import { createOxFeedback } from './lib/oxQuizFeedback.js';
@@ -203,8 +204,9 @@ export function createPetMode(deps) {
             else if (act === 'unrelease') void unrelease();
             else if (act === 'cage') void cage();
             else if (act === 'uncage') void uncage(Number(t.getAttribute('data-cage')) || 0);
-            else if (act === 'egg-store') { delete eggTaps[slot]; void runBox('알 보관하기', (b) => storePetEgg(b, slot), () => show('알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.', '')); }
+            else if (act === 'egg-store') { delete eggTaps[slot]; void runBox('알 보관하기', (b) => storePetEgg(b, slot), (r) => show(r.fire ? '🔥 불알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.' : '알을 보관함에 넣었어요. 빈 칸에서 다시 꺼낼 수 있어요.', '')); }
             else if (act === 'egg-use') void runBox('보관한 알 꺼내기', (b) => useStoredEgg(b, slot, { now: now() }), () => show('알을 꺼냈어요! 쓰다듬어서 품어 줘요.', 'good'));
+            else if (act === 'egg-use-fire') void runBox('불알 꺼내기', (b) => useStoredEgg(b, slot, { now: now(), fire: true }), () => show('🔥 불알을 꺼냈어요! 깨면 반드시 색다른 펫이 나와요.', 'good'));
             else if (act === 'enhance-mat') void enhanceMat();
             else if (act === 'gift') void gift();
             else if (act === 'shop-buy') void shopBuy(t.getAttribute('data-sp'), t.getAttribute('data-shiny') === '1');
@@ -554,16 +556,20 @@ export function createPetMode(deps) {
 
     let giftUnsub = null;
     let giftTotal = 0; // 선물함에 쌓인 합계(늘기만 해요)
+    let giftFireTotal = 0; // 선물함에 쌓인 불알 합계(늘기만 해요)
     let giftTryAt = 0;
     /** 아직 안 받은 선물이 있으면 알 보관함에 넣어요. 실패해도 선물함은 그대로라 다음에 다시 받아요(1분에 한 번만 시도). */
     async function takeGifts() {
         if (busy || !deps.canPlay()) return;
-        if (giftTotal <= myBox().giftSeen) return;
+        if (giftTotal <= myBox().giftSeen && giftFireTotal <= myBox().fireGiftSeen) return;
         if (now() - giftTryAt < 60000) return;
         giftTryAt = now();
         const total = giftTotal;
-        await runBox('알 선물 받기', (b) => receivePetGifts(b, total), (res) => {
-            show(`🎁 선생님이 알 ${res.gifted}개를 선물했어요! 알 보관함에 넣었어요.${res.added < res.gifted ? ` (보관함이 꽉 차서 ${res.added}개만 들어갔어요)` : ''}`, 'good');
+        const fireTotal = giftFireTotal;
+        await runBox('알 선물 받기', (b) => receivePetGifts(b, total, fireTotal), (res) => {
+            const all = res.gifted + res.fireGifted;
+            const got = res.added + res.fireAdded;
+            show(`🎁 선생님이 알 ${all}개를 선물했어요!${res.fireGifted ? ` 그중 🔥 불알이 ${res.fireGifted}개! (깨면 반드시 색다른 펫)` : ''} 알 보관함에 넣었어요.${got < all ? ` (보관함이 꽉 차서 ${got}개만 들어갔어요)` : ''}`, 'good');
             if (feedback) feedback.play('ok');
         });
     }
@@ -574,15 +580,22 @@ export function createPetMode(deps) {
         if (!el || !deps.isAdmin || !deps.isAdmin() || !deps.giftEggs) return;
         const who = (el.querySelector('[data-pet-gift="who"]') || {}).value || 'all';
         const count = Math.max(1, Math.min(10, Math.floor(Number((el.querySelector('[data-pet-gift="count"]') || {}).value) || 1)));
+        const fireOnly = (el.querySelector('[data-pet-gift="kind"]') || {}).value === 'fire';
         const targets = giftTargets();
         const ids = who === 'all' ? targets.map((x) => x.id) : targets.filter((x) => x.id === who).map((x) => x.id);
         if (!ids.length) { deps.toast('선물할 학생이 없어요.'); return; }
         const name = who === 'all' ? `우리 반 모두(${ids.length}명)` : (targets.find((x) => x.id === who) || {}).name;
-        const ok = await deps.confirm(`${name}에게 알 ${count}개씩 선물할까요?\n받은 알은 알 보관함에 들어가요.`);
+        const ok = await deps.confirm(fireOnly
+            ? `${name}에게 🔥 불알 ${count}개씩 선물할까요?\n불알을 깨면 반드시 색다른 펫이 나와요.`
+            : `${name}에게 알 ${count}개씩 선물할까요?\n알마다 10% 확률로 🔥 불알이 돼요. 받은 알은 알 보관함에 들어가요.`);
         if (!ok) return;
+        // 불알은 선물하는 이 화면에서 굴려 선물함에 따로 적어요(학생 화면은 받기만 해요).
+        const fire = {};
+        ids.forEach((id) => { fire[id] = fireOnly ? count : rollGiftFireEggs(count); });
+        const lucky = Object.values(fire).reduce((s, n) => s + n, 0);
         try {
-            await deps.giftEggs(ids, count);
-            deps.toast(`🎁 ${name}에게 알 ${count}개씩 선물했어요.`);
+            await deps.giftEggs(ids, count, fire);
+            deps.toast(fireOnly ? `🔥 ${name}에게 불알 ${count}개씩 선물했어요.` : `🎁 ${name}에게 알 ${count}개씩 선물했어요.${lucky ? ` (그중 🔥 불알 ${lucky}개)` : ''}`);
         } catch (e) {
             deps.toast(`선물하지 못했어요: ${e && e.message ? e.message : e}`);
         }
@@ -703,9 +716,9 @@ export function createPetMode(deps) {
             if (i < box.slots) {
                 const p = box.list[i];
                 const art = p.phase === 'pet' ? petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })
-                    : p.phase === 'egg' ? petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS, eager: false })
+                    : p.phase === 'egg' ? petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS, eager: false, fire: !!p.fire })
                         : '<span class="pet-slot-plus" aria-hidden="true">＋</span>';
-                const label = p.phase === 'pet' ? `${esc(p.name)} <em>Lv.${p.level}</em>` : p.phase === 'egg' ? '알' : '빈 칸';
+                const label = p.phase === 'pet' ? `${esc(p.name)} <em>Lv.${p.level}</em>` : p.phase === 'egg' ? (p.fire ? '🔥 불알' : '알') : '빈 칸';
                 cells.push(`<button type="button" class="pet-slot${on}${p.phase === 'pet' ? ` type-${PET_SPECIES[p.species].type}` : ''}" data-p="slot" data-slot="${i}" aria-pressed="${slot === i}">
                     ${mainIdx === i ? '<span class="pet-slot-main" title="대표 펫">⭐</span>' : ''}
                     <span class="pet-slot-art">${art}</span><span class="pet-slot-label">${label}</span>
@@ -780,7 +793,7 @@ export function createPetMode(deps) {
         return `<div class="pet-keep">
             <p class="pet-keep-head"><b>🏠 케이지</b><span>${box.cage.length} / ${cap}마리 · 쉬는 동안은 배고프지 않아요 · 누르면 꺼내요</span></p>
             <div class="pet-cage" style="--n:${Math.min(cap, size * 2)}">${cells.join('')}</div>
-            <p class="pet-keep-items"><span class="pet-chip${box.eggs > 0 ? ' is-ok' : ''}">🥚 보관한 알 ${box.eggs}개</span>${mats || '<span class="pet-chip">💎 강화 재료 없음</span>'}<span class="pet-chip${box.stones > 0 ? ' is-ok' : ''}">💠 강화석 ${box.stones}개</span></p>
+            <p class="pet-keep-items"><span class="pet-chip${box.eggs > 0 ? ' is-ok' : ''}">🥚 보관한 알 ${box.eggs}개</span>${box.fireEggs > 0 ? `<span class="pet-chip is-ok is-fire">🔥 불알 ${box.fireEggs}개</span>` : ''}${mats || '<span class="pet-chip">💎 강화 재료 없음</span>'}<span class="pet-chip${box.stones > 0 ? ' is-ok' : ''}">💠 강화석 ${box.stones}개</span></p>
         </div>`;
     }
 
@@ -838,6 +851,7 @@ export function createPetMode(deps) {
                 <button type="button" class="pet-btn is-main" data-p="settings-save">설정 저장</button>
                 ${deps.giftEggs ? `<p class="pet-sub">🎁 알 선물하기</p>
                 <label class="pet-set-row"><span>받는 사람</span><select class="pet-set-input pet-gift-who" data-pet-gift="who"><option value="all">우리 반 모두</option>${giftTargets().map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>
+                <label class="pet-set-row"><span>알 종류</span><select class="pet-set-input" data-pet-gift="kind"><option value="normal">🥚 알 (10% 확률로 🔥 불알)</option><option value="fire">🔥 불알 (반드시 색다른 펫)</option></select></label>
                 <label class="pet-set-row"><span>알 개수</span><input type="number" inputmode="numeric" class="pet-set-input" data-pet-gift="count" value="1" min="1" max="10"> 개씩</label>
                 <p class="pet-note">선물한 알은 학생의 알 보관함에 들어가요. 학생이 펫 화면을 열면 받아요.</p>
                 <button type="button" class="pet-btn" data-p="gift">🎁 알 선물하기</button>` : ''}
@@ -857,6 +871,7 @@ export function createPetMode(deps) {
             <div class="pet-lineup">${lineup}</div>
             <button type="button" class="pet-btn is-main" data-p="buy"${can ? '' : ' disabled'}>🥚 알 사기 · ${esc(deps.bong(PET_EGG_PRICE))}</button>
             ${can ? '' : `<p class="pet-note">봉이 ${esc(deps.bong(PET_EGG_PRICE - myBong()))} 모자라요. 퀘스트로 모아 봐요.</p>`}
+            ${myBox().fireEggs > 0 ? `<button type="button" class="pet-btn is-fire-egg" data-p="egg-use-fire">🔥 불알 꺼내기 (${myBox().fireEggs}개 · 반드시 색다른 펫!)</button>` : ''}
             ${myBox().eggs > 0 ? `<button type="button" class="pet-btn is-evolve" data-p="egg-use">🥚 보관한 알 꺼내기 (${myBox().eggs}개 있어요)</button>` : ''}
             ${(() => { const g = releasedPetOf(myBox(), now()); return g ? `<button type="button" class="pet-btn" data-p="unrelease">↩️ 놓아준 ${esc(g.name)}(Lv.${g.level}) 다시 데려오기</button><p class="pet-note">놓아준 지 7일 안에는 다시 데려올 수 있어요.</p>` : ''; })()}
             <p class="pet-note">이미 가진 종이 태어나면 그 종의 💎 강화 재료가 돼요.</p>
@@ -865,10 +880,10 @@ export function createPetMode(deps) {
 
     function eggHtml(p0) {
         const p = { ...p0, taps: tapsOf(slot, p0) };
-        return `<div class="pet-card is-egg-card">
-            <button type="button" class="pet-stage is-egg pet-egg-btn" data-p="warm" aria-label="알 품기">${ground}<span class="pet-sprite is-egg">${petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS })}</span>${fxHtml()}</button>
-            <h3 class="pet-title">알을 품어 줘요</h3>
-            <p class="pet-lead">알을 톡톡 쓰다듬어요. ${PET_HATCH_TAPS}번이면 태어나요!</p>
+        return `<div class="pet-card is-egg-card${p.fire ? ' is-fire-egg' : ''}">
+            <button type="button" class="pet-stage is-egg pet-egg-btn" data-p="warm" aria-label="알 품기">${ground}<span class="pet-sprite is-egg">${petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS, fire: !!p.fire })}</span>${fxHtml()}</button>
+            <h3 class="pet-title">${p.fire ? '🔥 불알을 품어 줘요' : '알을 품어 줘요'}</h3>
+            <p class="pet-lead">알을 톡톡 쓰다듬어요. ${PET_HATCH_TAPS}번이면 태어나요!${p.fire ? ' 불알에서는 반드시 ✨ 색다른 펫이 나와요!' : ''}</p>
             ${bar('품기', p.taps, PET_HATCH_TAPS, 'is-exp', `${p.taps} / ${PET_HATCH_TAPS}`)}
             <button type="button" class="pet-btn is-main" data-p="warm">🤲 쓰다듬기</button>
             <button type="button" class="pet-link" data-p="egg-store">알 보관함에 넣어 두기${p.taps > 0 ? ' (품은 횟수는 처음부터)' : ''}</button>
@@ -1018,7 +1033,7 @@ export function createPetMode(deps) {
         render();
         if (tab === 'raid') { raid.start(); void raid.maybePlay(); }
         // 선생님이 선물한 알이 있으면 받아요.
-        if (!giftUnsub && deps.giftWatch && deps.canPlay()) giftUnsub = deps.giftWatch((total) => { giftTotal = Math.max(giftTotal, Math.floor(Number(total)) || 0); if (isOpen()) void takeGifts(); });
+        if (!giftUnsub && deps.giftWatch && deps.canPlay()) giftUnsub = deps.giftWatch((total, fireTotal) => { giftTotal = Math.max(giftTotal, Math.floor(Number(total)) || 0); giftFireTotal = Math.max(giftFireTotal, Math.floor(Number(fireTotal)) || 0); if (isOpen()) void takeGifts(); });
         void takeGifts();
         if (!timer) {
             timer = setInterval(() => {

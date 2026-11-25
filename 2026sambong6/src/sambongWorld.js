@@ -1413,7 +1413,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v2.05';
+        const APP_VERSION = 'v2.06';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10585,16 +10585,24 @@ ${subjectLine}
             },
             // 알 선물: 학생마다 선물함 문서가 하나 있어요(petGifts/{학번}.eggs = 지금까지 선물한 알의 합계, 늘기만 해요).
             // 학생은 이 문서를 고치지 않고, 받은 합계를 펫 상자(giftSeen)에 적어요. 그래서 같은 선물을 두 번 받거나 저장을 되풀이하지 않아요.
-            giftEggs: async (ids, count) => {
+            // fire: { 학번: 그중 불알 수 }. 불알은 fireEggs(합계, 늘기만 해요)에 따로 적어요.
+            giftEggs: async (ids, count, fire = {}) => {
                 if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 선물할 수 있어요');
                 const n = Math.max(1, Math.min(10, Math.floor(Number(count)) || 1));
-                await Promise.all((ids || []).map((id) => setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', String(id)), { eggs: increment(n), updatedAt: Date.now() }, { merge: true })));
+                await Promise.all((ids || []).map((id) => {
+                    const f = Math.max(0, Math.min(n, Math.floor(Number(fire && fire[id])) || 0));
+                    const patch = { updatedAt: Date.now() };
+                    if (n - f > 0) patch.eggs = increment(n - f);
+                    if (f > 0) patch.fireEggs = increment(f);
+                    return setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', String(id)), patch, { merge: true });
+                }));
             },
             giftWatch: (cb) => {
                 const id = String(localStorage.getItem('sambong_student_id') || '');
                 if (!id || !db) return null;
                 return onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'petGifts', id), (snap) => {
-                    cb(snap.exists() ? Math.max(0, Math.floor(Number(snap.data().eggs) || 0)) : 0);
+                    const d = snap.exists() ? snap.data() : {};
+                    cb(Math.max(0, Math.floor(Number(d.eggs) || 0)), Math.max(0, Math.floor(Number(d.fireEggs) || 0)));
                 }, (err) => { console.warn('petGifts', err); });
             },
             // 학생은 선물함을 고치지 않아요(받은 합계는 펫 상자의 giftSeen 에 적어요).

@@ -291,7 +291,10 @@ export function sanitizePet(raw) {
     const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     const dex = sanitizeDex(src.dex);
     if (src.phase === 'egg') {
-        return { v: 1, phase: 'egg', taps: int(src.taps, 0, PET_HATCH_TAPS), boughtAt: int(src.boughtAt), dex };
+        const egg = { v: 1, phase: 'egg', taps: int(src.taps, 0, PET_HATCH_TAPS), boughtAt: int(src.boughtAt), dex };
+        // 🔥 불알: 깨면 반드시 색다른 펫이 나와요.
+        if (src.fire === true) egg.fire = true;
+        return egg;
     }
     const sp = PET_SPECIES[String(src.species || '')];
     if (src.phase !== 'pet' || !sp) return { v: 1, phase: 'none', dex };
@@ -470,7 +473,7 @@ export function warmPetEgg(pet, { now = 0, rnd = Math.random } = {}) {
     const taps = p.taps + 1;
     if (taps < PET_HATCH_TAPS) return done({ ...p, taps });
     const species = rollPetSpecies(rnd);
-    const shiny = rnd() < PET_SHINY_CHANCE;
+    const shiny = rnd() < PET_SHINY_CHANCE || p.fire === true;
     const born = {
         v: 1,
         phase: 'pet',
@@ -665,6 +668,17 @@ export function rankClassPets(students, now = Date.now(), today = '') {
 const stripDex = (p) => { const { dex, ...rest } = p; return rest; };
 /** 보관할 수 있는 알 수 */
 export const PET_MAX_STORED_EGGS = 30;
+/** 🔥 불알(깨면 반드시 색다른 펫) 보관함 크기 */
+export const PET_MAX_FIRE_EGGS = 30;
+/** 선생님이 알을 선물할 때 한 알이 불알이 될 확률 */
+export const PET_FIRE_GIFT_CHANCE = 0.1;
+
+/** 선물할 알 count 개 가운데 불알이 몇 개인지 굴려요(알마다 10%). */
+export function rollGiftFireEggs(count, rnd = Math.random) {
+    let n = 0;
+    for (let i = 0; i < Math.max(0, Math.floor(Number(count) || 0)); i += 1) if (rnd() < PET_FIRE_GIFT_CHANCE) n += 1;
+    return n;
+}
 /** 종마다 모아 둘 수 있는 강화 재료 수 */
 export const PET_MAX_MATS = 99;
 
@@ -695,6 +709,8 @@ export function sanitizeRaidProgress(raw) {
     return {
         firsts: firsts.sort((a, b) => a - b).slice(0, 40),
         wins,
+        /** wins 를 센 주(그 주 월요일, 2026-11-30 전은 'pre') */
+        winsWeek: String(src.winsWeek || '').slice(0, 10),
         day: String(src.day || '').slice(0, 10),
         dayRewards: int(src.dayRewards, 0, 999),
         claimed: (Array.isArray(src.claimed) ? src.claimed : []).map((x) => String(x || '').slice(0, 60)).filter(Boolean).slice(-30),
@@ -734,13 +750,14 @@ function sanitizeKeep(src, slots) {
         const gp = sanitizePet(g.pet);
         if (gp.phase === 'pet') gone = { pet: stripDex(gp), at: int(g.at) };
     }
-    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7), gone, stones: int(src.stones, 0, PET_MAX_STONES) };
+    return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7), gone, stones: int(src.stones, 0, PET_MAX_STONES),
+        fireEggs: int(src.fireEggs, 0, PET_MAX_FIRE_EGGS), fireGiftSeen: int(src.fireGiftSeen, 0, 1e7) };
 }
 
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, wins: { ...b.raid.wins }, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null, stones: b.stones };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, wins: { ...b.raid.wins }, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, fireEggs: b.fireEggs, fireGiftSeen: b.fireGiftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null, stones: b.stones };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
@@ -934,20 +951,26 @@ export function storePetEgg(box, i) {
     const idx = slotIndex(b, i);
     if (idx < 0) return boxFail(b, 'bad_slot');
     if (b.list[idx].phase !== 'egg') return boxFail(b, 'no_egg');
-    if (b.eggs >= PET_MAX_STORED_EGGS) return boxFail(b, 'egg_store_full');
     const list = b.list.map((cur, k) => (k === idx ? { v: 1, phase: 'none' } : cur));
+    if (b.list[idx].fire) {
+        if (b.fireEggs >= PET_MAX_FIRE_EGGS) return boxFail(b, 'egg_store_full');
+        return boxDone({ ...b, list, fireEggs: b.fireEggs + 1 }, { fire: true });
+    }
+    if (b.eggs >= PET_MAX_STORED_EGGS) return boxFail(b, 'egg_store_full');
     return boxDone({ ...b, list, eggs: b.eggs + 1 });
 }
 
 /** 보관한 알을 빈 칸에 꺼내요. */
-export function useStoredEgg(box, i, { now = 0 } = {}) {
+export function useStoredEgg(box, i, { now = 0, fire = false } = {}) {
     const b = sanitizePetBox(box);
     const idx = slotIndex(b, i);
     if (idx < 0) return boxFail(b, 'bad_slot');
-    if (b.eggs <= 0) return boxFail(b, 'no_stored_egg');
+    if ((fire ? b.fireEggs : b.eggs) <= 0) return boxFail(b, 'no_stored_egg');
     if (b.list[idx].phase !== 'none') return boxFail(b, 'slot_used');
-    const list = b.list.map((cur, k) => (k === idx ? { v: 1, phase: 'egg', taps: 0, boughtAt: int(now) } : cur));
-    return boxDone({ ...b, list, eggs: b.eggs - 1 });
+    const egg = { v: 1, phase: 'egg', taps: 0, boughtAt: int(now) };
+    if (fire) egg.fire = true;
+    const list = b.list.map((cur, k) => (k === idx ? egg : cur));
+    return boxDone(fire ? { ...b, list, fireEggs: b.fireEggs - 1 } : { ...b, list, eggs: b.eggs - 1 }, { fire: !!fire });
 }
 
 /**
@@ -1055,11 +1078,15 @@ export function buyShopPet(box, i, { species = '', shiny = false, bong = 0, now 
  * 선생님이 선물한 알 받기. total 은 지금까지 받은 선물의 합계(선물함 문서의 eggs, 늘기만 해요).
  * 상자에 이미 받은 합계(giftSeen)를 적어 두어서, 같은 선물을 두 번 받지 않고 실패해도 다음에 그대로 받아요.
  */
-export function receivePetGifts(box, total) {
+export function receivePetGifts(box, total, fireTotal = 0) {
     const b = sanitizePetBox(box);
     const t = int(total, 0, 1e7);
-    const n = t - b.giftSeen;
-    if (n <= 0) return boxFail(b, 'no_gift');
+    const ft = int(fireTotal, 0, 1e7);
+    const n = Math.max(0, t - b.giftSeen);
+    const f = Math.max(0, ft - b.fireGiftSeen);
+    if (n <= 0 && f <= 0) return boxFail(b, 'no_gift');
     const eggs = Math.min(PET_MAX_STORED_EGGS, b.eggs + n);
-    return boxDone({ ...b, eggs, giftSeen: t }, { added: eggs - b.eggs, gifted: n });
+    const fireEggs = Math.min(PET_MAX_FIRE_EGGS, b.fireEggs + f);
+    return boxDone({ ...b, eggs, giftSeen: Math.max(t, b.giftSeen), fireEggs, fireGiftSeen: Math.max(ft, b.fireGiftSeen) },
+        { added: eggs - b.eggs, gifted: n, fireAdded: fireEggs - b.fireEggs, fireGifted: f });
 }

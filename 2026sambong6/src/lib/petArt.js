@@ -290,7 +290,7 @@ export function petArtHtml({ species = 'emberkit', stage = 1, shiny = false, moo
 }
 
 /** 알 일러스트 + 금(taps가 늘수록 늘어요). 금은 그림 위에 SVG로 겹쳐 그려요. */
-export function petEggHtml({ taps = 0, total = 10, eager = true } = {}) {
+export function petEggHtml({ taps = 0, total = 10, eager = true, fire = false } = {}) {
     const k = Math.max(0, Math.min(1, taps / Math.max(1, total)));
     const cracks = [
         'M40 40l7 5l-4 7l8 4',
@@ -298,5 +298,5 @@ export function petEggHtml({ taps = 0, total = 10, eager = true } = {}) {
         'M34 66l8-3l4 6l7-3',
         'M72 62l-7 2l-3 7',
     ].slice(0, Math.ceil(k * 4)).map((d) => `<path d="${d}" fill="none" stroke="#3b2a1a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#fff8e1" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" transform="translate(0.8 0.8)" opacity="0.8"/>`).join('');
-    return `<span class="pet-art is-egg" data-pet-egg="1" data-pet-taps="${Math.round(k * 100)}"><img class="pet-img" src="${petEggImageUrl()}" alt="" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false">${cracks ? `<svg class="pet-egg-cracks" viewBox="0 0 100 100" aria-hidden="true">${cracks}</svg>` : ''}</span>`;
+    return `<span class="pet-art is-egg${fire ? ' is-fire' : ''}" data-pet-egg="1" data-pet-taps="${Math.round(k * 100)}">${fire ? `<i class="pet-egg-tint" aria-hidden="true" style="-webkit-mask-image:url('${petEggImageUrl()}');mask-image:url('${petEggImageUrl()}')"></i><i class="pet-egg-flame" aria-hidden="true">🔥</i>` : ''}<img class="pet-img" src="${petEggImageUrl()}" alt="" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false">${cracks ? `<svg class="pet-egg-cracks" viewBox="0 0 100 100" aria-hidden="true">${cracks}</svg>` : ''}</span>`;
 }

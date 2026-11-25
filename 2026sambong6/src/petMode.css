@@ -562,3 +562,15 @@ button.pet-cage-cell:active { transform: scale(0.97); }
 /* 펫 상점: 강화석 */
 .pet-stone-icon { display: grid; place-items: center; font-size: 2rem; }
 .pet-btn.is-stone { border-color: #67e8f9; }
+
+/* 🔥 불알: 깨면 반드시 색다른 펫 */
+.pet-art.is-egg.is-fire { position: relative; }
+.pet-art.is-egg.is-fire > .pet-img { filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.85)) drop-shadow(0 0 22px rgba(239, 68, 68, 0.45)); }
+.pet-egg-tint { position: absolute; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(circle at 42% 34%, #fef08a 0%, #fb923c 38%, #ea580c 62%, #991b1b 100%); mix-blend-mode: multiply; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; }
+.pet-egg-flame { position: absolute; left: 50%; bottom: 2%; transform: translateX(-50%); font-style: normal; font-size: 1.9em; line-height: 1; pointer-events: none; z-index: 2; animation: pet-egg-flame 0.9s ease-in-out infinite alternate; filter: drop-shadow(0 0 6px #fb923c); }
+.pet-slot .pet-egg-flame { font-size: 1.1em; }
+@keyframes pet-egg-flame { from { transform: translateX(-50%) scale(0.92); } to { transform: translateX(-50%) scale(1.1) translateY(-6%); } }
+.pet-card.is-egg-card.is-fire-egg { --t1: #fdba74; --t2: #ea580c; --t3: #7c2d12; --sky: #fff7ed; }
+.pet-btn.is-fire-egg { background: linear-gradient(135deg, #f97316, #dc2626); color: #fff; border-color: #fdba74; }
+.pet-chip.is-fire { border-color: #fb923c; color: #fed7aa; }
+@media (prefers-reduced-motion: reduce) { .pet-egg-flame { animation: none; } }

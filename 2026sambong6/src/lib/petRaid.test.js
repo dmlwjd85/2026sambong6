@@ -622,3 +622,29 @@ describe('같은 보스 이기기 횟수 제한', async () => {
         assert.equal(R.raidClearCount(r.progress, { ...cfg, rewardSeason: 2 }, 2), 0);
     });
 });
+
+describe('이긴 횟수는 매주 월요일에 새로 세요(2026-11-30부터)', async () => {
+    const R = await import('./petRaid.js');
+    const cfg = R.sanitizeRaidSettings({ maxClears: 3 });
+    const mem = { id: 'a', name: 'a', petName: 'p', species: 'emberkit', stage: 1, level: 5, enhance: 0, type: 'fire', power: 200 };
+    const run = (n) => ({ id: `w${n}`, stage: 2, win: true, pending: false, members: [mem], boss: cfg.stages[1], extraFee: 0 });
+    it('주 이름: 11-30 전은 한 묶음, 그 뒤는 그 주 월요일', () => {
+        assert.equal(R.raidWeekKey('2026-11-25'), 'pre');
+        assert.equal(R.raidWeekKey('2026-11-29'), 'pre');
+        assert.equal(R.raidWeekKey('2026-11-30'), '2026-11-30');
+        assert.equal(R.raidWeekKey('2026-12-06'), '2026-11-30');
+        assert.equal(R.raidWeekKey('2026-12-07'), '2026-12-07');
+        assert.equal(R.raidWeekKey(''), 'pre');
+    });
+    it('이번 주 3번을 다 써도 다음 주 월요일에는 다시 보상을 받아요', () => {
+        let prog = { season: 1, paid: [2], firsts: [1, 2], wins: { 2: 3 } };
+        assert.deepEqual(R.raidMaxedStages(prog, cfg, '2026-11-27'), [2]);
+        assert.equal(R.claimRaidReward(prog, run(1), { id: 'a', today: '2026-11-27', settings: cfg }).maxed, true);
+        assert.deepEqual(R.raidMaxedStages(prog, cfg, '2026-11-30'), []);
+        const r = R.claimRaidReward(prog, run(2), { id: 'a', today: '2026-11-30', settings: { ...cfg, dailyRewards: 9 } });
+        assert.ok(r.bong > 0);
+        assert.equal(r.progress.winsWeek, '2026-11-30');
+        assert.equal(R.raidClearCount(r.progress, cfg, 2, '2026-12-01'), 1);
+        assert.equal(R.raidClearCount(r.progress, cfg, 2, '2026-12-07'), 0);
+    });
+});

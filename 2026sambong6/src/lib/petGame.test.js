@@ -605,3 +605,40 @@ describe('펫 상점: 강화석(전투력 +10)', () => {
         assert.equal(r.box.list[0].boost, 60);
     });
 });
+
+describe('🔥 불알', async () => {
+    const G = await import('./petGame.js');
+    it('불알을 깨면 반드시 색다른 펫이 나와요', () => {
+        let p = { v: 1, phase: 'egg', taps: G.PET_HATCH_TAPS - 1, fire: true };
+        const r = G.warmPetEgg(p, { now: 1, rnd: () => 0.99 });
+        assert.equal(r.hatched, true);
+        assert.equal(r.pet.shiny, true);
+        const n = G.warmPetEgg({ ...p, fire: false }, { now: 1, rnd: () => 0.99 });
+        assert.equal(n.pet.shiny, false);
+    });
+    it('보관함에 넣고 꺼내도 불알은 불알이에요', () => {
+        let b = G.sanitizePetBox({ v: 2, slots: 1, list: [{ phase: 'egg', taps: 3, fire: true }] });
+        let r = G.storePetEgg(b, 0);
+        assert.equal(r.box.fireEggs, 1);
+        assert.equal(r.box.eggs, 0);
+        r = G.useStoredEgg(G.petBoxToDoc(r.box), 0, { now: 5, fire: true });
+        assert.equal(r.ok, true);
+        assert.equal(r.box.list[0].fire, true);
+        assert.equal(r.box.fireEggs, 0);
+        assert.equal(G.useStoredEgg(r.box, 0, { fire: true }).error, 'no_stored_egg');
+    });
+    it('선물 받기: 일반 알과 불알을 따로 세요', () => {
+        const b = G.sanitizePetBox({ v: 2, slots: 1, list: [{}], giftSeen: 2, fireGiftSeen: 0 });
+        const r = G.receivePetGifts(b, 4, 1);
+        assert.equal(r.box.eggs, 2);
+        assert.equal(r.box.fireEggs, 1);
+        assert.equal(r.fireGifted, 1);
+        assert.equal(G.receivePetGifts(r.box, 4, 1).error, 'no_gift');
+        assert.equal(G.receivePetGifts(r.box, 4, 2).box.fireEggs, 2);
+    });
+    it('선물한 알은 알마다 10% 확률로 불알', () => {
+        const seq = [0.05, 0.5, 0.09, 0.1];
+        let i = 0;
+        assert.equal(G.rollGiftFireEggs(4, () => seq[i++]), 2);
+    });
+});

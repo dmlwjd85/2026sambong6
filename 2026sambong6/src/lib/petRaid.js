@@ -197,24 +197,41 @@ export function raidPaidFirsts(progressRaw, settings = null) {
     return p.season === cfg.rewardSeason ? p.paid : [];
 }
 
+/** 이긴 횟수를 매주 월요일에 새로 세기 시작하는 날(이날 전까지는 한 묶음으로 세요) */
+export const RAID_WEEKLY_FROM = '2026-11-30';
+
+/** 이긴 횟수를 세는 주: 그 주 월요일 'YYYY-MM-DD'. RAID_WEEKLY_FROM 전이거나 날짜를 모르면 'pre' */
+export function raidWeekKey(today) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(today || ''));
+    if (!m) return 'pre';
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    const back = (d.getUTCDay() + 6) % 7; // 월요일까지 며칠 전인지
+    d.setUTCDate(d.getUTCDate() - back);
+    const key = d.toISOString().slice(0, 10);
+    return key < RAID_WEEKLY_FROM ? 'pre' : key;
+}
+
 /**
- * 이번 보상 시즌에 그 스테이지를 이긴 횟수.
- * 횟수를 세기 전(v2.01 전)에 첫 보상을 받은 스테이지는 1번 이긴 것으로 쳐요.
+ * 이번 주(월요일부터), 이번 보상 시즌에 그 스테이지를 이긴 횟수.
+ * 매주 월요일에 0부터 다시 세요(2026-11-30부터).
+ * 그 전 묶음('pre')에서는 횟수를 세기 전(v2.03 전)에 첫 보상을 받은 스테이지를 1번 이긴 것으로 쳐요.
  */
-export function raidClearCount(progressRaw, settings, stage) {
+export function raidClearCount(progressRaw, settings, stage, today = '') {
     const p = sanitizeRaidProgress(progressRaw);
     const cfg = sanitizeRaidSettings(settings);
     if (p.season !== cfg.rewardSeason) return 0;
+    const week = raidWeekKey(today);
+    if ((p.winsWeek || 'pre') !== week) return 0;
     const s = int(stage, 1, RAID_STAGE_COUNT);
-    return Math.max(p.wins[String(s)] || 0, p.paid.includes(s) ? 1 : 0);
+    return Math.max(p.wins[String(s)] || 0, week === 'pre' && p.paid.includes(s) ? 1 : 0);
 }
 
-/** 이길 수 있는 횟수를 다 쓴 스테이지 목록(제한이 0이면 빈 목록) */
-export function raidMaxedStages(progressRaw, settings = null) {
+/** 이번 주 보상을 다 받은 스테이지 목록(제한이 0이면 빈 목록) */
+export function raidMaxedStages(progressRaw, settings = null, today = '') {
     const cfg = sanitizeRaidSettings(settings);
     if (!cfg.maxClears) return [];
     const out = [];
-    for (let s = 1; s <= RAID_STAGE_COUNT; s += 1) if (raidClearCount(progressRaw, cfg, s) >= cfg.maxClears) out.push(s);
+    for (let s = 1; s <= RAID_STAGE_COUNT; s += 1) if (raidClearCount(progressRaw, cfg, s, today) >= cfg.maxClears) out.push(s);
     return out;
 }
 
@@ -771,13 +788,14 @@ export function claimRaidReward(progressRaw, run, { id, today = '', settings = n
     const day = String(today || '');
     const dayRewards = progress.day === day ? progress.dayRewards : 0;
     const paidNow = raidPaidFirsts(progress, cfg);
-    const winsNow = progress.season === cfg.rewardSeason ? { ...progress.wins } : {};
-    const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30), season: cfg.rewardSeason, paid: paidNow.slice(), wins: winsNow };
+    const week = raidWeekKey(day);
+    const winsNow = progress.season === cfg.rewardSeason && (progress.winsWeek || 'pre') === week ? { ...progress.wins } : {};
+    const next = { ...progress, day, dayRewards, claimed: progress.claimed.concat(run.id).slice(-30), season: cfg.rewardSeason, paid: paidNow.slice(), wins: winsNow, winsWeek: week };
     // 하루 보상 횟수를 다 쓰면 봉도 경험치도 더 주지 않아요(도전은 계속 할 수 있어요).
     const used = dayRewards >= cfg.dailyRewards;
     if (!run.win) return { ok: true, error: '', bong: 0, exp: used ? 0 : run.stage, first: false, limited: used, fee, progress: next };
     // 같은 보스는 maxClears 번까지만 이길 수 있어요. 그 뒤에 이긴 전투는 보상이 없어요(방·준비에서 먼저 막아요).
-    const before = raidClearCount(progress, cfg, run.stage);
+    const before = raidClearCount(progress, cfg, run.stage, day);
     if (cfg.maxClears && before >= cfg.maxClears) return { ok: true, error: '', bong: 0, exp: 0, first: false, limited: false, maxed: true, fee, progress: next };
     next.wins = { ...winsNow, [String(run.stage)]: before + 1 };
     const first = !paidNow.includes(run.stage);

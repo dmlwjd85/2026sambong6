@@ -545,6 +545,7 @@ import {
     clipDiaryBodyLive,
     diaryBodyLength,
     diaryLocalDraftKey,
+    diarySaveNeedsFollowUp,
     readingLocalDraftKey,
     parseReadingLocalDraft,
     pickReadingDraft,
@@ -11378,28 +11379,29 @@ ${subjectLine}
             }, DIARY_AUTOSAVE_MS);
         }
 
+        /** 글·그림·날씨·기분이 바뀌면 같은 순번을 올려요. 저장이 나가는 중이면 그 스냅샷으로 끝내지 않습니다. */
+        function markDiaryEdited() {
+            _diaryEditSeq += 1;
+            _diaryBodyDirty = true;
+            const sid = literatureStudentId();
+            if (sid && !(window.playerState && window.playerState.isAdmin)) writeDiaryLocalDraft(sid, getLocalDateStr());
+            updateDiaryBodyCounter();
+            scheduleDiaryAutosave();
+        }
+
         function bindDiaryComposer() {
             const el = document.getElementById('diaryBody');
             if (!el || _diaryBodyBound) return;
             _diaryBodyBound = true;
             const onEdit = (ev) => {
                 if (el.disabled) return;
-                _diaryEditSeq += 1;
-                if (ev && ev.type === 'input' && (ev.isComposing || ev.inputType === 'insertCompositionText')) {
-                    _diaryBodyDirty = true;
-                    updateDiaryBodyCounter();
-                    // 한글 조합 중에도 자동 저장 시계를 다시 맞춰요(조합만 이어 쓰면 저장이 늦어지지 않게).
-                    scheduleDiaryAutosave();
-                    return;
+                const composing = ev && ev.type === 'input' && (ev.isComposing || ev.inputType === 'insertCompositionText');
+                if (!composing) {
+                    const next = clipDiaryBodyLive(el.value);
+                    if (next !== el.value) el.value = next;
                 }
-                const next = clipDiaryBodyLive(el.value);
-                if (next !== el.value) el.value = next;
-                _diaryBodyDirty = true;
-                const sid = literatureStudentId();
-                const today = getLocalDateStr();
-                writeDiaryLocalDraft(sid, today);
-                updateDiaryBodyCounter();
-                scheduleDiaryAutosave();
+                // 한글 조합 중에도 순번을 올리고 자동 저장 시계를 다시 맞춰요.
+                markDiaryEdited();
             };
             el.addEventListener('input', onEdit);
             el.addEventListener('compositionend', onEdit);
@@ -11473,11 +11475,7 @@ ${subjectLine}
                 if (_diaryStroke.pts.length >= 4) _diaryStrokes.push(_diaryStroke);
                 _diaryStroke = null;
                 paintDiaryStrokes(canvas, _diaryStrokes);
-                if (!(window.playerState && window.playerState.isAdmin)) {
-                    _diaryBodyDirty = true;
-                    writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
-                    scheduleDiaryAutosave();
-                }
+                if (!(window.playerState && window.playerState.isAdmin)) markDiaryEdited();
             };
             canvas.addEventListener('pointerdown', start);
             canvas.addEventListener('pointermove', move);
@@ -11496,11 +11494,7 @@ ${subjectLine}
             if (window.playerState && window.playerState.isAdmin) return;
             _diaryStrokes = [];
             paintDiaryStrokes(document.getElementById('diaryCanvas'), []);
-            if (!(window.playerState && window.playerState.isAdmin)) {
-                _diaryBodyDirty = true;
-                writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
-                scheduleDiaryAutosave();
-            }
+            if (!(window.playerState && window.playerState.isAdmin)) markDiaryEdited();
         };
 
         window.setReadingStars = function(n) {
@@ -11595,11 +11589,14 @@ ${subjectLine}
             const v = readingFormValues();
             return !!(v.thought.trim() || v.title.trim() || v.quote.trim());
         }
-        /** 새 버전으로 새로 고치기 전에 확인해요: 쓰는 중인 독서기록·일기가 있으면 기다려요. */
+        /** 새 버전으로 새로 고치기 전에 확인해요: 문학 화면에서 쓰는 중이거나 일기 저장이 나가는 중이면 기다려요. */
         window.literatureHasUnsavedWork = function() {
             const sec = document.getElementById('literatureSection');
             const open = !!(sec && !sec.classList.contains('hidden'));
-            return _diarySaving || _diaryBodyDirty || (open && readingHasUnsaved());
+            // 화면을 닫아 둔 더러운 표시만으로 새로 고침을 막지 않아요. 글·그림은 이미 기기에 있고, 켜 둔 태블릿이 옛 코드로 남지 않게 해요.
+            if (_diarySaving) return true;
+            if (!open) return false;
+            return _diaryBodyDirty || readingHasUnsaved();
         };
 
         window.renderLiteratureReadingPane = function() {
@@ -11815,9 +11812,7 @@ ${subjectLine}
         window.setDiaryWeather = function(id) {
             if (window.playerState && window.playerState.isAdmin) return;
             _diaryWeather = String(id || 'sunny');
-            _diaryBodyDirty = true;
-            writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
-            scheduleDiaryAutosave();
+            markDiaryEdited();
             const weatherWrap = document.getElementById('diaryWeather');
             if (!weatherWrap) return;
             weatherWrap.querySelectorAll('button').forEach((btn, i) => {
@@ -11829,9 +11824,7 @@ ${subjectLine}
         window.setDiaryMood = function(id) {
             if (window.playerState && window.playerState.isAdmin) return;
             _diaryMood = String(id || 'calm');
-            _diaryBodyDirty = true;
-            writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
-            scheduleDiaryAutosave();
+            markDiaryEdited();
             const moodWrap = document.getElementById('diaryMood');
             if (!moodWrap) return;
             moodWrap.querySelectorAll('button').forEach((btn, i) => {
@@ -12149,9 +12142,9 @@ ${subjectLine}
                         { merge: true },
                     );
                 }, '일기 저장');
-                const typedMeanwhile = _diaryEditSeq !== seqAtSave;
+                const typedMeanwhile = diarySaveNeedsFollowUp(seqAtSave, _diaryEditSeq);
                 _diaryBodyDirty = typedMeanwhile;
-                // 저장하는 동안 더 쓴 글은 기기 초안을 덮지 않고, 조금 뒤 다시 저장해요.
+                // 저장하는 동안 더 쓴 글·그림·날씨·기분은 기기 초안을 덮지 않고, 조금 뒤 다시 저장해요.
                 if (typedMeanwhile) { writeDiaryLocalDraft(sid, today); scheduleDiaryAutosave(); }
                 else writeDiaryLocalDraft(sid, today, { body: checked.entry.body, strokes: checked.entry.strokes, updatedAt: now });
                 const clock = new Date();

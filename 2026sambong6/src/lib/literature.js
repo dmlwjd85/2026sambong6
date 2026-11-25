@@ -101,6 +101,15 @@ export function diaryLocalDraftKey(classId, studentId, dateStr) {
     return `sambong_diary_draft_${String(classId || '')}_${String(studentId || '')}_${String(dateStr || '')}`;
 }
 
+/**
+ * 일기 저장이 나가는 동안 글·그림·날씨·기분이 바뀌었는지.
+ * 순번이 늘었으면 그 저장의 스냅샷으로 기기 초안을 덮거나 '저장됨'으로 끝내지 않아요.
+ * 그림 획·날씨·기분도 글자와 같은 순번을 올려야 저장이 끝난 뒤 지워지지 않습니다.
+ */
+export function diarySaveNeedsFollowUp(seqAtSave, seqNow) {
+    return (Number(seqNow) || 0) !== (Number(seqAtSave) || 0);
+}
+
 /** 화면이 다시 그려질 때 쓰던 일기를 서버 빈값으로 덮을지 봅니다. */
 export function shouldReplaceDiaryComposer({
     prevKey,

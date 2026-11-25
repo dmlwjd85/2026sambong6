@@ -280,3 +280,28 @@ describe('일기장', () => {
         assert.equal(inputs.diaryTeacherNoteInput.focused, true);
     });
 });
+
+describe('독서기록 기기 초안', async () => {
+    const L = await import('./literature.js');
+    it('읽고 난 생각은 3000자까지 들어가요', () => {
+        const long = '가'.repeat(2500);
+        const log = L.sanitizeReadingLog({ thought: long });
+        assert.equal(Array.from(log.thought).length, 2500);
+        assert.equal(Array.from(L.sanitizeReadingLog({ thought: '나'.repeat(4000) }).thought).length, L.LITERATURE_THOUGHT_MAX);
+    });
+    it('초안을 읽고, 빈 초안은 버려요', () => {
+        assert.equal(L.parseReadingLocalDraft('{"thought":"  "}'), null);
+        assert.equal(L.parseReadingLocalDraft('깨진 글'), null);
+        const d = L.parseReadingLocalDraft(JSON.stringify({ title: '어린 왕자', thought: '좋았다', updatedAt: 5, stars: 4 }));
+        assert.equal(d.title, '어린 왕자');
+        assert.equal(d.stars, 4);
+    });
+    it('서버에 낸 것보다 나중에 쓴 다른 내용일 때만 초안을 써요', () => {
+        const d = L.parseReadingLocalDraft({ title: 'a', thought: '생각이 길어요', updatedAt: 100 });
+        assert.equal(L.pickReadingDraft({ draft: d }), d);
+        assert.equal(L.pickReadingDraft({ draft: d, editable: false }), null);
+        assert.equal(L.pickReadingDraft({ draft: d, serverLog: { submittedAt: 200, title: 'b' } }), null);
+        assert.equal(L.pickReadingDraft({ draft: d, serverLog: { submittedAt: 50, title: 'b' } }), d);
+        assert.equal(L.pickReadingDraft({ draft: d, serverLog: { submittedAt: 50, title: 'a', author: '', publisher: '', genre: '', quote: '', thought: '생각이 길어요' } }), null);
+    });
+});

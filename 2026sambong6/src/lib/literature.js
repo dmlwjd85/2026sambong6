@@ -11,7 +11,8 @@ export const LITERATURE_REWARD_BONG_MAX = 50;
 export const LITERATURE_DEFAULT_REWARD_XP = 20;
 export const LITERATURE_DEFAULT_REWARD_BONG = 5;
 export const LITERATURE_THOUGHT_MIN = 20;
-export const LITERATURE_THOUGHT_MAX = 800;
+/** 읽고 난 생각 최대 글자 수(길게 써도 끊기지 않게 넉넉히) */
+export const LITERATURE_THOUGHT_MAX = 3000;
 export const LITERATURE_TITLE_MAX = 40;
 export const LITERATURE_AUTHOR_MAX = 30;
 export const LITERATURE_PUBLISHER_MAX = 30;
@@ -62,6 +63,38 @@ export function clipDiaryBodyLive(raw, max = LITERATURE_DIARY_MAX) {
 
 export function diaryBodyLength(raw) {
     return Array.from(String(raw == null ? '' : raw).replace(/\r\n/g, '\n')).length;
+}
+
+/** 독서기록 쓰던 글을 기기에 보관하는 키(학생·날짜마다 하나) */
+export function readingLocalDraftKey(classId, studentId, dateStr) {
+    return `sambong_reading_draft_${String(classId || '')}_${String(studentId || '')}_${String(dateStr || '')}`;
+}
+
+const READING_DRAFT_FIELDS = ['title', 'author', 'publisher', 'genre', 'quote', 'thought'];
+
+/** 기기에 보관한 독서기록 초안 읽기. 내용이 없으면 null */
+export function parseReadingLocalDraft(raw) {
+    let d = null;
+    try { d = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { return null; }
+    if (!d || typeof d !== 'object') return null;
+    const out = { updatedAt: Number(d.updatedAt) || 0, stars: clampInt(d.stars, 1, 5, 3) };
+    READING_DRAFT_FIELDS.forEach((k) => { out[k] = String(d[k] == null ? '' : d[k]); });
+    out.thought = clipDiaryBodyLive(out.thought, LITERATURE_THOUGHT_MAX);
+    const any = READING_DRAFT_FIELDS.some((k) => k !== 'genre' && out[k].trim());
+    return any ? out : null;
+}
+
+/**
+ * 화면을 다시 열 때 기기 초안을 쓸지: 고칠 수 있는 상태이고, 초안이 서버에 낸 기록보다 나중에 쓴 것이고, 내용이 다를 때.
+ * (새로 고침이나 앱 전환으로 쓰던 독서기록이 사라지지 않게 해요.)
+ */
+export function pickReadingDraft({ draft, serverLog = null, editable = true } = {}) {
+    if (!editable || !draft) return null;
+    if (!serverLog) return draft;
+    const at = Number(serverLog.submittedAt) || Number(serverLog.updatedAt) || 0;
+    if ((Number(draft.updatedAt) || 0) <= at) return null;
+    const same = READING_DRAFT_FIELDS.every((k) => String(serverLog[k] == null ? '' : serverLog[k]) === draft[k]);
+    return same ? null : draft;
 }
 
 export function diaryLocalDraftKey(classId, studentId, dateStr) {

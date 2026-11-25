@@ -545,6 +545,10 @@ import {
     clipDiaryBodyLive,
     diaryBodyLength,
     diaryLocalDraftKey,
+    readingLocalDraftKey,
+    parseReadingLocalDraft,
+    pickReadingDraft,
+    LITERATURE_THOUGHT_MAX,
     diarySubmitState,
     DIARY_MOODS,
     DIARY_WEATHER,
@@ -1413,7 +1417,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v2.06';
+        const APP_VERSION = 'v2.07';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -11201,7 +11205,10 @@ ${subjectLine}
         let _diaryBodyDirty = false;
         let _diaryAutoSaveTimer = null;
         let _diarySaving = false;
+        /** 글을 고칠 때마다 1씩 늘어요. 저장하는 동안 더 쓴 글이 '저장됨'으로 잘못 표시되지 않게 해요. */
+        let _diaryEditSeq = 0;
         const DIARY_AUTOSAVE_MS = 2500;
+        let _readingBound = false;
         let _readingSnapReady = false;
         let _diarySnapReady = false;
         let _literatureAwaitEnterNotice = false;
@@ -11377,9 +11384,12 @@ ${subjectLine}
             _diaryBodyBound = true;
             const onEdit = (ev) => {
                 if (el.disabled) return;
+                _diaryEditSeq += 1;
                 if (ev && ev.type === 'input' && (ev.isComposing || ev.inputType === 'insertCompositionText')) {
                     _diaryBodyDirty = true;
                     updateDiaryBodyCounter();
+                    // 한글 조합 중에도 자동 저장 시계를 다시 맞춰요(조합만 이어 쓰면 저장이 늦어지지 않게).
+                    scheduleDiaryAutosave();
                     return;
                 }
                 const next = clipDiaryBodyLive(el.value);
@@ -11528,6 +11538,70 @@ ${subjectLine}
             window.setReadingStars(_readingStars);
         }
 
+        /* 독서기록 쓰던 글을 기기에 보관해요. 새로 고침·앱 전환·새 버전으로 바뀌어도 이어서 쓸 수 있어요. */
+        function readingFormValues() {
+            const v = (id) => String((document.getElementById(id) || {}).value || '');
+            return { title: v('readingTitle'), author: v('readingAuthor'), publisher: v('readingPublisher'), genre: v('readingGenre'), quote: v('readingQuote'), thought: v('readingThought'), stars: _readingStars };
+        }
+        function writeReadingLocalDraft() {
+            const sid = literatureStudentId();
+            if (!sid || !window.playerState || window.playerState.isAdmin || window.playerState.isGuest) return;
+            const el = document.getElementById('readingThought');
+            if (el && el.disabled) return;
+            try { localStorage.setItem(readingLocalDraftKey(appId, sid, getLocalDateStr()), JSON.stringify({ ...readingFormValues(), updatedAt: Date.now() })); } catch (_) { /* 기기 저장 공간이 모자라도 쓰기는 막지 않아요 */ }
+        }
+        function readReadingLocalDraft(sid, dateStr) {
+            try { return parseReadingLocalDraft(localStorage.getItem(readingLocalDraftKey(appId, sid, dateStr))); } catch (_) { return null; }
+        }
+        function clearReadingLocalDraft(sid, dateStr) {
+            try { localStorage.removeItem(readingLocalDraftKey(appId, sid, dateStr)); } catch (_) { /* 무시 */ }
+        }
+        function updateReadingThoughtCounter() {
+            const el = document.getElementById('readingThought');
+            const chip = document.getElementById('readingThoughtCount');
+            if (!chip) return;
+            const n = diaryBodyLength(el ? el.value : '');
+            chip.textContent = `${n} / ${LITERATURE_THOUGHT_MAX}자`;
+            chip.classList.toggle('text-amber-300', n >= LITERATURE_THOUGHT_MAX);
+        }
+        function bindReadingComposer() {
+            if (_readingBound) return;
+            const thought = document.getElementById('readingThought');
+            if (!thought) return;
+            _readingBound = true;
+            const onEdit = (ev) => {
+                if (ev && ev.target === thought && !(ev.isComposing || ev.inputType === 'insertCompositionText')) {
+                    const next = clipDiaryBodyLive(thought.value, LITERATURE_THOUGHT_MAX);
+                    if (next !== thought.value) thought.value = next;
+                }
+                writeReadingLocalDraft();
+                updateReadingThoughtCounter();
+            };
+            ['readingTitle', 'readingAuthor', 'readingPublisher', 'readingQuote', 'readingThought', 'readingGenre'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', onEdit);
+                el.addEventListener('change', onEdit);
+                el.addEventListener('compositionend', onEdit);
+            });
+            const flush = () => { if (readingHasUnsaved()) writeReadingLocalDraft(); };
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+            window.addEventListener('pagehide', flush);
+        }
+        /** 아직 내지 않은 독서기록 글이 화면에 있는지 */
+        function readingHasUnsaved() {
+            const el = document.getElementById('readingThought');
+            if (!el || el.disabled || !window.playerState || window.playerState.isAdmin) return false;
+            const v = readingFormValues();
+            return !!(v.thought.trim() || v.title.trim() || v.quote.trim());
+        }
+        /** 새 버전으로 새로 고치기 전에 확인해요: 쓰는 중인 독서기록·일기가 있으면 기다려요. */
+        window.literatureHasUnsavedWork = function() {
+            const sec = document.getElementById('literatureSection');
+            const open = !!(sec && !sec.classList.contains('hidden'));
+            return _diarySaving || _diaryBodyDirty || (open && readingHasUnsaved());
+        };
+
         window.renderLiteratureReadingPane = function() {
             const noteDrafts = captureLiteratureNoteDrafts(document, document.activeElement);
             renderReadingChips();
@@ -11564,11 +11638,18 @@ ${subjectLine}
             });
             const todayLog = mine.find((l) => String(l.date) === today) || state.existing || null;
             const hydrateKey = `${admin ? targetId : sid}:${today}`;
+            bindReadingComposer();
             if (window._readingHydrateKey !== hydrateKey) {
                 window._readingHydrateKey = hydrateKey;
-                if (todayLog) fillReadingForm(todayLog);
+                // 기기에 남은 쓰던 글이 서버 기록보다 나중 것이면 그걸 보여 줘요.
+                const draft = admin ? null : pickReadingDraft({ draft: readReadingLocalDraft(sid, today), serverLog: todayLog, editable: !locked });
+                if (draft) {
+                    fillReadingForm({ ...(todayLog || {}), ...draft });
+                    if (typeof window.showToast === 'function') window.showToast('쓰던 독서기록을 불러왔어요.');
+                } else if (todayLog) fillReadingForm(todayLog);
                 else if (admin) fillReadingForm(null);
             }
+            updateReadingThoughtCounter();
             const list = document.getElementById('readingLogMine');
             if (list) {
                 if (!targetId && admin) list.innerHTML = '<p class="text-slate-500">학생을 고르면 누적 기록이 나타납니다.</p>';
@@ -11892,6 +11973,7 @@ ${subjectLine}
                         { merge: true },
                     );
                 }, '독서기록 제출');
+                clearReadingLocalDraft(sid, today);
                 window.showToast && window.showToast('독서기록을 제출했습니다. 선생님 확인을 기다려 주세요.');
             } catch (e) {
                 console.error('submitReadingLog', e);
@@ -12045,7 +12127,8 @@ ${subjectLine}
             }
             if (silent && !_diaryBodyDirty) return true;
             if (_diarySaving) {
-                if (silent) return false;
+                // 저장 중이면 끝난 뒤 다시 저장해요(쓰던 끝부분이 서버에 안 가는 일을 막아요).
+                if (silent) { scheduleDiaryAutosave(); return false; }
                 for (let i = 0; i < 20 && _diarySaving; i += 1) {
                     await new Promise((resolve) => setTimeout(resolve, 100));
                 }
@@ -12057,6 +12140,7 @@ ${subjectLine}
                 return false;
             }
             _diarySaving = true;
+            const seqAtSave = _diaryEditSeq;
             try {
                 await runWithNetworkRetry(async () => {
                     await setDoc(
@@ -12065,8 +12149,11 @@ ${subjectLine}
                         { merge: true },
                     );
                 }, '일기 저장');
-                _diaryBodyDirty = false;
-                writeDiaryLocalDraft(sid, today, { body: checked.entry.body, strokes: checked.entry.strokes, updatedAt: now });
+                const typedMeanwhile = _diaryEditSeq !== seqAtSave;
+                _diaryBodyDirty = typedMeanwhile;
+                // 저장하는 동안 더 쓴 글은 기기 초안을 덮지 않고, 조금 뒤 다시 저장해요.
+                if (typedMeanwhile) { writeDiaryLocalDraft(sid, today); scheduleDiaryAutosave(); }
+                else writeDiaryLocalDraft(sid, today, { body: checked.entry.body, strokes: checked.entry.strokes, updatedAt: now });
                 const clock = new Date();
                 const hh = String(clock.getHours()).padStart(2, '0');
                 const mm = String(clock.getMinutes()).padStart(2, '0');

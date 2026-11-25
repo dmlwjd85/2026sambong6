@@ -1314,8 +1314,8 @@
                     <label class="block text-[10px] text-slate-400 font-bold">마음에 남은 문장 (선택)
                         <input id="readingQuote" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs" placeholder="기억하고 싶은 한 줄">
                     </label>
-                    <label class="block text-[10px] text-slate-400 font-bold">읽고 난 생각 (20자 이상)
-                        <textarea id="readingThought" maxlength="800" rows="5" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="이 책을 읽고 느낀 점을 자세히 적어 주세요."></textarea>
+                    <label class="block text-[10px] text-slate-400 font-bold"><span class="flex justify-between gap-2"><span>읽고 난 생각 (20자 이상 · 쓰는 글은 이 기기에 자동 보관)</span><span id="readingThoughtCount" class="font-normal text-slate-500">0 / 3000자</span></span>
+                        <textarea id="readingThought" rows="8" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="이 책을 읽고 느낀 점을 자세히 적어 주세요."></textarea>
                     </label>
                     <button type="button" id="readingSubmitBtn" onclick="void window.submitReadingLog()" class="w-full min-h-[48px] bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-sm">독서기록 제출</button>
                     <div id="readingAdminPicker" class="hidden">

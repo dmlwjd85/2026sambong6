@@ -19,6 +19,8 @@ function currentBundle() {
 /** 하던 일이 있는지: 확인 창, 펫 전투·퀴즈, OX 풀이, 글 입력 */
 function busyNow() {
     if (document.querySelector('.sambong-custom-modal, .raid-fx-wrap, .raid-fx-quiz, .ox-play-top')) return true;
+    // 쓰는 중인 독서기록·일기가 있으면 새로 고치지 않아요(글이 끊기지 않게).
+    try { if (typeof window.literatureHasUnsavedWork === 'function' && window.literatureHasUnsavedWork()) return true; } catch (_) { /* 무시 */ }
     const a = document.activeElement;
     return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable));
 }

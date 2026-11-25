@@ -281,6 +281,15 @@ describe('일기장', () => {
     });
 });
 
+describe('일기 저장 중 다시 쓰기', async () => {
+    const L = await import('./literature.js');
+    it('저장을 시작한 뒤 순번이 늘면 스냅샷으로 끝내지 않아요', () => {
+        assert.equal(L.diarySaveNeedsFollowUp(3, 3), false);
+        assert.equal(L.diarySaveNeedsFollowUp(3, 4), true);
+        assert.equal(L.diarySaveNeedsFollowUp(0, 0), false);
+    });
+});
+
 describe('독서기록 기기 초안', async () => {
     const L = await import('./literature.js');
     it('읽고 난 생각은 3000자까지 들어가요', () => {

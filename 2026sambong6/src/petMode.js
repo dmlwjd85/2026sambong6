@@ -69,6 +69,7 @@ import {
     sanitizePetBox,
     sanitizePetSettings,
     setPetBoxMain,
+    setPetLook,
     walkPet,
     warmPetEgg,
     rollGiftFireEggs,
@@ -199,6 +200,7 @@ export function createPetMode(deps) {
             if (act === 'tab') { void flush(); tab = t.getAttribute('data-tab') || 'mine'; if (tab === 'raid') raid.start(); else raid.stop(); render(); if (tab === 'raid') void raid.maybePlay(); }
             else if (act === 'slot') { talk = null; slot = Math.max(0, Math.min(PET_MAX_SLOTS - 1, Number(t.getAttribute('data-slot')) || 0)); fx = null; render(); }
             else if (act === 'expand') void expand();
+            else if (act === 'look') { const at = slot; const normal = t.getAttribute('data-look') === 'normal'; void runBox('펫 겉모습 바꾸기', (b) => setPetLook(b, at, normal), () => { react('main'); show(normal ? '일반 그림으로 바꿨어요. ✨ 색다른 펫 능력치는 그대로예요.' : '✨ 색다른 그림으로 바꿨어요.', 'good'); }); } // 자주 안 누르니 바로 저장해요(새로고침해도 유지)
             else if (act === 'main') { const at = slot; void runBox('대표 펫 정하기', (b) => setPetBoxMain(b, at), () => { react('main'); show('대표 펫으로 정했어요! 광장 카드와 반 펫 랭킹에 보여요.', 'good'); }, { batch: true }); }
             else if (act === 'settings-save') void saveSettings();
             else if (act === 'buy') void run('펫 알 사기', (p, o) => buyPetEgg(p, o));
@@ -729,7 +731,7 @@ export function createPetMode(deps) {
             const on = slot === i ? ' is-on' : '';
             if (i < box.slots) {
                 const p = box.list[i];
-                const art = p.phase === 'pet' ? petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })
+                const art = p.phase === 'pet' ? petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, normalLook: p.normalLook, alt: p.name })
                     : p.phase === 'egg' ? petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS, eager: false, fire: !!p.fire })
                         : '<span class="pet-slot-plus" aria-hidden="true">＋</span>';
                 const label = p.phase === 'pet' ? `${esc(p.name)} <em>Lv.${p.level}</em>` : p.phase === 'egg' ? (p.fire ? '🔥 불알' : '알') : p.phase === 'unknown' ? '새 펫 · 새로고침' : '빈 칸';
@@ -799,7 +801,7 @@ export function createPetMode(deps) {
             } else if (p) {
                 const v = cagePetView(p, today(), settings());
                 cells.push(`<button type="button" class="pet-cage-cell type-${PET_SPECIES[p.species].type}${first}" data-p="uncage" data-cage="${i}" aria-label="${esc(p.name)} 꺼내기">
-                    <span class="pet-cage-art">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })}</span>
+                    <span class="pet-cage-art">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, normalLook: p.normalLook, alt: p.name })}</span>
                     <span class="pet-cage-label">${esc(p.name)} <em>Lv.${p.level}</em></span><i class="pet-cage-zz" aria-hidden="true">💤 ${v.fullNow}</i>
                 </button>`);
             } else {
@@ -923,7 +925,8 @@ export function createPetMode(deps) {
             </p>
             ${petBoxMainIndex(myBox()) === slot
                 ? '<p class="pet-main-row"><span class="pet-chip is-main">⭐ 대표 펫</span><i>광장 카드와 반 펫 랭킹에 보여요</i></p>'
-                : '<p class="pet-main-row"><button type="button" class="pet-mini-btn" data-p="main">⭐ 대표 펫으로 정하기</button></p>'}`;
+                : '<p class="pet-main-row"><button type="button" class="pet-mini-btn" data-p="main">⭐ 대표 펫으로 정하기</button></p>'}
+            ${v.shiny ? `<p class="pet-look-row"><span>🎨 겉모습</span><button type="button" class="pet-mini-btn${v.normalLook ? '' : ' is-on'}" data-p="look" data-look="shiny" aria-pressed="${!v.normalLook}">✨ 색다른 그림</button><button type="button" class="pet-mini-btn${v.normalLook ? ' is-on' : ''}" data-p="look" data-look="normal" aria-pressed="${!!v.normalLook}">일반 그림</button><i>능력치는 그대로예요</i></p>` : ''}`;
         if (v.away) {
             const can = myBong() >= PET_RETURN_PRICE;
             return `<div class="pet-card type-${sp.type}">
@@ -951,7 +954,7 @@ export function createPetMode(deps) {
         return `<div class="pet-card type-${sp.type}">
             <div class="pet-stage type-${sp.type} mood-${v.mood}${v.shiny ? ' is-shiny' : ''}">
                 ${ground}
-                <button type="button" class="pet-sprite pet-sprite-btn stage-${v.stage}${talking ? ' is-react' : ''}" data-p="pet-tap" aria-label="${esc(v.name)} 쓰다듬기">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny, mood: v.mood, eager: true, alt: sp.names[v.stage - 1] })}</button>
+                <button type="button" class="pet-sprite pet-sprite-btn stage-${v.stage}${talking ? ' is-react' : ''}" data-p="pet-tap" aria-label="${esc(v.name)} 쓰다듬기">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny, normalLook: v.normalLook, mood: v.mood, eager: true, alt: sp.names[v.stage - 1] })}</button>
                 ${talking ? `<span class="pet-talk" role="status">${esc(talk.text)}</span><span class="pet-hearts" aria-hidden="true"><i>💕</i><i>💗</i><i>✨</i></span>` : bubble}
                 ${fxHtml()}
             </div>
@@ -1004,7 +1007,7 @@ export function createPetMode(deps) {
             const sp = PET_SPECIES[r.view.species];
             return `<div class="pet-rank-row type-${sp.type}${r.id === me ? ' is-me' : ''}${r.view.away ? ' is-away' : ''}">
                 <span class="pet-rank-no">${medal[r.rank - 1] || r.rank}</span>
-                <span class="pet-rank-art">${r.view.away ? '<span class="pet-away-mini">🏠💨</span>' : petArtHtml({ species: r.view.species, stage: r.view.stage, shiny: r.view.shiny, mood: r.view.mood })}</span>
+                <span class="pet-rank-art">${r.view.away ? '<span class="pet-away-mini">🏠💨</span>' : petArtHtml({ species: r.view.species, stage: r.view.stage, shiny: r.view.shiny, normalLook: r.view.normalLook, mood: r.view.mood })}</span>
                 <span class="pet-rank-text">
                     <b>${esc(r.view.name)}${r.view.shiny ? ' ✨' : ''}${r.view.enhance ? ` <em>+${r.view.enhance}</em>` : ''}</b>
                     ${typeBadge(sp.type)}

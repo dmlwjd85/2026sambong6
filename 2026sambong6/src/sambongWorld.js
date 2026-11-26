@@ -1433,7 +1433,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v2.09';
+        const APP_VERSION = 'v2.10';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10568,7 +10568,7 @@ ${subjectLine}
             try {
                 const p = data && data.pet ? petBoxMain(sanitizePetBox(data.pet)) : null;
                 if (!p || p.phase !== 'pet' || p.away) return '';
-                return `<span class="plaza-card-pet" title="${escapeHtmlAttr(p.name || '')}">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny })}</span>`;
+                return `<span class="plaza-card-pet" title="${escapeHtmlAttr(p.name || '')}">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, normalLook: p.normalLook })}</span>`;
             } catch (_) { return ''; }
         }
 

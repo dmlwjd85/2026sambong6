@@ -457,7 +457,7 @@ export function createPetRaidView(ctx) {
             <div class="raid-fx-layer" aria-hidden="true"></div>
             <div class="raid-fx-team">${run.members.map((m) => `
                 <span class="raid-fx-pet type-${m.type}${m.owner ? ' is-extra' : ''}" data-id="${esc(m.id)}" style="--c:${TYPE_COLOR[m.type]}">
-                    ${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, eager: true })}
+                    ${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, normalLook: m.normalLook, eager: true })}
                     <b>${PET_SPECIES[m.species] && PET_SPECIES[m.species].role ? `<i class="raid-fx-role">${PET_ROLES[PET_SPECIES[m.species].role].emoji}</i>` : ''}${esc(m.name)}</b>
                     <em data-dmg></em>
                 </span>`).join('')}</div>
@@ -987,7 +987,7 @@ export function createPetRaidView(ctx) {
     function memberChip(m, bossType, leaderId, showReady = false) {
         const mult = raidTypeMult(m.type, bossType);
         return `<div class="raid-member type-${m.type}${raidOwner(m) === me() ? ' is-me' : ''}${m.owner ? ' is-extra' : ''}">
-            <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny })}</span>
+            <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, normalLook: m.normalLook })}</span>
             <span class="raid-member-text"><b>${m.id === leaderId ? '👑 ' : ''}${m.owner ? '＋ ' : ''}${esc(m.name)}</b><i>${esc(m.petName)} · ${m.power}</i></span>
             ${mult > 1 ? '<em class="raid-eff is-good">유리 ▲</em>' : mult < 1 ? '<em class="raid-eff is-bad">불리 ▼</em>' : ''}
             ${showReady && !m.owner ? `<em class="raid-ready${m.ready ? ' is-on' : ''}">${m.ready ? '✅' : '⏳'}</em>` : ''}
@@ -1054,7 +1054,7 @@ export function createPetRaidView(ctx) {
                 const type = PET_SPECIES_TYPE(v.species);
                 const mult = bossType ? raidTypeMult(type, bossType) : 1;
                 return `<button type="button" class="raid-petpick-item type-${type}${i === cur ? ' is-on' : ''}" data-p="raid-pet" data-slot="${i}" aria-pressed="${i === cur}">
-                    <span class="raid-member-art">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny })}</span>
+                    <span class="raid-member-art">${petArtHtml({ species: v.species, stage: v.stage, shiny: v.shiny, normalLook: v.normalLook })}</span>
                     <b>${esc(v.name)}</b><i>전투력 ${petPower(v)}${mult > 1 ? ' · 유리 ▲' : mult < 1 ? ' · 불리 ▼' : ''}</i>
                 </button>`;
             }).join('')}</div>`;
@@ -1073,7 +1073,7 @@ export function createPetRaidView(ctx) {
                 const on = mine.includes(m.species);
                 const mult = raidTypeMult(m.type, bossType);
                 return `<button type="button" class="raid-petpick-item type-${m.type}${on ? ' is-on' : ''}" data-p="raid-extra" data-species="${esc(m.species)}" aria-pressed="${on}">
-                    <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny })}</span>
+                    <span class="raid-member-art">${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, normalLook: m.normalLook })}</span>
                     <b>${on ? '✓ ' : '＋ '}${esc(m.petName)}</b><i>전투력 ${m.power}${mult > 1 ? ' · 유리 ▲' : mult < 1 ? ' · 불리 ▼' : ''}</i>
                 </button>`;
             }).join('')}</div>

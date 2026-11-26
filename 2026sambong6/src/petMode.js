@@ -55,6 +55,9 @@ import {
     petGuardText,
     petHealSkill,
     petHealText,
+    petRoleSkills,
+    petRoleSkillText,
+    PET_ROLES,
     petSkills,
     petView,
     playWithPet,
@@ -106,7 +109,36 @@ const MOOD_TEXT = Object.freeze({
  *   selfId(), bong(v) → '12봉', confirm(text), prompt(text), toast(text),
  *   level() → 내 레벨(칸 늘리기 조건), settings() → 마스터 설정(petSettings), isAdmin(), saveSettings(settings) → Promise }
  */
+/** 그림 파일 대신 도형 그림: 앱에서 한 번만 달아요. */
+let artFallbackBound = false;
+function bindArtFallback() {
+    if (artFallbackBound || typeof document === 'undefined') return;
+    artFallbackBound = true;
+    // 그림 파일을 못 불러오면 같은 자리에 도형 그림을 넣어요(error 는 거품이 안 올라와서 capture 로 받아요).
+    // 탐험 전투 화면·광장 카드처럼 펫 화면 밖의 그림도 받도록 문서 전체에서 들어요(그림 파일이 아직 없는 새 펫 3종).
+    document.addEventListener('error', (e) => {
+        const img = e.target;
+        if (!img || img.tagName !== 'IMG' || !img.classList.contains('pet-img')) return;
+        const box = img.closest('.pet-art');
+        if (!box || box.classList.contains('is-fallback')) return;
+        box.classList.add('is-fallback');
+        if (box.getAttribute('data-pet-egg')) {
+            img.replaceWith(document.createRange().createContextualFragment(petEggSvg({ taps: Number(box.getAttribute('data-pet-taps')) || 0, total: 100 })));
+            const cracks = box.querySelector('.pet-egg-cracks');
+            if (cracks) cracks.remove();
+            return;
+        }
+        img.replaceWith(document.createRange().createContextualFragment(petSvg({
+            species: box.getAttribute('data-pet-sp'),
+            stage: Number(box.getAttribute('data-pet-st')) || 1,
+            shiny: box.getAttribute('data-pet-shiny') === '1',
+            mood: box.getAttribute('data-pet-mood') || 'happy',
+        })));
+    }, true);
+}
+
 export function createPetMode(deps) {
+    bindArtFallback();
     const root = () => document.getElementById('challengePane-pet');
     let tab = 'mine';
     let busy = false;
@@ -159,26 +191,6 @@ export function createPetMode(deps) {
         if (!el || bound) return;
         bound = true;
         feedback = createOxFeedback(el);
-        // 그림 파일을 못 불러오면 같은 자리에 도형 그림을 넣어요(error 는 거품이 안 올라와서 capture 로 받아요).
-        el.addEventListener('error', (e) => {
-            const img = e.target;
-            if (!img || img.tagName !== 'IMG' || !img.classList.contains('pet-img')) return;
-            const box = img.closest('.pet-art');
-            if (!box || box.classList.contains('is-fallback')) return;
-            box.classList.add('is-fallback');
-            if (box.getAttribute('data-pet-egg')) {
-                img.replaceWith(document.createRange().createContextualFragment(petEggSvg({ taps: Number(box.getAttribute('data-pet-taps')) || 0, total: 100 })));
-                const cracks = box.querySelector('.pet-egg-cracks');
-                if (cracks) cracks.remove();
-                return;
-            }
-            img.replaceWith(document.createRange().createContextualFragment(petSvg({
-                species: box.getAttribute('data-pet-sp'),
-                stage: Number(box.getAttribute('data-pet-st')) || 1,
-                shiny: box.getAttribute('data-pet-shiny') === '1',
-                mood: box.getAttribute('data-pet-mood') || 'happy',
-            })));
-        }, true);
         el.addEventListener('click', (e) => {
             const t = e.target.closest('[data-p]');
             if (!t || !el.contains(t) || t.disabled) return;
@@ -691,6 +703,8 @@ export function createPetMode(deps) {
         </div>`;
 
     const waitText = (ms) => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ''}` : `${m}분`; };
+    /** 역할 표시(힐러·탱커·서포트). 역할 없는 펫은 빈 문자열 */
+    const roleBadge = (sp) => (sp && sp.role && PET_ROLES[sp.role] ? `<span class="pet-chip pet-role is-${sp.role}" title="${esc(PET_ROLES[sp.role].desc)}">${PET_ROLES[sp.role].emoji} ${esc(PET_ROLES[sp.role].name)}</span>` : '');
     const typeBadge = (typeId) => `<span class="pet-type type-${typeId}">${PET_TYPES[typeId].emoji} ${esc(PET_TYPES[typeId].name)}</span>`;
     const dexNo = (id) => String(Object.keys(PET_SPECIES).indexOf(id) + 1).padStart(3, '0');
     const ground = '<span class="pet-ground" aria-hidden="true"></span>';
@@ -718,7 +732,7 @@ export function createPetMode(deps) {
                 const art = p.phase === 'pet' ? petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })
                     : p.phase === 'egg' ? petEggHtml({ taps: p.taps, total: PET_HATCH_TAPS, eager: false, fire: !!p.fire })
                         : '<span class="pet-slot-plus" aria-hidden="true">＋</span>';
-                const label = p.phase === 'pet' ? `${esc(p.name)} <em>Lv.${p.level}</em>` : p.phase === 'egg' ? (p.fire ? '🔥 불알' : '알') : '빈 칸';
+                const label = p.phase === 'pet' ? `${esc(p.name)} <em>Lv.${p.level}</em>` : p.phase === 'egg' ? (p.fire ? '🔥 불알' : '알') : p.phase === 'unknown' ? '새 펫 · 새로고침' : '빈 칸';
                 cells.push(`<button type="button" class="pet-slot${on}${p.phase === 'pet' ? ` type-${PET_SPECIES[p.species].type}` : ''}" data-p="slot" data-slot="${i}" aria-pressed="${slot === i}">
                     ${mainIdx === i ? '<span class="pet-slot-main" title="대표 펫">⭐</span>' : ''}
                     <span class="pet-slot-art">${art}</span><span class="pet-slot-label">${label}</span>
@@ -750,7 +764,7 @@ export function createPetMode(deps) {
         };
         const rows = Object.values(PET_SPECIES).map((sp) => `<div class="pet-shop-row type-${sp.type}${sp.rare ? ' is-rare' : ''}">
             <span class="pet-shop-art">${petArtHtml({ species: sp.id, stage: 1, alt: sp.names[0] })}</span>
-            <span class="pet-shop-name"><b>${esc(sp.names[0])}</b>${typeBadge(sp.type)}${sp.rare ? '<em>희귀</em>' : ''}</span>
+            <span class="pet-shop-name"><b>${esc(sp.names[0])}</b>${typeBadge(sp.type)}${roleBadge(sp)}${sp.rare ? '<em>희귀</em>' : ''}</span>
             ${btn(sp, false)}${btn(sp, true)}
         </div>`).join('');
         const stoneBtn = (n) => {
@@ -779,7 +793,10 @@ export function createPetMode(deps) {
             const p = box.cage[i];
             // 케이지 하나(칸 하나)마다 size 마리씩 묶어 보여요.
             const first = i % size === 0 ? ' is-first' : '';
-            if (p) {
+            if (p && p.phase === 'unknown') {
+                // 새 버전에서 온 펫: 지우지 않고 자리만 보여 줘요.
+                cells.push(`<span class="pet-cage-cell${first}"><span class="pet-cage-art">🆕</span><span class="pet-cage-label">새 펫 · 새로고침</span></span>`);
+            } else if (p) {
                 const v = cagePetView(p, today(), settings());
                 cells.push(`<button type="button" class="pet-cage-cell type-${PET_SPECIES[p.species].type}${first}" data-p="uncage" data-cage="${i}" aria-label="${esc(p.name)} 꺼내기">
                     <span class="pet-cage-art">${petArtHtml({ species: p.species, stage: p.stage, shiny: p.shiny, alt: p.name })}</span>
@@ -789,7 +806,7 @@ export function createPetMode(deps) {
                 cells.push(`<span class="pet-cage-cell is-empty${first}" aria-hidden="true"><span class="pet-cage-art">·</span><span class="pet-cage-label">빈 자리</span></span>`);
             }
         }
-        const mats = Object.keys(box.mats).filter((id) => box.mats[id] > 0).map((id) => `<span class="pet-chip type-${PET_SPECIES[id].type}">💎 ${esc(PET_SPECIES[id].names[0])} ×${box.mats[id]}</span>`).join('');
+        const mats = Object.keys(box.mats).filter((id) => box.mats[id] > 0 && PET_SPECIES[id]).map((id) => `<span class="pet-chip type-${PET_SPECIES[id].type}">💎 ${esc(PET_SPECIES[id].names[0])} ×${box.mats[id]}</span>`).join('');
         return `<div class="pet-keep">
             <p class="pet-keep-head"><b>🏠 케이지</b><span>${box.cage.length} / ${cap}마리 · 쉬는 동안은 배고프지 않아요 · 누르면 꺼내요</span></p>
             <div class="pet-cage" style="--n:${Math.min(cap, size * 2)}">${cells.join('')}</div>
@@ -898,7 +915,7 @@ export function createPetMode(deps) {
                 <button type="button" class="pet-mini" data-p="rename" aria-label="이름 바꾸기">✏️</button>
             </div>
             <p class="pet-chips">
-                ${typeBadge(sp.type)}
+                ${typeBadge(sp.type)}${roleBadge(sp)}
                 <span class="pet-chip">No.${dexNo(sp.id)} ${esc(sp.names[v.stage - 1])} · ${v.stage}단계</span>
                 <span class="pet-chip is-lv">Lv.${v.level}</span>
                 ${v.enhance ? `<span class="pet-chip is-enh">+${v.enhance}</span>` : ''}
@@ -948,7 +965,8 @@ export function createPetMode(deps) {
                 ? '<button type="button" class="pet-btn is-evolve" data-p="evolve">🌟 진화하기!</button>'
                 : (nextEvo ? `<p class="pet-note">Lv.${nextEvo}이 되면 진화할 수 있어요.</p>` : '<p class="pet-note">마지막 단계까지 진화했어요!</p>')}
             <p class="pet-sub">기술 <em>(공격 기술은 무작위로, 🛡️ 막기 기술은 공격받을 때, 💚 회복 기술은 보스 공격 뒤에 확률로 써요)</em></p>
-            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}${(() => { const g = petGuardSkill(v.species, v.level); return `<span class="pet-skill is-guard${g.learned ? ' is-on' : ''} type-${sp.type}"><b>${g.learned ? '🛡️ ' : '🔒 '}${esc(g.name)}</b><i>${g.learned ? `공격받을 때 ${g.chance}% · ${esc(petGuardText(g))}` : `Lv.${g.level}에 배워요 · 공격받을 때 저절로 써요`}</i></span>`; })()}${(() => { const h = petHealSkill(v.species, v.level); return h.learned ? `<span class="pet-skill is-on is-heal type-${sp.type}"><b>💚 ${esc(h.name)}</b><i>${esc(petHealText(h))}</i></span>` : `<span class="pet-skill is-heal type-${sp.type}"><b>🔒 💚 ${esc(h.name)}</b><i>Lv.40에 배워요</i></span>`; })()}</div>
+            <div class="pet-skills">${petSkills(v.species, v.level).map((k) => `<span class="pet-skill${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${esc(k.name)}</b><i>${k.learned ? `세기 ×${k.mult}` : `Lv.${k.level}에 배워요`}</i></span>`).join('')}${(() => { const g = petGuardSkill(v.species, v.level); return `<span class="pet-skill is-guard${g.learned ? ' is-on' : ''} type-${sp.type}"><b>${g.learned ? '🛡️ ' : '🔒 '}${esc(g.name)}</b><i>${g.learned ? `공격받을 때 ${g.chance}% · ${esc(petGuardText(g))}` : `Lv.${g.level}에 배워요 · 공격받을 때 저절로 써요`}</i></span>`; })()}${(() => { const h = petHealSkill(v.species, v.level); return h.learned ? `<span class="pet-skill is-on is-heal type-${sp.type}"><b>💚 ${esc(h.name)}</b><i>${esc(petHealText(h))}</i></span>` : `<span class="pet-skill is-heal type-${sp.type}"><b>🔒 💚 ${esc(h.name)}</b><i>Lv.40에 배워요</i></span>`; })()}${petRoleSkills(v.species, v.level).map((k) => `<span class="pet-skill is-role${k.learned ? ' is-on' : ''} type-${sp.type}"><b>${k.learned ? '' : '🔒 '}${PET_ROLES[sp.role].emoji} ${esc(k.name)}</b><i>${k.learned ? esc(petRoleSkillText(k)) : `Lv.${k.level}에 배워요 · ${esc(petRoleSkillText(k))}`}</i></span>`).join('')}</div>
+            ${sp.role ? `<p class="pet-note">${PET_ROLES[sp.role].emoji} ${esc(PET_ROLES[sp.role].name)}: ${esc(PET_ROLES[sp.role].desc)}. 역할 기술은 탐험 전투에서만 써요.</p>` : ''}
             <p class="pet-sub">먹이 주기 ${v.fullNow > 90 ? '<em>(배가 불러요. 조금 있다가 줘요)</em>' : ''}</p>
             <div class="pet-foods">${foods}</div>
             ${v.level >= PET_MAX_LEVEL ? '' : `<p class="pet-sub">경험치 팩</p>
@@ -972,7 +990,8 @@ export function createPetMode(deps) {
         if (!deps.canPlay()) return '<div class="pet-card"><p class="pet-lead">로그인하면 펫을 키울 수 있어요. 「반 펫」에서 친구들 펫을 구경해요.</p></div>';
         if (slot >= myBox().slots) return `${slotBarHtml()}${lockedHtml()}${adminHtml()}`;
         const p = myPet();
-        const card = p.phase === 'egg' ? eggHtml(p) : p.phase === 'pet' ? petHtml(petView(p, now(), today(), settings())) : noneHtml();
+        const card = p.phase === 'egg' ? eggHtml(p) : p.phase === 'pet' ? petHtml(petView(p, now(), today(), settings()))
+            : p.phase === 'unknown' ? '<div class="pet-card"><p class="pet-lead">🆕 새 버전에서 온 펫이 이 칸에 있어요. 화면을 새로 고치면 만날 수 있어요. (펫은 안전하게 그대로 있어요)</p></div>' : noneHtml();
         return `${slotBarHtml()}${card}${shopHtml()}${adminHtml()}`;
     }
 
@@ -998,7 +1017,7 @@ export function createPetMode(deps) {
 
     function dexHtml() {
         const dex = myBox().dex || {};
-        const found = Object.keys(dex).length;
+        const found = Object.keys(dex).filter((id) => PET_SPECIES[id]).length;
         const total = Object.keys(PET_SPECIES).length;
         return `<div class="pet-dex-head"><b>📖 메이트 도감</b><span>만난 펫 <em>${found}</em> / ${total}종</span><i style="--p:${Math.round((found / total) * 100)}%"></i></div>
         <p class="pet-note">진화시킨 단계까지 기록돼요. 아직 못 만난 모습은 그림자로 보여요.</p>

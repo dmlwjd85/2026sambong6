@@ -12,6 +12,11 @@
  * 값은 아래 상수만 고치면 돼요.
  */
 
+import { NEW_PET_GUARD_SKILLS, NEW_PET_HEAL_SKILLS, NEW_PET_SKILL_NAMES, NEW_PET_SPECIES, NEW_PET_TYPES, PET_ROLES, PET_ROLE_SKILLS, PET_ROLE_STATS, petRoleSkills, petRoleSkillText } from './petRolesData.js';
+
+/** 힐러·탱커·서포트 역할(새 펫 3종). 역할 차이는 탐험 전투에서만 나요. 기존 8종은 역할이 없어요. */
+export { PET_ROLES, PET_ROLE_SKILLS, PET_ROLE_STATS, petRoleSkills, petRoleSkillText };
+
 export const PET_EGG_PRICE = 30;
 export const PET_HATCH_TAPS = 10;
 export const PET_MAX_LEVEL = 40;
@@ -112,6 +117,8 @@ export const PET_TYPES = Object.freeze({
     star: Object.freeze({ name: '별빛', emoji: '⭐' }),
     /** 격투: 상성이 없어요(누구에게나 보통 데미지를 주고받아요). */
     fight: Object.freeze({ name: '격투', emoji: '🥊' }),
+    // 새 펫 3종의 속성(회복·강철·바람)
+    ...NEW_PET_TYPES,
 });
 
 /** 종: 단계별 이름(1·2·3단계), 알에서 나올 무게(weight) */
@@ -124,7 +131,14 @@ export const PET_SPECIES = Object.freeze({
     pebbletle: Object.freeze({ id: 'pebbletle', type: 'rock', names: ['돌북', '바위북', '산악북'], weight: 16 }),
     stardrake: Object.freeze({ id: 'stardrake', type: 'star', names: ['별룡이', '은하룡', '삼봉성룡'], weight: 4, rare: true }),
     punchroo: Object.freeze({ id: 'punchroo', type: 'fight', names: ['펀치루', '권투루', '챔피루'], weight: 16 }),
+    // 새 펫 3종: 하뜨(힐러)·철뭉(탱커)·방울(서포트). role 이 있어요. 기존 8종 값은 그대로예요.
+    ...NEW_PET_SPECIES,
 });
+/** 이 종의 역할('healer'|'tank'|'support'), 없으면 '' */
+export function petRole(species) {
+    const sp = PET_SPECIES[species];
+    return (sp && sp.role) || '';
+}
 /**
  * 펫마다 공격 기술이 3가지 있어요. 레벨이 오르면 하나씩 배우고, 탐험 전투에서 배운 기술 중 하나를 무작위로 써요.
  * 배우는 레벨: 1 · 10 · 20, 세기: 1배 · 1.3배 · 1.7배
@@ -140,6 +154,7 @@ export const PET_SKILL_NAMES = Object.freeze({
     pebbletle: Object.freeze(['조약돌 던지기', '바위 굴리기', '대지 흔들기']),
     stardrake: Object.freeze(['별가루 뿌리기', '혜성 꼬리치기', '은하수 브레스']),
     punchroo: Object.freeze(['잽 잽', '원투 스트레이트', '챔피언 어퍼컷']),
+    ...NEW_PET_SKILL_NAMES,
 });
 /**
  * 막기 기술: 공격을 받을 때 chance% 확률로 저절로 써요(레벨 5에 배워요).
@@ -155,6 +170,7 @@ export const PET_GUARD_SKILLS = Object.freeze({
     pebbletle: Object.freeze({ name: '단단한 등껍질', chance: 30, block: 75, counter: 0 }),
     stardrake: Object.freeze({ name: '별빛 반사', chance: 30, block: 40, counter: 80 }),
     punchroo: Object.freeze({ name: '가드 올리기', chance: 35, block: 45, counter: 40 }),
+    ...NEW_PET_GUARD_SKILLS,
 });
 /** 막기 기술(배웠는지 포함) */
 export function petGuardSkill(species, level) {
@@ -183,6 +199,7 @@ export const PET_HEAL_SKILLS = Object.freeze({
     pebbletle: Object.freeze({ name: '대지의 숨결', chance: 30, target: 'self', pct: 30, when: 'any' }),
     stardrake: Object.freeze({ name: '별빛 축복', chance: 20, target: 'all', pct: 12, when: 'any' }),
     punchroo: Object.freeze({ name: '투지의 회복', chance: 60, target: 'self', pct: 45, when: 'low' }),
+    ...NEW_PET_HEAL_SKILLS,
 });
 /** 회복 기술(배웠는지 포함) */
 export function petHealSkill(species, level) {
@@ -270,6 +287,13 @@ export function emptyPet() {
     return { v: 1, phase: 'none', dex: {} };
 }
 
+/**
+ * 이 앱이 아직 모르는 종 이름(더 새 버전 앱이 넣은 펫). 이런 펫·도감·재료는 지우지 않고 그대로 보관해요.
+ * 옛 화면이 새 펫을 '빈 칸'으로 읽고 저장해 펫이 사라지는 일을 막아요.
+ */
+const FUTURE_ID = /^[a-z][a-z0-9_]{1,23}$/;
+const isFutureSpecies = (id) => typeof id === 'string' && FUTURE_ID.test(id) && !PET_SPECIES[id] && !Object.prototype.hasOwnProperty.call(Object.prototype, id);
+
 function sanitizeDex(raw) {
     const out = {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
@@ -278,8 +302,22 @@ function sanitizeDex(raw) {
         if (!d || typeof d !== 'object') return;
         out[id] = { stage: int(d.stage, 1, 3), shiny: d.shiny === true };
     });
+    // 모르는 종의 도감 기록도 그대로 남겨요(최대 20종).
+    Object.keys(raw).filter(isFutureSpecies).slice(0, 20).forEach((id) => {
+        const d = raw[id];
+        if (!d || typeof d !== 'object') return;
+        out[id] = { stage: int(d.stage, 1, 3), shiny: d.shiny === true };
+    });
     return out;
 }
+
+/** 모르는 종 펫을 지우지 않고 감싸 둬요: { phase: 'unknown', species, raw(저장된 원래 값) }. 아무 동작도 못 하고, 저장할 때 raw 그대로 돌려놔요. */
+function unknownPet(src, dex) {
+    const { dex: _d, ...raw } = src;
+    return { v: 1, phase: 'unknown', species: String(src.species), raw, dex };
+}
+/** 저장용: 모르는 종 펫은 원래 값 그대로 */
+const petToDoc = (p) => (p && p.phase === 'unknown' ? { ...p.raw } : { ...p });
 
 export function sanitizePetName(raw, fallback = '') {
     const s = String(raw ?? '').replace(/[<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, PET_NAME_MAX);
@@ -296,7 +334,10 @@ export function sanitizePet(raw) {
         if (src.fire === true) egg.fire = true;
         return egg;
     }
-    const sp = PET_SPECIES[String(src.species || '')];
+    if (src.phase === 'unknown' && src.raw && typeof src.raw === 'object') return unknownPet(src.raw, dex); // 이미 감싼 값
+    const key = String(src.species || '');
+    const sp = Object.prototype.hasOwnProperty.call(PET_SPECIES, key) ? PET_SPECIES[key] : null; // 'constructor' 같은 값 막기
+    if (src.phase === 'pet' && !sp && isFutureSpecies(src.species)) return unknownPet(src, dex);
     if (src.phase !== 'pet' || !sp) return { v: 1, phase: 'none', dex };
     const level = int(src.level, 1, PET_MAX_LEVEL);
     const stage = int(src.stage, 1, 3);
@@ -599,6 +640,7 @@ export function renamePet(pet, { name } = {}) {
 export function releasePet(pet) {
     const p = sanitizePet(pet);
     if (p.phase === 'none') return fail(p, 'no_pet');
+    if (p.phase === 'unknown') return fail(p, 'unknown_pet');
     return done({ v: 1, phase: 'none', dex: p.phase === 'pet' ? withDex(p) : p.dex });
 }
 
@@ -642,6 +684,7 @@ export const PET_ERROR_TEXT = Object.freeze({
     changed: '다른 화면에서 펫이 바뀌었어요. 최신 모습으로 맞췄으니 다시 해 봐요.',
     pet_loss: '펫이 사라질 수 있는 저장이라 막았어요. 화면을 새로 고쳐 주세요.',
     owned: '이미 가진 펫이에요. 같은 종류는 한 마리씩만 살 수 있어요.',
+    unknown_pet: '새 버전에서 온 펫이에요. 화면을 새로 고치면 만날 수 있어요.',
 });
 
 export function petErrorText(code) {
@@ -738,17 +781,21 @@ function sanitizeKeep(src, slots) {
     const cage = [];
     (Array.isArray(src.cage) ? src.cage : []).forEach((raw) => {
         const p = sanitizePet(raw);
-        if (p.phase === 'pet' && cage.length < slots * PET_MAX_CAGE_SIZE) cage.push(stripDex(p));
+        // 모르는 종 펫도 케이지에 그대로 남겨요(칸 수를 넘어도 지우지 않아요).
+        if (p.phase === 'unknown') cage.push(stripDex(p));
+        else if (p.phase === 'pet' && cage.length < slots * PET_MAX_CAGE_SIZE) cage.push(stripDex(p));
     });
     const mats = {};
     const rawMats = src.mats && typeof src.mats === 'object' && !Array.isArray(src.mats) ? src.mats : {};
     Object.keys(PET_SPECIES).forEach((id) => { mats[id] = int(rawMats[id], 0, PET_MAX_MATS); });
+    // 모르는 종의 강화 재료도 그대로 남겨요.
+    Object.keys(rawMats).filter(isFutureSpecies).slice(0, 20).forEach((id) => { const n = int(rawMats[id], 0, PET_MAX_MATS); if (n > 0) mats[id] = n; });
     // 방금 놓아준 펫(되돌리기용). 한 마리만 기억해요.
     let gone = null;
     const g = src.gone && typeof src.gone === 'object' ? src.gone : null;
     if (g && g.pet) {
         const gp = sanitizePet(g.pet);
-        if (gp.phase === 'pet') gone = { pet: stripDex(gp), at: int(g.at) };
+        if (gp.phase === 'pet' || gp.phase === 'unknown') gone = { pet: stripDex(gp), at: int(g.at) };
     }
     return { cage, eggs: int(src.eggs, 0, PET_MAX_STORED_EGGS), mats, giftSeen: int(src.giftSeen, 0, 1e7), gone, stones: int(src.stones, 0, PET_MAX_STONES),
         fireEggs: int(src.fireEggs, 0, PET_MAX_FIRE_EGGS), fireGiftSeen: int(src.fireGiftSeen, 0, 1e7) };
@@ -757,7 +804,7 @@ function sanitizeKeep(src, slots) {
 /** 저장용(일반 객체) */
 export function petBoxToDoc(box) {
     const b = sanitizePetBox(box);
-    return { v: 2, slots: b.slots, main: b.main, list: b.list.map((p) => ({ ...p })), dex: { ...b.dex }, raid: { ...b.raid, wins: { ...b.raid.wins }, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map((p) => ({ ...p })), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, fireEggs: b.fireEggs, fireGiftSeen: b.fireGiftSeen, gone: b.gone ? { pet: { ...b.gone.pet }, at: b.gone.at } : null, stones: b.stones };
+    return { v: 2, slots: b.slots, main: b.main, list: b.list.map(petToDoc), dex: { ...b.dex }, raid: { ...b.raid, wins: { ...b.raid.wins }, firsts: b.raid.firsts.slice(), claimed: b.raid.claimed.slice(), paid: b.raid.paid.slice() }, cage: b.cage.map(petToDoc), eggs: b.eggs, mats: { ...b.mats }, giftSeen: b.giftSeen, fireEggs: b.fireEggs, fireGiftSeen: b.fireGiftSeen, gone: b.gone ? { pet: petToDoc(b.gone.pet), at: b.gone.at } : null, stones: b.stones };
 }
 
 /** i번째 칸의 펫(규칙 함수에 그대로 넘길 수 있게 도감을 붙여요). 없는 칸이면 null */
@@ -836,7 +883,7 @@ const slotIndex = (b, i) => { const idx = Math.floor(Number(i)); return idx >= 0
 export function petBoxPetCount(box) {
     if (box == null) return 0;
     const b = sanitizePetBox(box);
-    return b.list.filter((p) => p.phase === 'pet').length + b.cage.length;
+    return b.list.filter((p) => p.phase === 'pet' || p.phase === 'unknown').length + b.cage.length;
 }
 
 /** 케이지에 넣을 수 있는 펫 수 */
@@ -848,7 +895,7 @@ export function petCageCapacity(box, settings = null) {
 export function petBoxOwnedSpecies(box, exceptSlot = -1) {
     const b = sanitizePetBox(box);
     const out = new Set();
-    b.list.forEach((p, i) => { if (i !== exceptSlot && p.phase === 'pet') out.add(p.species); });
+    b.list.forEach((p, i) => { if (i !== exceptSlot && (p.phase === 'pet' || p.phase === 'unknown')) out.add(p.species); });
     b.cage.forEach((p) => out.add(p.species));
     return out;
 }
@@ -915,7 +962,8 @@ export function uncagePet(box, cageIdx, i, { now = 0, today = '' } = {}) {
     const out = b.cage[c];
     if (!out) return boxFail(b, 'cage_empty');
     const cur = b.list[idx];
-    if (cur.phase === 'egg') return boxFail(b, 'slot_busy');
+    if (cur.phase === 'egg' || cur.phase === 'unknown') return boxFail(b, 'slot_busy');
+    if (out.phase === 'unknown') return boxFail(b, 'unknown_pet');
     let cage = b.cage.filter((_, k) => k !== c);
     let swapped = null;
     if (cur.phase === 'pet') {

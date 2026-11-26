@@ -94,6 +94,76 @@ export function planOxCheck(rows, ids) {
     return out;
 }
 
+/** 학생 문서에 적힌 이번 정산(표식 또는 봉 기록). 봉이 안 바뀌었으면 null. */
+export function oxCheckStamp(data) {
+    const src = data && typeof data === 'object' ? data : {};
+    const marked = String(src.oxChallengeChecked || '');
+    const markedDelta = Math.floor(Number(src.oxChallengeDelta));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(marked) && Number.isFinite(markedDelta) && markedDelta !== 0) {
+        return { mark: marked, delta: markedDelta };
+    }
+    const logs = Array.isArray(src.bongChangeLog) ? src.bongChangeLog : [];
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+        const entry = logs[i];
+        if (!entry || entry.source !== OX_CHECK_SOURCE) continue;
+        const mark = String(entry.date || '');
+        const delta = Math.floor(Number(entry.delta));
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(mark) || !Number.isFinite(delta) || delta === 0) return null;
+        return { mark, delta };
+    }
+    return null;
+}
+
+/** 이 화면 데이터가 그 날짜 정산을 이미 알고 있는지(표식 또는 봉 기록). */
+export function clientSawOxCheck(data, mark) {
+    const date = String(mark || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    const src = data && typeof data === 'object' ? data : {};
+    if (String(src.oxChallengeChecked || '') === date) return true;
+    const logs = Array.isArray(src.bongChangeLog) ? src.bongChangeLog : [];
+    return logs.some((entry) => entry && entry.source === OX_CHECK_SOURCE && String(entry.date || '') === date);
+}
+
+/**
+ * 정산 직후, 아직 정산을 모르는 화면의 저장이 봉을 옛 잔액으로 되돌리지 않게 해요.
+ * 정산은 학생 문서에 절대 봉을 적어요. 그 순간 겹친 저장은 화면이 기억한 더 큰 봉을 그대로 써서
+ * 깎인 값(또는 31개 이상 +10봉)이 사라져요. 잠금 문서가 있어 다시 정산하지도 않아요.
+ * 이 화면이 표식·봉 기록을 아직 모르면, 서버 봉(정산이 반영된 값)에
+ * 이번 저장이 일부러 더하거나 뺀 만큼만 올려요. 이미 아는 저장은 손대지 않아요(null).
+ * petDelta 가 있으면 펫 저장과 같이 서버 봉에 그 차이만 더해요.
+ */
+export function reconcileOxCheckBong({
+    server,
+    client,
+    baseBong,
+    requestedBong,
+    maxIncrease = 0,
+    maxDecrease = 0,
+    allowDecrease = false,
+    petDelta = null,
+} = {}) {
+    const stamp = oxCheckStamp(server);
+    if (!stamp || clientSawOxCheck(client, stamp.mark)) return null;
+    const base = Math.floor(Number(baseBong) || 0);
+    if (petDelta != null && Number.isFinite(Number(petDelta))) {
+        return { bong: base + Math.floor(Number(petDelta)), mark: stamp.mark };
+    }
+    const pre = base - stamp.delta;
+    const requested = Math.floor(Number(requestedBong) || 0);
+    let intent = requested - pre;
+    if (intent > 0) {
+        const rise = Math.max(0, Math.floor(Number(maxIncrease) || 0));
+        intent = rise > 0 ? Math.min(rise, intent) : 0;
+    } else if (intent < 0) {
+        if (!allowDecrease) intent = 0;
+        else {
+            const cap = Math.max(0, Math.floor(Number(maxDecrease) || 0));
+            intent = -Math.min(cap, -intent);
+        }
+    }
+    return { bong: base + intent, mark: stamp.mark };
+}
+
 /** 봉 바꾸기. 규칙 바닥(-2000) 아래로는 내리지 않아요(이미 아래면 그대로). 실제로 바뀐 값을 돌려줘요. */
 export function applyOxCheckBong(currentBong, delta) {
     const cur = Math.floor(Number(currentBong) || 0);

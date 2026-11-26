@@ -663,6 +663,7 @@ import {
     OX_CHECK_NOTICE_KIND,
     OX_CHECK_SOURCE,
     applyOxCheckBong,
+    reconcileOxCheckBong,
     oxCheckDelayMs,
     oxCheckDueYmd,
     oxCheckEnabledFor,
@@ -28948,6 +28949,26 @@ ${subjectLine}
                             if (typeof opts.petMutator === 'function' && Number.isFinite(Number(opts.petBongDelta)) && Number.isFinite(serverBong)) {
                                 dataToSave.bong = normalizeBongValue(serverBong + Number(opts.petBongDelta));
                             }
+                            // 예금·대출 저장은 서버 잔액으로 다시 계산해요. 그 밖에는 정산 표식이 없는 화면이
+                            // 정산 전 봉을 그대로 써서 -20·-10·+10이 지워지지 않게 막아요.
+                            if (!opts.allowBankFieldChanges && !loanSave) {
+                                const oxFix = reconcileOxCheckBong({
+                                    server: serverData,
+                                    client: dataToSave,
+                                    baseBong: serverBong,
+                                    requestedBong: nextBong,
+                                    maxIncrease: opts.maxBongIncrease,
+                                    maxDecrease: opts.maxBongDecrease,
+                                    allowDecrease: !!opts.allowBongDecrease,
+                                    petDelta: typeof opts.petMutator === 'function' && Number.isFinite(Number(opts.petBongDelta)) ? Number(opts.petBongDelta) : null,
+                                });
+                                if (oxFix) {
+                                    dataToSave.bong = normalizeBongValue(oxFix.bong);
+                                    dataToSave.oxChallengeChecked = oxFix.mark;
+                                    const notice = serverData.teacherNotice;
+                                    if (notice && String(notice.id || '').startsWith('oxcheck_')) dataToSave.teacherNotice = notice;
+                                }
+                            }
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));
                         // 대출·예금·적금 저장은 serverBong 이 이미 바뀐 값이라, 기록은 저장 전 서버 지갑을 기준으로 남겨요(대출금이 들어온 기록이 빠지지 않게).
@@ -29130,6 +29151,10 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (dataToSave.oxChallengeChecked) window.playerState.oxChallengeChecked = dataToSave.oxChallengeChecked;
+                if (dataToSave.teacherNotice && String(dataToSave.teacherNotice.id || '').startsWith('oxcheck_')) {
+                    window.playerState.teacherNotice = dataToSave.teacherNotice;
+                }
                 if (opts.keepServerSkinPurchase) {
                     if (dataToSave.ownedSkins && typeof dataToSave.ownedSkins === 'object') {
                         window.playerState.ownedSkins = { ...dataToSave.ownedSkins };
@@ -33748,6 +33773,9 @@ ${subjectLine}
                         const logs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
                         logs.push(buildBongChangeLogEntry(oxCheckReasonText(p.best, b.delta), b.before, b.after, { source: OX_CHECK_SOURCE, date: ymd, best: p.best }));
                         patch.bongChangeLog = logs;
+                        // 표식: 이 학생 화면의 다음 저장이 정산 전 봉으로 덮어쓰지 않게 해요.
+                        patch.oxChallengeChecked = ymd;
+                        patch.oxChallengeDelta = b.delta;
                     }
                     if (p.pierrot) {
                         patch.teacherNotice = { id: `oxcheck_${ymd}_${p.id}`, kind: OX_CHECK_NOTICE_KIND, text: oxCheckPierrotText(p.best, b.delta), at };

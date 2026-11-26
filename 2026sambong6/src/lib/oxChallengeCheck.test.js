@@ -69,4 +69,57 @@ describe('OX 무제한 도전 하루 정산', () => {
             '31개 이상 +10봉 1명 · 21~30개 -10봉 1명 · 20개 이하 -20봉 2명');
         assert.match(C.oxCheckNote(), /11월 26일 14시 40분/);
     });
+
+    const serverPenalty = {
+        bong: 80,
+        oxChallengeChecked: '2026-11-26',
+        oxChallengeDelta: -20,
+        bongChangeLog: [{ source: 'oxChallengeCheck', date: '2026-11-26', delta: -20, before: 100, after: 80 }],
+        teacherNotice: { id: 'oxcheck_2026-11-26_4', kind: 'pierrotFanfare', text: '빠졌어요' },
+    };
+    it('정산을 모르는 저장은 옛 봉으로 되돌리지 않아요', () => {
+        const stale = { bong: 100, bongChangeLog: [] };
+        const kept = C.reconcileOxCheckBong({ server: serverPenalty, client: stale, baseBong: 80, requestedBong: 100 });
+        assert.deepEqual(kept, { bong: 80, mark: '2026-11-26' });
+        const quest = C.reconcileOxCheckBong({
+            server: serverPenalty, client: stale, baseBong: 80, requestedBong: 110, maxIncrease: 10,
+        });
+        assert.equal(quest.bong, 90);
+        const lunch = C.reconcileOxCheckBong({
+            server: serverPenalty, client: stale, baseBong: 80, requestedBong: 90, allowDecrease: true, maxDecrease: 10,
+        });
+        assert.equal(lunch.bong, 70);
+        const bonus = C.reconcileOxCheckBong({
+            server: { oxChallengeChecked: '2026-11-26', oxChallengeDelta: 10, bong: 110 },
+            client: stale, baseBong: 110, requestedBong: 100,
+        });
+        assert.equal(bonus.bong, 110);
+        const pet = C.reconcileOxCheckBong({
+            server: serverPenalty, client: stale, baseBong: 80, requestedBong: 100, petDelta: -2,
+        });
+        assert.equal(pet.bong, 78);
+    });
+
+    it('정산을 이미 아는 화면과 표식 없는 문서는 봉을 다시 계산하지 않아요', () => {
+        const seen = { oxChallengeChecked: '2026-11-26', bong: 80 };
+        assert.equal(C.reconcileOxCheckBong({
+            server: serverPenalty, client: seen, baseBong: 80, requestedBong: 90, maxIncrease: 10,
+        }), null);
+        const seenByLog = { bongChangeLog: [{ source: 'oxChallengeCheck', date: '2026-11-26', delta: -20 }] };
+        assert.equal(C.reconcileOxCheckBong({
+            server: { bongChangeLog: seenByLog.bongChangeLog, bong: 80 },
+            client: seenByLog, baseBong: 80, requestedBong: 90, maxIncrease: 10,
+        }), null);
+        assert.equal(C.reconcileOxCheckBong({
+            server: { bong: 80 }, client: { bong: 100 }, baseBong: 80, requestedBong: 100,
+        }), null);
+        // 표식 없이 봉 기록만 있어도, 아직 그 기록을 모르는 저장은 깎인 봉을 지켜요.
+        const fromLog = C.reconcileOxCheckBong({
+            server: { bong: 80, bongChangeLog: serverPenalty.bongChangeLog },
+            client: { bong: 100, bongChangeLog: [] },
+            baseBong: 80,
+            requestedBong: 100,
+        });
+        assert.equal(fromLog.bong, 80);
+    });
 });

@@ -63,6 +63,8 @@ describe('OX 무제한 도전 하루 정산', () => {
         assert.equal(C.oxCheckReasonText(0, -20), 'OX 무제한 도전 정산 -20봉 (최고 기록 0개)');
         assert.match(C.oxCheckPierrotText(0, -20), /아직 무제한 도전 기록이 없어요[\s\S]*20봉/);
         assert.match(C.oxCheckPierrotText(12, -20), /최고 기록이 12개/);
+        assert.match(C.oxCheckPierrotText(3, 0), /더 빠지지 않았어요/);
+        assert.doesNotMatch(C.oxCheckPierrotText(3, 0), /0봉이 빠졌어요/);
         assert.equal(C.oxCheckSummary([{ tier: 'high' }, { tier: 'low' }, { tier: 'low' }, { tier: 'mid' }]),
             '31개 이상 +10봉 1명 · 21~30개 -10봉 1명 · 20개 이하 -20봉 2명');
         assert.match(C.oxCheckNote(), /11월 26일 14시 40분/);

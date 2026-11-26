@@ -114,7 +114,8 @@ export function oxCheckPierrotText(best, delta) {
     const n = Math.max(0, Math.floor(Number(best) || 0));
     const lost = Math.abs(Math.floor(Number(delta) || 0));
     const rec = n > 0 ? `무제한 도전 최고 기록이 ${n}개예요.` : '아직 무제한 도전 기록이 없어요.';
-    return `${rec}\n20개 이하라서 ${lost}봉이 빠졌어요.\n다음엔 21개를 넘겨 봐요! 삐에로가 응원해요 🎺`;
+    const mid = lost > 0 ? `20개 이하라서 ${lost}봉이 빠졌어요.` : '20개 이하지만 봉이 이미 가장 낮아서 더 빠지지 않았어요.';
+    return `${rec}\n${mid}\n다음엔 21개를 넘겨 봐요! 삐에로가 응원해요 🎺`;
 }
 
 /** 마스터 화면 요약 한 줄 */

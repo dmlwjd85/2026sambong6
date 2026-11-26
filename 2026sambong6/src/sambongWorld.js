@@ -33750,7 +33750,7 @@ ${subjectLine}
                         patch.bongChangeLog = logs;
                     }
                     if (p.pierrot) {
-                        patch.teacherNotice = { id: `oxcheck_${ymd}_${p.id}`, kind: OX_CHECK_NOTICE_KIND, text: oxCheckPierrotText(p.best, b.delta || p.delta), at };
+                        patch.teacherNotice = { id: `oxcheck_${ymd}_${p.id}`, kind: OX_CHECK_NOTICE_KIND, text: oxCheckPierrotText(p.best, b.delta), at };
                     }
                     if (Object.keys(patch).length) tx.update(refs[i], patch);
                     results.push({ id: p.id, best: p.best, tier: p.tier, delta: b.delta, before: b.before, after: b.after });

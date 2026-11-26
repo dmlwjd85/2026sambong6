@@ -314,13 +314,15 @@ export function petEggImageUrl() {
  * shiny 는 따로 만든 색다른 그림(종_단계_s.webp)을 써요. silhouette 은 도감의 '아직 못 만난' 그림자예요.
  * @param {{ species: string, stage?: number, shiny?: boolean, mood?: string, eager?: boolean, silhouette?: boolean, alt?: string }} o
  */
-export function petArtHtml({ species = 'emberkit', stage = 1, shiny = false, mood = 'happy', eager = false, silhouette = false, alt = '' } = {}) {
+export function petArtHtml({ species = 'emberkit', stage = 1, shiny = false, normalLook = false, mood = 'happy', eager = false, silhouette = false, alt = '' } = {}) {
     const sp = safeSpecies(species);
     const st = safeStage(stage);
     const m = ['happy', 'ok', 'hungry', 'starving'].includes(mood) ? mood : 'happy';
-    const cls = `pet-art sp-${sp} st-${st} mood-${m}${shiny && !silhouette ? ' is-shiny' : ''}${silhouette ? ' is-silhouette' : ''}`;
+    // normalLook: 색다른 펫이 일반 그림을 골랐어요. 그림만 일반이고 ✨ 표시는 그대로 붙어요.
+    const art = shiny && normalLook !== true;
+    const cls = `pet-art sp-${sp} st-${st} mood-${m}${shiny && !silhouette ? ' is-shiny' : ''}${shiny && !art && !silhouette ? ' is-normal-look' : ''}${silhouette ? ' is-silhouette' : ''}`;
     const a = String(alt || '').replace(/[<>&"]/g, '');
-    return `<span class="${cls}" data-pet-sp="${sp}" data-pet-st="${st}" data-pet-shiny="${shiny ? 1 : 0}" data-pet-mood="${m}"><img class="pet-img" src="${petImageUrl(sp, st, shiny && !silhouette)}" alt="${a}" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false"></span>`;
+    return `<span class="${cls}" data-pet-sp="${sp}" data-pet-st="${st}" data-pet-shiny="${art ? 1 : 0}" data-pet-mood="${m}"><img class="pet-img" src="${petImageUrl(sp, st, art && !silhouette)}" alt="${a}" width="512" height="512" loading="${eager ? 'eager' : 'lazy'}" decoding="async" draggable="false"></span>`;
 }
 
 /** 알 일러스트 + 금(taps가 늘수록 늘어요). 금은 그림 위에 SVG로 겹쳐 그려요. */

@@ -362,6 +362,8 @@ export function sanitizePet(raw) {
         walkDate: String(src.walkDate || '').slice(0, 10),
         bornAt: int(src.bornAt),
         earned: int(src.earned, 0, 1e7),
+        // 색다른 펫이 일반 그림으로 보이게 고른 경우만 붙어요(겉모습만 바뀌고 능력치는 색다른 펫 그대로).
+        ...(src.shiny === true && src.normalLook === true ? { normalLook: true } : {}),
         dex,
     };
 }
@@ -664,6 +666,7 @@ export const PET_ERROR_TEXT = Object.freeze({
     need_level: '내 레벨이 아직 모자라요.',
     bad_slot: '그 칸은 쓸 수 없어요.',
     not_pet: '태어난 펫만 대표로 정할 수 있어요.',
+    not_shiny: '색다른 펫만 겉모습을 바꿀 수 있어요.',
     too_hungry: '배가 고파서 산책을 못 가요. 먼저 먹이를 줘요.',
     not_away: '펫이 집에 있어요.',
     bad_name: '이름을 다시 적어 줘요.',
@@ -857,6 +860,27 @@ export function expandPetBox(box, { bong = 0, level = 0, settings = null } = {})
 }
 
 /** 대표 펫 정하기(태어난 펫만) */
+/** 화면에 그릴 그림이 색다른 그림인지(색다른 펫이 일반 그림을 골랐으면 false) */
+export const petShowsShinyArt = (p) => !!(p && p.shiny === true && p.normalLook !== true);
+
+/**
+ * 색다른 펫의 겉모습 바꾸기(무료, 언제든). normal 이 true 면 일반 그림, false 면 색다른 그림.
+ * 능력치·전투력·도감·색다름 표시는 그대로예요. 일반 펫은 바꿀 수 없어요.
+ */
+export function setPetLook(box, i, normal) {
+    const b = sanitizePetBox(box);
+    const idx = Math.floor(Number(i));
+    if (!(idx >= 0 && idx < b.slots)) return { ok: false, error: 'bad_slot', box: b };
+    const p = b.list[idx];
+    if (!p || p.phase !== 'pet') return { ok: false, error: 'no_pet', box: b };
+    if (!p.shiny) return { ok: false, error: 'not_shiny', box: b };
+    const next = { ...p };
+    if (normal) next.normalLook = true; else delete next.normalLook;
+    const list = b.list.slice();
+    list[idx] = next;
+    return { ok: true, error: '', box: { ...b, list } };
+}
+
 export function setPetBoxMain(box, i) {
     const b = sanitizePetBox(box);
     const idx = Math.floor(Number(i));

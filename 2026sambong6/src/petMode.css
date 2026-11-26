@@ -462,6 +462,11 @@
 .pet-chip.is-main { background: #facc15; border-color: #fff; color: #422006; }
 .pet-main-row { display: flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 32px; }
 .pet-main-row i { font-style: normal; font-size: 11px; font-weight: 700; color: #94a3b8; }
+/* 색다른 펫 겉모습 고르기(그림만 바뀌어요) */
+.pet-look-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.35rem; margin: 0.2rem 0 0.1rem; }
+.pet-look-row > span { font-size: 12px; font-weight: 800; color: #e2e8f0; }
+.pet-look-row i { flex-basis: 100%; text-align: center; font-style: normal; font-size: 11px; font-weight: 700; color: #94a3b8; }
+.pet-look-row .pet-mini-btn.is-on { background: #fef08a; border-color: #fff; color: #713f12; }
 .pet-mini-btn {
     min-height: 32px;
     padding: 0 0.8rem;

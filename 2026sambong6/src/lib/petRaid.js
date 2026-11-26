@@ -260,6 +260,7 @@ export function raidMemberFromPet(pet, { id, name, now = Date.now(), today = '' 
         species: v.species,
         stage: v.stage,
         shiny: v.shiny === true,
+        ...(v.shiny === true && v.normalLook === true ? { normalLook: true } : {}), // 겉모습만 일반 그림
         level: v.level,
         enhance: v.enhance,
         type: PET_SPECIES[v.species].type,
@@ -281,6 +282,7 @@ function sanitizeMember(raw) {
         species: sp.id,
         stage: int(raw.stage, 1, 3),
         shiny: raw.shiny === true,
+        ...(raw.shiny === true && raw.normalLook === true ? { normalLook: true } : {}),
         level: int(raw.level, 1, PET_MAX_LEVEL),
         enhance: int(raw.enhance, 0, 10),
         type: sp.type,

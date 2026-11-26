@@ -154,15 +154,17 @@ describe('펫: 강화·산책·랭킹', () => {
         assert.equal(P.enhancePet(pet(), { bong: 4, now: T0, today: DAY }).error, 'no_bong');
     });
 
-    it('산책은 하루 한 번이고, 능력치에 따라 정해진 범위에서 랜덤으로 벌어 와요', () => {
-        // 갓 태어난 펫(전투력 60): 1~3봉
-        assert.deepEqual(P.petWalkRange(pet()), { min: 1, max: 3 });
-        // 다 키운 펫(전투력 950): 4~9봉
-        assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 })), { min: 4, max: 9 });
+    it('산책은 하루 한 번이고, 능력치에 따라 정해진 범위에서 랜덤으로 벌어 와요(받는 봉은 반, 내림, 최소 1)', () => {
+        // 갓 태어난 펫(전투력 60): 설정 1~3봉 → 받는 봉 1~1봉
+        assert.deepEqual(P.petWalkRawRange(pet()), { min: 1, max: 3 });
+        assert.deepEqual(P.petWalkRange(pet()), { min: 1, max: 1 });
+        // 다 키운 펫(전투력 950): 설정 4~9봉 → 받는 봉 2~4봉
+        assert.deepEqual(P.petWalkRawRange(pet({ stage: 3, level: 30, enhance: 10 })), { min: 4, max: 9 });
+        assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 })), { min: 2, max: 4 });
         assert.equal(P.walkPet(pet(), { now: T0, today: DAY, rnd: () => 0 }).gain, 1);
         const r = P.walkPet(pet(), { now: T0, today: DAY, rnd: () => 0.999 });
-        assert.equal(r.gain, 3);
-        assert.equal(r.pet.earned, 3);
+        assert.equal(r.gain, 1);
+        assert.equal(r.pet.earned, 1);
         assert.equal(P.walkPet(r.pet, { now: T0, today: DAY }).error, 'walked');
         assert.equal(P.walkPet(r.pet, { now: T0, today: '2026-11-17' }).ok, true);
         assert.equal(P.walkPet(pet({ full: 20 }), { now: T0, today: DAY }).error, 'too_hungry');
@@ -170,15 +172,16 @@ describe('펫: 강화·산책·랭킹', () => {
         let x = 3;
         const rnd = () => { x = (x * 1103515245 + 12345) & 0x7fffffff; return x / 0x80000000; };
         for (let i = 0; i < 200; i += 1) seen.add(P.rollPetWalkBong(pet({ stage: 3, level: 30, enhance: 10 }), null, rnd));
-        assert.deepEqual([...seen].sort((a, b) => a - b), [4, 5, 6, 7, 8, 9]);
+        assert.deepEqual([...seen].sort((a, b) => a - b), [2, 3, 4]);
     });
 
     it('산책 보상은 마스터 설정을 따라요(상한 포함)', () => {
         const walk = { min: 2, max: 5, step: 50, cap: 8 };
-        assert.deepEqual(P.petWalkRange(pet(), walk), { min: 3, max: 7 });
-        assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 }), walk), { min: 8, max: 8 });
-        assert.equal(P.petView(pet(), T0, DAY, { walk }).walkRange.max, 7);
-        assert.equal(P.walkPet(pet(), { now: T0, today: DAY, walk, rnd: () => 0.999 }).gain, 7);
+        assert.deepEqual(P.petWalkRawRange(pet(), walk), { min: 3, max: 7 });
+        assert.deepEqual(P.petWalkRange(pet(), walk), { min: 1, max: 3 });
+        assert.deepEqual(P.petWalkRange(pet({ stage: 3, level: 30, enhance: 10 }), walk), { min: 4, max: 4 });
+        assert.equal(P.petView(pet(), T0, DAY, { walk }).walkRange.max, 3);
+        assert.equal(P.walkPet(pet(), { now: T0, today: DAY, walk, rnd: () => 0.999 }).gain, 3);
     });
 
     it('놓아주면 도감에 남고 새 알을 살 수 있어요', () => {

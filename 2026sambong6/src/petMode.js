@@ -853,7 +853,7 @@ export function createPetMode(deps) {
                 <p class="pet-sub">칸 늘리기</p>
                 <label class="pet-set-row"><span>2번째 칸</span>내 레벨 ${num('s2-level', cfg.slotRules[0].level, 1, 100)} 이상 · ${num('s2-price', cfg.slotRules[0].price, 0, 5000)} 봉</label>
                 <label class="pet-set-row"><span>3번째 칸</span>내 레벨 ${num('s3-level', cfg.slotRules[1].level, 1, 100)} 이상 · ${num('s3-price', cfg.slotRules[1].price, 0, 5000)} 봉</label>
-                <p class="pet-sub">산책으로 벌어 오는 봉 (하루 한 번, 범위 안에서 랜덤)</p>
+                <p class="pet-sub">산책으로 벌어 오는 봉 (하루 한 번, 범위 안에서 랜덤 · 학생이 받는 봉은 이 값의 반이에요. 내림, 최소 1봉)</p>
                 <label class="pet-set-row"><span>기본 범위</span>${num('walk-min', w.min, 0, 100)} ~ ${num('walk-max', w.max, 0, 100)} 봉</label>
                 <label class="pet-set-row"><span>능력치 보너스</span>전투력 ${num('walk-step', w.step, 10, 1000)} 마다 최대 +1봉</label>
                 <label class="pet-set-row"><span>하루 상한</span>${num('walk-cap', w.cap, 0, 500)} 봉</label>

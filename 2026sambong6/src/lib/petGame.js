@@ -433,7 +433,7 @@ export function petView(pet, now = Date.now(), today = '', settings = null) {
  * 최소 = 기본 최소 + 전투력 (2×step)마다 1, 최대 = 기본 최대 + 전투력 step마다 1 (상한 cap).
  * 이 범위 안에서 그날그날 다르게(랜덤) 벌어 와요. 숫자는 마스터가 고칠 수 있어요(PET_DEFAULT_SETTINGS.walk).
  */
-export function petWalkRange(pet, walkCfg = null) {
+export function petWalkRawRange(pet, walkCfg = null) {
     const p = pet && pet.phase === 'pet' ? pet : sanitizePet(pet);
     if (p.phase !== 'pet') return { min: 0, max: 0 };
     const w = sanitizePetSettings({ walk: walkCfg }).walk;
@@ -443,10 +443,26 @@ export function petWalkRange(pet, walkCfg = null) {
     return { min, max };
 }
 
-/** 범위 안에서 하나를 뽑아요. */
+/**
+ * 산책 보상 반으로(2026-11-27 선생님 결정): 받는 순간 계산된 봉 ÷ 2, 내림, 최소 1봉.
+ * 계산된 봉이 0(마스터가 0으로 끈 경우)이면 0 그대로예요. 마스터가 바꾼 범위에도 똑같이 적용돼요.
+ */
+export const PET_WALK_DIVISOR = 2;
+export const halfWalkBong = (raw) => {
+    const n = Math.floor(Number(raw) || 0);
+    return n <= 0 ? 0 : Math.max(1, Math.floor(n / PET_WALK_DIVISOR));
+};
+
+/** 실제로 받는 산책 봉의 범위(화면 문구용). 설정 범위(petWalkRawRange)의 반이에요. */
+export function petWalkRange(pet, walkCfg = null) {
+    const r = petWalkRawRange(pet, walkCfg);
+    return { min: halfWalkBong(r.min), max: halfWalkBong(r.max) };
+}
+
+/** 설정 범위 안에서 하나를 뽑고, 반으로 줄여서 받아요. */
 export function rollPetWalkBong(pet, walkCfg = null, rnd = Math.random) {
-    const { min, max } = petWalkRange(pet, walkCfg);
-    return min + Math.floor(rnd() * (max - min + 1));
+    const { min, max } = petWalkRawRange(pet, walkCfg);
+    return halfWalkBong(min + Math.floor(rnd() * (max - min + 1)));
 }
 
 export function petEnhanceCost(enhance) {

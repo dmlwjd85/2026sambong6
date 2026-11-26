@@ -6,13 +6,13 @@
  * 팀원 화면마다 같은 씨앗으로 같은 전투를 다시 돌려 연출을 보여 준 뒤, 각자 자기 보상을 받아요.
  */
 import './petRaid.css';
-import { PET_GUARD_SKILLS, PET_HEAL_SKILLS, PET_MAX_POWER, PET_SKILL_NAMES, PET_SPECIES, PET_TYPES, grantPetExp, petBoxMainIndex, petBoxToDoc, petBoxWith, petPower, petView, sanitizePetBox } from './lib/petGame.js';
+import { PET_GUARD_SKILLS, PET_HEAL_SKILLS, PET_MAX_POWER, PET_ROLES, PET_ROLE_SKILLS, PET_SKILL_NAMES, PET_SPECIES, PET_TYPES, grantPetExp, petBoxMainIndex, petBoxToDoc, petBoxWith, petPower, petView, sanitizePetBox } from './lib/petGame.js';
 import { petArtHtml, petImageUrl } from './lib/petArt.js';
 import {
     RAID_MAX_PARTY,
     RAID_MIN_PARTY,
     RAID_STAGE_COUNT,
-    RAID_STRONG,
+    raidStrongList,
     answerRaidQuiz,
     claimRaidReward,
     closeRaidQuiz,
@@ -31,6 +31,7 @@ import {
     raidMaxedStages,
     raidPaidFirsts,
     raidPetStats,
+    raidRoleStats,
     raidTypeMult,
     raidUnlockedStage,
     readyRaidParty,
@@ -44,7 +45,11 @@ import {
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const PET_SPECIES_TYPE = (species) => (PET_SPECIES[species] ? PET_SPECIES[species].type : 'fire');
-const TYPE_COLOR = Object.freeze({ fire: '#fb923c', water: '#38bdf8', grass: '#4ade80', electric: '#facc15', ice: '#a5f3fc', rock: '#d6b98c', star: '#c4b5fd', fight: '#f87171' });
+const TYPE_COLOR = Object.freeze({ fire: '#fb923c', water: '#38bdf8', grass: '#4ade80', electric: '#facc15', ice: '#a5f3fc', rock: '#d6b98c', star: '#c4b5fd', fight: '#f87171', heal: '#f9a8d4', steel: '#94a3b8', wind: '#5eead4' });
+/** 규칙 판 6부터는 역할 펫의 체력이 달라요(예전 전투는 예전 체력으로 보여 줘요). */
+const fxMaxHp = (run, m) => (Math.floor(Number(run.rules) || 0) >= 6 ? raidRoleStats(m.species, m.power).hp : raidPetStats(m.power).hp);
+/** 역할 기술 이름(없으면 기본 말) */
+const roleSkillName = (species, kind, fallback) => ((PET_ROLE_SKILLS[species] || []).find((k) => k.kind === kind) || {}).name || fallback;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -453,11 +458,11 @@ export function createPetRaidView(ctx) {
             <div class="raid-fx-team">${run.members.map((m) => `
                 <span class="raid-fx-pet type-${m.type}${m.owner ? ' is-extra' : ''}" data-id="${esc(m.id)}" style="--c:${TYPE_COLOR[m.type]}">
                     ${petArtHtml({ species: m.species, stage: m.stage, shiny: m.shiny, eager: true })}
-                    <b>${esc(m.name)}</b>
+                    <b>${PET_SPECIES[m.species] && PET_SPECIES[m.species].role ? `<i class="raid-fx-role">${PET_ROLES[PET_SPECIES[m.species].role].emoji}</i>` : ''}${esc(m.name)}</b>
                     <em data-dmg></em>
                 </span>`).join('')}</div>
             <div class="raid-fx-meter" aria-label="체력과 데미지">${run.members.map((m) => `
-                <p class="raid-fx-mrow${raidOwner(m) === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.owner ? `${m.name}·${m.petName}` : m.name)}</b><span class="raid-fx-mbar"><i style="width:100%"></i><em>${raidPetStats(m.power).hp}</em></span><small title="입힌 데미지">⚔️<u data-dealt>0</u></small><small title="막은 데미지">🛡️<u data-blocked>0</u></small><small title="채운 체력">💚<u data-healed>0</u></small></p>`).join('')}</div>
+                <p class="raid-fx-mrow${raidOwner(m) === me() ? ' is-me' : ''}" data-hp-id="${esc(m.id)}"><b>${esc(m.owner ? `${m.name}·${m.petName}` : m.name)}</b><span class="raid-fx-mbar"><i style="width:100%"></i><em>${fxMaxHp(run, m)}</em></span><small title="입힌 데미지">⚔️<u data-dealt>0</u></small><small title="막은 데미지">🛡️<u data-blocked>0</u></small><small title="채운 체력">💚<u data-healed>0</u></small></p>`).join('')}</div>
             <p class="raid-fx-phase"></p>
             <div class="raid-fx-feed" aria-hidden="true"></div>
             <p class="raid-fx-banner" aria-live="polite"></p>`;
@@ -470,7 +475,7 @@ export function createPetRaidView(ctx) {
         // 참가자 체력: 화면 가장자리에 한 줄씩 보여 줘요.
         const maxHpOf = {};
         const hpOf = {};
-        run.members.forEach((m) => { maxHpOf[m.id] = raidPetStats(m.power).hp; hpOf[m.id] = maxHpOf[m.id]; });
+        run.members.forEach((m) => { maxHpOf[m.id] = fxMaxHp(run, m); hpOf[m.id] = maxHpOf[m.id]; });
         const setMemberHp = (id, hpNow) => {
             hpOf[id] = Math.max(0, Math.min(maxHpOf[id], hpNow));
             const row = el.querySelector(`[data-hp-id="${CSS.escape(id)}"]`);
@@ -571,7 +576,7 @@ export function createPetRaidView(ctx) {
         const estMs = (rounds) => rounds.reduce((t, rd) => {
             if (rd.quiz !== undefined) return t + 2700;
             const gap = Math.max(130, Math.min(220, 1900 / Math.max(1, rd.hits.length)));
-            return t + rd.hits.length * gap + 420 + (rd.boss.length ? 1090 : 0) + (rd.heals && rd.heals.length ? 520 : 0);
+            return t + rd.hits.length * gap + 420 + (rd.boss.length ? 1090 : 0) + (rd.heals && rd.heals.length ? 520 : 0) + (rd.buff || rd.shield ? 700 : 0);
         }, 0);
 
         /** 퀴즈 결과: 합동 필살기(성공) 또는 보스 필살기(실패) */
@@ -732,6 +737,20 @@ export function createPetRaidView(ctx) {
                     continue;
                 }
                 turn += 1;
+                // 규칙 6: 서포트의 응원 함성(공격 ↑)·방울 가드(받는 데미지 ↓)를 먼저 보여 줘요.
+                if ((round.buff || round.shield) && !skipped) {
+                    const parts = [];
+                    if (round.buff) parts.push(`🎐 ${roleSkillName(speciesOf[round.buff.by], 'buff', '응원')}! 공격 +${round.buff.atk}%`);
+                    if (round.shield) parts.push(`🔔 ${roleSkillName(speciesOf[round.shield.by], 'shield', '가드')}! 받는 데미지 −${round.shield.def}%`);
+                    phase.textContent = `${turn}턴 · ${parts.join(' · ')}`;
+                    phase.className = 'raid-fx-phase is-team is-buff';
+                    [round.buff, round.shield].filter(Boolean).forEach((b) => {
+                        pop(petEl(b.by), 'is-buff', 600);
+                        log(`${nameOf[b.by] || ''} ${b === round.buff ? roleSkillName(speciesOf[b.by], 'buff', '응원') : roleSkillName(speciesOf[b.by], 'shield', '가드')}`, b === round.buff ? `⚔️+${b.atk}%` : `🛡️−${b.def}%`, 'is-buff');
+                    });
+                    el.querySelectorAll('.raid-fx-pet:not(.is-faint)').forEach((pe) => pop(pe, round.buff ? 'is-buffed' : 'is-shielded', 650));
+                    await pause(700);
+                }
                 // 우리 팀 공격: 차례로 속성 빛줄기를 쏴요. 숫자는 자리를 바꿔 가며 띄워 겹치지 않게 해요.
                 phase.textContent = `${turn}턴 · 우리 팀 공격!`;
                 phase.className = 'raid-fx-phase is-team';
@@ -817,6 +836,16 @@ export function createPetRaidView(ctx) {
                 if (round.boss.length && !skipped) {
                     const all = round.bossMove === 'all' || (!round.bossMove && round.boss.length > 1);
                     phase.textContent = `${run.boss.name}의 ${all ? '전체 공격!' : '단일 공격!'}`;
+                    // 규칙 6: 탱커가 친구 대신 맞아요(누구 대신인지 보여 줘요).
+                    if (!all && round.boss[0] && round.boss[0].taunt) {
+                        const tk = round.boss[0];
+                        const tName = roleSkillName(speciesOf[tk.target], 'taunt', '대신 맞기');
+                        phase.textContent = `🛡️ ${nameOf[tk.target] || ''}의 ${tName}! ${nameOf[tk.cover] || ''} 대신 맞아요`;
+                        const ce = petEl(tk.cover);
+                        if (ce) pop(ce, 'is-covered', 700);
+                        pop(petEl(tk.target), 'is-taunt', 700);
+                        log(`${nameOf[tk.target] || ''} ${tName}`, `🛡️${nameOf[tk.cover] || ''}`, 'is-guard');
+                    }
                     if (!all && round.boss[0]) {
                         // 단일 공격: 누구를 노리는지 먼저 표시해요.
                         const tp = petEl(round.boss[0].target);
@@ -896,7 +925,7 @@ export function createPetRaidView(ctx) {
                             const pc = center(pe);
                             pop(pe, 'is-heal', 600);
                             setMemberHp(h.target, hpOf[h.target] + h.amount);
-                            const hName = (PET_HEAL_SKILLS[speciesOf[h.by]] || {}).name || '회복';
+                            const hName = h.role ? roleSkillName(speciesOf[h.by], 'heal', '돌봄') : (PET_HEAL_SKILLS[speciesOf[h.by]] || {}).name || '회복';
                             float(`+${h.amount.toLocaleString()}`, pc.x, pc.y - 30, 'is-heal', `${nameOf[h.by] || ''} · ${hName}`);
                             log(`${nameOf[h.by] || ''} ${hName}`, `💚${h.amount.toLocaleString()}`, 'is-heal');
                             healedOf[h.by] = (healedOf[h.by] || 0) + h.amount;
@@ -1128,8 +1157,8 @@ export function createPetRaidView(ctx) {
     function chartHtml() {
         const types = Object.keys(PET_TYPES);
         const rows = types.map((t) => {
-            const strong = RAID_STRONG[t] || [];
-            const weak = types.filter((x) => (RAID_STRONG[x] || []).includes(t));
+            const strong = raidStrongList(t);
+            const weak = types.filter((x) => raidStrongList(x).includes(t));
             const chips = (list) => (list.length ? list.map((x) => typeBadge(x)).join(' ') : '<i class="raid-chart-none">없음</i>');
             return `<tr><th>${typeBadge(t)}</th><td>${chips(strong)}</td><td>${chips(weak)}</td></tr>`;
         }).join('');
@@ -1178,6 +1207,7 @@ export function createPetRaidView(ctx) {
                 <p class="pet-note">OX 퀴즈 문제는 「OX 퀴즈」에 올려 둔 문제에서 무작위로 나와요. 참가자의 반 이상이 맞히면 살아 있는 펫이 모두 합동 필살기를 쓰고, 아니면 모두가 보스 필살기를 맞아요(막기 기술이 안 통해요).</p>
                 <p class="pet-note">보스는 턴마다 「전체 공격 %」 확률로 모두에게 공격력의 절반을, 아니면 한 마리에게 공격력의 1.5배를 줘요. 펫은 배운 기술(Lv.1·10·20, 1배·1.3배·1.7배) 중 하나를 무작위로 써요.</p>
                 <p class="pet-note">Lv.40이 되면 종마다 다른 💚 회복 기술을 배워요(보스 공격 뒤 확률로 체력을 채워요).</p>
+                <p class="pet-note">역할 펫: 💚 힐러(하뜨)는 다친 친구의 체력을 채워 주고, 🛡️ 탱커(철뭉)는 보스의 공격을 대신 맞아 주고, 🎐 서포트(방울)는 친구들의 공격이나 방어를 잠깐 올려 줘요. 역할 차이는 탐험에서만 나고, 예전에 키운 펫도 그대로 세요.</p>
                 <div class="pet-set-row"><span>첫 보상 시즌</span>지금 ${cfg.rewardSeason}번째 · <button type="button" class="pet-btn" data-p="raid-season-next">모두 첫 보상 다시 받게 하기</button> <i class="pet-note">(이긴 횟수도 0부터 다시 세요)</i></div>
                 <div class="pet-foods">
                     <button type="button" class="pet-btn is-main" data-p="raid-settings-save">탐험 설정 저장</button>

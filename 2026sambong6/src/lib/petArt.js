@@ -1,6 +1,6 @@
 /**
  * 메이트 펫 그림(문자열, DOM 없음).
- * 기본 그림은 public/pets/ 의 일러스트(종 × 단계 21장 + 알, WebP)예요. petArtHtml·petEggHtml 이 <img>를 만들어요.
+ * 기본 그림은 public/pets/ 의 일러스트(종 × 단계, 보통·색다른, 알, WebP)예요. 새 펫 3종(하뜨·철뭉·방울)은 제미나이로 그린 그림이에요. petArtHtml·petEggHtml 이 <img>를 만들어요.
  * 아래 petSvg 는 그림 파일을 못 불러올 때 대신 쓰는 도형 그림이에요. 모든 종 × 세 단계를 도형으로 그려요.
  * 모두 이 앱을 위해 새로 만든 몬스터예요. 종마다 귀·꼬리·머리 장식이 다르고, 단계가 오를수록 몸이 커지고 장식이 늘어요.
  * shiny(색이 다른 펫)는 색만 바꿔요. mood에 따라 눈·입이 달라져요.
@@ -15,6 +15,9 @@ const PALETTES = Object.freeze({
     pebbletle: { main: '#a9b388', dark: '#6b7445', light: '#f1f3e0', accent: '#8d6e63', glow: '#c5cba3' },
     stardrake: { main: '#9775fa', dark: '#5f3dc4', light: '#f3f0ff', accent: '#ffe066', glow: '#d0bfff' },
     punchroo: { main: '#d9a066', dark: '#9c6b3c', light: '#fff1dc', accent: '#e03131', glow: '#ffa8a8' },
+    heartail: { main: '#fbcfe8', dark: '#db2777', light: '#fff1f7', accent: '#f472b6', glow: '#fda4cf' },
+    ironpaw: { main: '#94a3b8', dark: '#475569', light: '#e2e8f0', accent: '#3b82f6', glow: '#bfdbfe' },
+    bellpup: { main: '#99f6e4', dark: '#0f766e', light: '#f0fdfa', accent: '#facc15', glow: '#5eead4' },
 });
 
 const SHINY = Object.freeze({
@@ -26,6 +29,9 @@ const SHINY = Object.freeze({
     pebbletle: { main: '#ffc9c9', dark: '#c92a2a', light: '#fff5f5', accent: '#495057', glow: '#ffa8a8' },
     stardrake: { main: '#343a40', dark: '#111417', light: '#dee2e6', accent: '#ff6b6b', glow: '#868e96' },
     punchroo: { main: '#868e96', dark: '#495057', light: '#f1f3f5', accent: '#1c7ed6', glow: '#a5d8ff' },
+    heartail: { main: '#ddd6fe', dark: '#7c3aed', light: '#f5f3ff', accent: '#facc15', glow: '#c4b5fd' },
+    ironpaw: { main: '#fcd34d', dark: '#b45309', light: '#fffbeb', accent: '#dc2626', glow: '#fde68a' },
+    bellpup: { main: '#fecdd3', dark: '#be123c', light: '#fff1f2', accent: '#a78bfa', glow: '#fda4af' },
 });
 
 export function petPalette(species, shiny = false) {
@@ -46,6 +52,7 @@ const star = (x, y, r, c) => {
 const drop = (x, y, s, c) => `<path transform="translate(${x} ${y}) scale(${s})" d="M0-12C6-4 8 0 8 4A8 8 0 0 1-8 4C-8 0-6-4 0-12Z" fill="${c}" stroke="${OUT}" stroke-width="${1.5 / s}"/>`;
 const leaf = (x, y, s, rot, c) => `<path transform="translate(${x} ${y}) rotate(${rot}) scale(${s})" d="M0 0C-8-6-8-16 0-22 8-16 8-6 0 0Z" fill="${c}" stroke="${OUT}" stroke-width="${1.5 / s}" stroke-linejoin="round"/>`;
 const bolt = (x, y, s, rot, c) => `<path transform="translate(${x} ${y}) rotate(${rot}) scale(${s})" d="M2-14-7 1H0L-3 14 8-3H1Z" fill="${c}" stroke="${OUT}" stroke-width="${1.5 / s}" stroke-linejoin="round"/>`;
+const heart = (x, y, s, c) => `<path transform="translate(${x} ${y}) scale(${s})" d="M0 6C-9 0-10-7-5-9C-2-10 0-8 0-6C0-8 2-10 5-9C10-7 9 0 0 6Z" fill="${c}" stroke="${OUT}" stroke-width="${1.4 / s}" stroke-linejoin="round"/>`;
 const crystal = (x, y, s, c) => `<path transform="translate(${x} ${y}) scale(${s})" d="M0-14 6-4 0 6-6-4Z" fill="${c}" stroke="${OUT}" stroke-width="${1.4 / s}" stroke-linejoin="round"/>`;
 
 function face(cx, cy, r, mood, { beak = '', eyeGap = 0.42, eyeR = 0.2 } = {}) {
@@ -182,6 +189,33 @@ export function petSvg({ species = 'emberkit', stage = 1, shiny = false, mood = 
         back.push(`<path d="M${cx + sw - 4} ${by + 6}l10 3l-9 4Z" fill="${p.main}" ${S}/>`);
         if (st >= 3) [[-0.75, 0.05], [0.3, -0.45], [0.8, 0.0]].forEach(([k, j]) => mid.push(`<ellipse cx="${cx + k * sw}" cy="${sy + j * sh}" rx="6" ry="3.4" fill="#8ecf5a" stroke="${OUT}" stroke-width="1.2"/>`));
         bodyShape = `<ellipse cx="${cx}" cy="${by + 2}" rx="${brx * 0.86}" ry="${bry * 0.8}" fill="${p.light}" ${S}/>`;
+    } else if (species === 'heartail') {
+        // 하트 양(힐러, 일러스트가 없을 때 쓰는 도형 그림): 귀, 이마 하트 → 가슴 하트 → 하트 날개와 후광
+        [-1, 1].forEach((d) => back.push(`<ellipse cx="${cx + d * hr * 0.42}" cy="${hy - hr * 1.05}" rx="${hr * 0.22}" ry="${hr * 0.62}" fill="${p.main}" ${S} transform="rotate(${d * 14} ${cx + d * hr * 0.42} ${hy - hr * 1.05})"/><ellipse cx="${cx + d * hr * 0.42}" cy="${hy - hr * 1.05}" rx="${hr * 0.1}" ry="${hr * 0.45}" fill="${p.accent}" transform="rotate(${d * 14} ${cx + d * hr * 0.42} ${hy - hr * 1.05})"/>`));
+        back.push(heart(cx + brx + 8 + st * 2, by - 4, 0.9 + st * 0.2, p.accent));
+        front.push(heart(cx, hy - hr * 0.62, 0.45 + st * 0.08, p.dark));
+        if (st >= 2) mid.push(heart(cx, by - bry * 0.05, 0.7 + st * 0.15, p.accent));
+        if (st >= 3) {
+            [-1, 1].forEach((d) => back.push(heart(cx + d * (brx + 12), by - bry * 0.7, 1.6, p.glow)));
+            back.push(`<ellipse cx="${cx}" cy="${hy - hr * 1.25}" rx="${hr * 0.7}" ry="5" fill="none" stroke="#facc15" stroke-width="3"/>`);
+        }
+    } else if (species === 'ironpaw') {
+        // 강철 곰(탱커): 동그란 귀, 이마 판 → 어깨 갑옷 → 큰 방패와 투구 뿔
+        [-1, 1].forEach((d) => back.push(`<circle cx="${cx + d * hr * 0.76}" cy="${hy - hr * 0.7}" r="${hr * 0.3}" fill="${p.main}" ${S}/><circle cx="${cx + d * hr * 0.76}" cy="${hy - hr * 0.7}" r="${hr * 0.14}" fill="${p.dark}"/>`));
+        front.push(`<rect x="${cx - hr * 0.32}" y="${hy - hr * 0.9}" width="${hr * 0.64}" height="${hr * 0.34}" rx="3" fill="${p.light}" ${S}/>`);
+        if (st >= 2) [-1, 1].forEach((d) => front.push(`<path d="M${cx + d * brx * 0.45} ${by - bry * 0.85}q${d * brx * 0.6} -2 ${d * brx * 0.75} ${bry * 0.45}l${-d * brx * 0.5} 2Z" fill="${p.light}" ${S}/>`));
+        if (st >= 3) {
+            front.push(`<path d="M${cx - brx - 14} ${by - 14}h18v14q0 12 -9 16q-9 -4 -9 -16Z" fill="${p.accent}" ${S}/><path d="M${cx - brx - 5} ${by - 10}v18" stroke="#fff" stroke-width="2"/>`);
+            [-1, 1].forEach((d) => back.push(`<path d="M${cx + d * hr * 0.45} ${hy - hr * 0.85}l${d * 6} -14l${d * 3} 12Z" fill="${p.light}" ${S}/>`));
+        }
+    } else if (species === 'bellpup') {
+        // 방울 강아지(서포트): 늘어진 귀, 목 방울 → 바람 목도리 → 방울 세 개와 회오리
+        [-1, 1].forEach((d) => back.push(`<ellipse cx="${cx + d * hr * 0.86}" cy="${hy - hr * 0.1}" rx="${hr * 0.26}" ry="${hr * 0.5}" fill="${p.dark}" ${S} transform="rotate(${d * -18} ${cx + d * hr * 0.86} ${hy - hr * 0.1})"/>`));
+        const bell = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${p.accent}" ${S}/><path d="M${x - r * 0.6} ${y + r * 0.2}h${r * 1.2}" stroke="${OUT}" stroke-width="1.2"/><circle cx="${x}" cy="${y + r * 0.55}" r="${r * 0.18}" fill="${OUT}"/>`;
+        mid.push(`<path d="M${cx - brx * 0.7} ${by - bry * 0.82}q${brx * 0.7} 8 ${brx * 1.4} 0" fill="none" stroke="${p.dark}" stroke-width="3" stroke-linecap="round"/>`);
+        mid.push(bell(cx, by - bry * 0.6, 4 + st));
+        if (st >= 2) back.push(`<path d="M${cx + brx} ${by - 6}q14 -6 10 -18q-8 6 -4 -6" fill="none" stroke="${p.glow}" stroke-width="3" stroke-linecap="round"/>`);
+        if (st >= 3) [-1, 1].forEach((d) => back.push(bell(cx + d * (brx + 12), by - bry * 0.9, 5)));
     } else if (species === 'punchroo') {
         // 격투 캥거루: 긴 귀, 굵은 꼬리, 빨간 권투 장갑 → 머리띠 → 챔피언 벨트와 큰 장갑
         [-1, 1].forEach((d) => back.push(`<ellipse cx="${cx + d * hr * 0.5}" cy="${hy - hr * 1.05}" rx="${hr * 0.22}" ry="${hr * 0.55}" fill="${p.main}" ${S} transform="rotate(${d * 14} ${cx + d * hr * 0.5} ${hy - hr * 0.7})"/><ellipse cx="${cx + d * hr * 0.5}" cy="${hy - hr * 1.05}" rx="${hr * 0.1}" ry="${hr * 0.36}" fill="${p.light}" transform="rotate(${d * 14} ${cx + d * hr * 0.5} ${hy - hr * 0.7})"/>`));
@@ -245,7 +279,7 @@ export function petSilhouetteSvg() {
 
 /* ---------- 일러스트(그림 파일) ---------- */
 
-const ART_SPECIES = Object.freeze(['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake', 'punchroo']);
+const ART_SPECIES = Object.freeze(['emberkit', 'dropotter', 'sproutdeer', 'zapowl', 'snowbun', 'pebbletle', 'stardrake', 'punchroo', 'heartail', 'ironpaw', 'bellpup']);
 
 /** 앱 기준 주소(Vite base). 테스트(node)에서는 상대 경로를 써요. */
 function assetBase() {

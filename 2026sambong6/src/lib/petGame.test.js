@@ -42,7 +42,7 @@ describe('펫: 알 사기와 부화', () => {
         for (let i = 0; i < 5000; i += 1) { const id = P.rollPetSpecies(rnd); counts[id] = (counts[id] || 0) + 1; }
         assert.equal(Object.keys(counts).length, Object.keys(P.PET_SPECIES).length);
         assert.ok(counts.stardrake < counts.emberkit / 2);
-        assert.equal(P.rollPetSpecies(() => 0.9999), 'punchroo');
+        assert.equal(P.rollPetSpecies(() => 0.9999), 'bellpup'); // 새 펫 3종이 맨 뒤에 붙었어요
     });
 });
 
@@ -201,7 +201,10 @@ describe('펫: 강화·산책·랭킹', () => {
 
     it('이상한 저장값은 안전한 모양으로 고쳐요', () => {
         assert.equal(P.sanitizePet(null).phase, 'none');
-        assert.equal(P.sanitizePet({ phase: 'pet', species: 'pikachu' }).phase, 'none');
+        // 모르는 종(더 새 버전 앱의 펫)은 지우지 않고 'unknown' 으로 감싸 둬요. 이름 모양이 아니면 빈 칸이에요.
+        assert.equal(P.sanitizePet({ phase: 'pet', species: 'pikachu' }).phase, 'unknown');
+        assert.equal(P.sanitizePet({ phase: 'pet', species: '<b>x' }).phase, 'none');
+        assert.equal(P.sanitizePet({ phase: 'pet', species: 'constructor' }).phase, 'none');
         const p = P.sanitizePet({ phase: 'pet', species: 'snowbun', level: 99, stage: 7, enhance: -3, full: 500, name: '<script>' });
         assert.equal(p.level, 40);
         assert.equal(p.stage, 3);
@@ -431,7 +434,7 @@ describe('펫: 케이지·알 보관함·강화 재료', () => {
         assert.equal(doc.cage.length, 1);
         assert.equal(doc.eggs, 2);
         assert.equal(doc.mats.emberkit, 3);
-        assert.equal(doc.mats.nope, undefined);
+        assert.equal(doc.mats.nope, 9); // 모르는 종의 재료도 지우지 않아요
         const old = P.sanitizePetBox({ v: 2, slots: 1, main: 0, list: [raw('emberkit')], dex: {} });
         assert.deepEqual([old.cage.length, old.eggs, old.mats.emberkit], [0, 0, 0]);
     });
@@ -528,11 +531,11 @@ describe('레벨 40 · 회복 기술', () => {
         assert.equal(stay.pet.exp, 0);
     });
 
-    it('회복 기술은 8종 모두 있고 이름이 서로 달라요. Lv.40에 배워요', () => {
+    it('회복 기술은 11종 모두 있고 이름이 서로 달라요. Lv.40에 배워요', () => {
         const ids = Object.keys(P.PET_SPECIES);
-        assert.equal(ids.length, 8);
+        assert.equal(ids.length, 11);
         ids.forEach((id) => assert.ok(P.PET_HEAL_SKILLS[id], id));
-        assert.equal(new Set(ids.map((id) => P.PET_HEAL_SKILLS[id].name)).size, 8);
+        assert.equal(new Set(ids.map((id) => P.PET_HEAL_SKILLS[id].name)).size, 11);
         assert.equal(P.petHealSkill('zapowl', 39).learned, false);
         assert.equal(P.petHealSkill('zapowl', 40).learned, true);
         assert.ok(P.petHealText(P.petHealSkill('zapowl', 40)).includes('35%'));

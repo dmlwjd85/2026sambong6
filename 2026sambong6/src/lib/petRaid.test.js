@@ -528,7 +528,7 @@ describe('색다른 보스 12~22 · 보상 시즌 · 회복 기술', () => {
             healsNew += R.replayRaidRun({ ...base, seed, rules: 4 }).rounds.filter((rd) => rd.heals).length;
         }
         assert.ok(healsNew >= 1);
-        assert.equal(R.RAID_RULES, 5);
+        assert.equal(R.RAID_RULES, 6);
     });
 
     it('균형: 12스테이지는 Lv.40 13마리면 거의 이기고, 22스테이지는 퀴즈를 맞혀야 해요', () => {
@@ -563,7 +563,7 @@ describe('전투 최대 턴 수(규칙 판 5부터 20턴)', () => {
     const wall = { type: 'rock', hp: 99999999, atk: 0, aoe: 0 };
     it('새 전투는 20턴까지 싸워요', () => {
         assert.equal(R.RAID_MAX_ROUNDS, 20);
-        assert.equal(R.RAID_RULES, 5);
+        assert.equal(R.RAID_RULES, 6);
         const sim = R.replayRaidRun({ members: tank, boss: wall, seed: 3, rules: R.RAID_RULES, teamBonus: 0 });
         assert.equal(sim.rounds.length, 20);
         assert.equal(sim.win, false);

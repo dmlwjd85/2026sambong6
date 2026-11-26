@@ -12,13 +12,14 @@
  * - 혼자 있는 방은 1분 뒤 없애고, 모두 준비했는데 한 명만 10초 넘게 준비하지 않으면 내보내요(화면 쪽에서 시간을 재요).
  * - 5턴마다 OX 퀴즈: 참가자의 반 이상이 맞히면 합동 필살기, 아니면 보스 필살기를 맞아요.
  */
-import { PET_GUARD_LEVEL, PET_GUARD_SKILLS, PET_HEAL_LEVEL, PET_HEAL_LOW_PCT, PET_HEAL_SKILLS, PET_MAX_LEVEL, PET_MAX_POWER, PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
+import { PET_GUARD_LEVEL, PET_GUARD_SKILLS, PET_HEAL_LEVEL, PET_HEAL_LOW_PCT, PET_HEAL_SKILLS, PET_MAX_LEVEL, PET_MAX_POWER, PET_ROLE_SKILLS, PET_ROLE_STATS, PET_SKILL_MULTS, PET_SPECIES, PET_TYPES, petPower, petSkillCount, petView, sanitizeRaidProgress } from './petGame.js';
 
 /** 전투 규칙 판: 2부터 막기 기술(공격받을 때 발동)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
 /** 3부터 OX 퀴즈(합동 필살기·보스 필살기)가 들어가요. */
 /** 4부터 회복 기술(Lv.40)이 들어가요. 예전 전투는 예전 규칙으로 다시 돌려요. */
 /** 5부터 전투가 최대 20턴이에요(4까지는 18턴). 예전 전투는 예전 턴 수로 다시 돌려요. */
-export const RAID_RULES = 5;
+/** 6부터 역할(힐러 돌봄·탱커 대신 맞기·서포트 응원/가드)과 역할 체력·공격 비율이 들어가요. 5까지의 전투는 예전 그대로 다시 돌려요. */
+export const RAID_RULES = 6;
 
 export const RAID_MIN_PARTY = 2;
 export const RAID_MAX_PARTY = 13;
@@ -40,13 +41,23 @@ export const RAID_STRONG = Object.freeze({
     ice: ['grass', 'star'],
     rock: ['fire', 'electric'],
     star: ['electric'],
-    fight: [], // 격투는 상성이 없어요
+    fight: [], // 격투는 상성이 없어요(새 속성도 격투와는 상성이 없어요)
+    // 새 속성: 회복은 바위·별빛에, 강철은 얼음·바위에, 바람은 풀·물에 강해요.
+    heal: ['rock', 'star'],
+    steel: ['ice', 'rock'],
+    wind: ['grass', 'water'],
 });
+// 새 속성이 약한 상대: 회복은 불꽃·얼음에, 강철은 불꽃·물에, 바람은 번개·얼음에 약해요.
+// (기존 속성끼리의 상성은 그대로이고, 새 속성이 끼어야만 달라져요.)
+const NEW_WEAK = Object.freeze({ fire: ['heal', 'steel'], ice: ['heal', 'wind'], water: ['steel'], electric: ['wind'] });
+/** 이 속성이 강한 상대 목록(새 속성 포함). 상성표도 이걸로 그려요. */
+export const raidStrongList = (t) => (RAID_STRONG[t] || []).concat(NEW_WEAK[t] || []);
+const strongList = raidStrongList;
 
 /** 공격하는 쪽 속성이 받는 쪽에게 주는 배수 */
 export function raidTypeMult(attacker, defender) {
-    if ((RAID_STRONG[attacker] || []).includes(defender)) return 1.5;
-    if ((RAID_STRONG[defender] || []).includes(attacker)) return 0.75;
+    if (strongList(attacker).includes(defender)) return 1.5;
+    if (strongList(defender).includes(attacker)) return 0.75;
     return 1;
 }
 
@@ -307,6 +318,20 @@ export function raidPetStats(power) {
     return { hp: 200 + p * 2, atk: 20 + Math.round(p * 0.5) };
 }
 
+/**
+ * 역할 펫의 체력·공격력(규칙 6부터 탐험 전투에서만): 힐러 110%·70%, 탱커 140%·75%, 서포트 90%·80%.
+ * 역할이 없는 기존 펫은 raidPetStats 그대로예요. 랭킹·산책의 전투력은 바뀌지 않아요.
+ */
+export function raidRoleStats(species, power) {
+    const base = raidPetStats(power);
+    const sp = PET_SPECIES[species];
+    const r = sp && sp.role ? PET_ROLE_STATS[sp.role] : null;
+    if (!r) return base;
+    return { hp: Math.round((base.hp * r.hp) / 100), atk: Math.round((base.atk * r.atk) / 100) };
+}
+/** 이 펫(state)이 배운 역할 기술 중 kind 인 것 */
+const roleSkill = (m, kind) => (PET_ROLE_SKILLS[m.species] || []).find((k) => k.kind === kind && m.level >= k.level) || null;
+
 /** 보스의 단일 공격은 한 마리에게 공격력의 1.5배, 전체 공격은 모두에게 공격력의 절반이에요. */
 export const RAID_BOSS_SINGLE_MULT = 1.5;
 export const RAID_BOSS_ALL_MULT = 0.5;
@@ -324,14 +349,20 @@ export const RAID_BOSS_ALL_MULT = 0.5;
  *   퀴즈 결과는 rounds 에 { quiz: k, ok, hits, bossHp, bossMove: ''|'ult', boss } 로 끼워 넣어요. turns 는 퀴즈를 뺀 진짜 턴 수예요.
  * - heal(규칙 4): 보스 공격 뒤 Lv.40 펫이 회복 기술을 확률로 써요. 그 라운드에 heals: [{ by, target, amount }] 가 붙어요(퀴즈 라운드에는 없어요).
  *   healed[id]: 그 펫이 회복 기술로 채운 체력 합계
+ * - roles(규칙 6): 역할 펫의 체력·공격 비율(raidRoleStats)과 역할 기술을 써요. 끄면 주사위 순서까지 예전과 똑같아요.
+ *   · 서포트 응원 함성: 턴 시작에 확률로 그 턴 팀 공격력 +atk% → rounds[i].buff = { by, atk }
+ *   · 서포트 방울 가드: 턴 시작에 확률로 그 턴 받는 데미지 −def% → rounds[i].shield = { by, def }
+ *   · 탱커 대신 맞기: 보스 단일 공격 때 확률로 탱커가 대신 맞아요 → boss[k] 에 taunt: true, cover: 원래 맞을 친구
+ *   · 힐러 돌봄 하트: 보스 공격 뒤 확률로 가장 다친 친구를 회복 → heals 에 role: true
  */
-export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false, quiz = null, heal = false, maxRounds = RAID_MAX_ROUNDS } = {}) {
+export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAULT_SETTINGS.teamBonus, guard = false, quiz = null, heal = false, maxRounds = RAID_MAX_ROUNDS, roles = false } = {}) {
     const limit = Math.max(1, Math.min(RAID_MAX_ROUNDS, Math.floor(Number(maxRounds)) || RAID_MAX_ROUNDS));
     const members = (Array.isArray(membersRaw) ? membersRaw : []).map(sanitizeMember).filter(Boolean).slice(0, RAID_MAX_PARTY);
     const boss = { type: PET_TYPES[bossRaw && bossRaw.type] ? bossRaw.type : 'grass', hp: int(bossRaw && bossRaw.hp, 1), atk: int(bossRaw && bossRaw.atk), aoe: int(bossRaw && bossRaw.aoe, 0, 100) };
     const rnd = makeRng(seed);
     const teamMult = 1 + (Math.max(0, members.length - 1) * int(teamBonus, 0, 50)) / 100;
-    const state = members.map((m) => ({ ...m, ...raidPetStats(m.power), max: raidPetStats(m.power).hp, mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type), skills: petSkillCount(m.level) }));
+    const statsOf = (m) => (roles ? raidRoleStats(m.species, m.power) : raidPetStats(m.power));
+    const state = members.map((m) => ({ ...m, ...statsOf(m), max: statsOf(m).hp, mult: raidTypeMult(m.type, boss.type), def: raidTypeMult(boss.type, m.type), skills: petSkillCount(m.level) }));
     const dealt = {};
     const blocked = {};
     const healed = {};
@@ -346,10 +377,22 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
         const alive = state.filter((m) => m.hp > 0);
         if (!alive.length) break;
         const hits = [];
+        // 규칙 6: 턴 시작에 서포트가 응원(공격 ↑)·가드(받는 데미지 ↓)를 확률로 써요. 여러 마리가 터져도 한 번만 쳐요(겹치지 않아요).
+        let buff = null;
+        let shield = null;
+        if (roles) {
+            for (const m of alive) {
+                const b = roleSkill(m, 'buff');
+                if (b && rnd() * 100 < b.chance && !buff) buff = { by: m.id, atk: b.atk };
+                const g = roleSkill(m, 'shield');
+                if (g && rnd() * 100 < g.chance && !shield) shield = { by: m.id, def: g.def };
+            }
+        }
+        const atkUp = buff ? 1 + buff.atk / 100 : 1;
         for (const m of alive) {
             const skill = Math.min(m.skills - 1, Math.floor(rnd() * m.skills));
             const crit = rnd() < 0.12;
-            const dmg = Math.max(1, Math.round(m.atk * PET_SKILL_MULTS[skill] * m.mult * teamMult * (0.85 + rnd() * 0.3) * (crit ? 1.8 : 1)));
+            const dmg = Math.max(1, Math.round(m.atk * PET_SKILL_MULTS[skill] * m.mult * teamMult * (0.85 + rnd() * 0.3) * (crit ? 1.8 : 1) * atkUp));
             bossHp = Math.max(0, bossHp - dmg);
             dealt[m.id] += dmg;
             hits.push({ by: m.id, dmg, crit, mult: m.mult, skill });
@@ -359,10 +402,17 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
         let bossMove = '';
         if (bossHp > 0) {
             bossMove = rnd() * 100 < boss.aoe ? 'all' : 'single';
-            const targets = bossMove === 'all' ? alive : [alive[Math.floor(rnd() * alive.length)]];
+            let targets = bossMove === 'all' ? alive : [alive[Math.floor(rnd() * alive.length)]];
+            // 규칙 6: 단일 공격이면 살아 있는 탱커(대신 맞기를 배운 펫, 맨 앞 한 마리)가 확률로 대신 맞아요.
+            let cover = '';
+            if (roles && bossMove === 'single') {
+                const tank = alive.find((x) => x.id !== targets[0].id && roleSkill(x, 'taunt'));
+                if (tank && rnd() * 100 < roleSkill(tank, 'taunt').chance) { cover = targets[0].id; targets = [tank]; }
+            }
             const power = bossMove === 'all' ? RAID_BOSS_ALL_MULT : RAID_BOSS_SINGLE_MULT;
+            const cut = shield ? 1 - shield.def / 100 : 1;
             for (const t of targets) {
-                const raw = Math.max(1, Math.round(boss.atk * power * t.def * (0.85 + rnd() * 0.3)));
+                const raw = Math.max(1, Math.round(boss.atk * power * t.def * (0.85 + rnd() * 0.3) * cut));
                 let dmg = raw;
                 let save = 0;
                 let counter = 0;
@@ -377,11 +427,30 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
                 t.hp = Math.max(0, t.hp - dmg);
                 blocked[t.id] += save;
                 if (counter) { bossHp = Math.max(0, bossHp - counter); dealt[t.id] += counter; }
-                bossHits.push(used ? { target: t.id, dmg, faint: t.hp <= 0, raw, blocked: save, guard: true, counter } : { target: t.id, dmg, faint: t.hp <= 0 });
+                const hit = used ? { target: t.id, dmg, faint: t.hp <= 0, raw, blocked: save, guard: true, counter } : { target: t.id, dmg, faint: t.hp <= 0 };
+                if (cover) { hit.taunt = true; hit.cover = cover; }
+                bossHits.push(hit);
                 if (bossHp <= 0) break;
             }
         }
         const heals = [];
+        // 규칙 6: 힐러의 돌봄 하트(Lv.10) — 보스 공격 뒤 확률로 체력 비율이 가장 낮은 친구를 채워요.
+        if (roles && bossHp > 0) {
+            for (const m of state) {
+                if (m.hp <= 0) continue;
+                const h = roleSkill(m, 'heal');
+                if (!h) continue;
+                const alive2 = state.filter((x) => x.hp > 0);
+                const t = alive2.reduce((lo, x) => (x.hp / x.max < lo.hp / lo.max ? x : lo), alive2[0]);
+                if (t.hp >= t.max) continue; // 모두 다치지 않았으면 주사위를 굴리지 않아요
+                if (rnd() * 100 >= h.chance) continue;
+                const amount = Math.min(t.max - t.hp, Math.round((t.max * h.pct) / 100));
+                if (amount <= 0) continue;
+                t.hp += amount;
+                healed[m.id] += amount;
+                heals.push({ by: m.id, target: t.id, amount, role: true });
+            }
+        }
         if (heal && bossHp > 0) {
             for (const m of state) {
                 if (m.hp <= 0 || m.level < PET_HEAL_LEVEL) continue;
@@ -403,7 +472,7 @@ export function simulateRaid(membersRaw, bossRaw, seed, { teamBonus = RAID_DEFAU
                 }
             }
         }
-        rounds.push({ hits, bossHp, bossMove, boss: bossHits, ...(heals.length ? { heals } : {}) });
+        rounds.push({ hits, bossHp, bossMove, boss: bossHits, ...(heals.length ? { heals } : {}), ...(buff ? { buff } : {}), ...(shield ? { shield } : {}) });
         turns += 1;
         // OX 퀴즈: 정해진 턴마다(마지막 턴 뒤에는 안 내요)
         if (every > 0 && bossHp > 0 && (r + 1) % every === 0 && r + 1 < limit) {
@@ -683,7 +752,7 @@ export function replayRaidRun(run) {
     if (!run) return null;
     const rules = int(run.rules);
     const quiz = rules >= 3 && int(run.quizEvery) > 0 ? { every: run.quizEvery, results: run.results || [], teamUlt: run.teamUlt, bossUlt: run.bossUlt } : null;
-    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: rules >= 2, quiz, heal: rules >= 4, maxRounds: raidMaxRounds(rules) });
+    return simulateRaid(run.members, run.boss, run.seed, { teamBonus: run.teamBonus, guard: rules >= 2, quiz, heal: rules >= 4, maxRounds: raidMaxRounds(rules), roles: rules >= 6 });
 }
 
 /**

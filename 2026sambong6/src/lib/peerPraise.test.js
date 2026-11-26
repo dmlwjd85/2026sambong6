@@ -18,7 +18,8 @@ describe('동료 따봉', () => {
         assert.equal(first.board.countDate, '2026-10-10');
         board = first.board;
         assert.equal(planPeerPraise(board, { fromId: '1', toId: '3', today: '2026-10-10' }).reason, 'once');
-        assert.equal(planPeerPraise(board, { fromId: '2', toId: '1', today: '2026-10-11' }).reason, 'mutual');
+        assert.equal(planPeerPraise(board, { fromId: '2', toId: '1', today: '2026-10-10' }).reason, 'mutual');
+        assert.equal(planPeerPraise(board, { fromId: '2', toId: '1', today: '2026-10-11' }).ok, true);
         assert.equal(planPeerPraise(board, { fromId: '2', toId: '2', today: '2026-10-11' }).reason, 'self');
         for (let n = 2; n <= 9; n += 1) {
             const step = planPeerPraise(board, { fromId: `s${n}`, toId: '2', today: '2026-10-10' });
@@ -57,7 +58,8 @@ describe('동료 따봉', () => {
         assert.equal(nextDay.ok, true);
         assert.equal(nextDay.received, 1);
         assert.equal(nextDay.fanfare, false);
-        assert.equal(planPeerPraise(board, { fromId: '2', toId: 's1', today: '2026-10-11' }).reason, 'mutual');
+        // 받은 다음 날에는 되돌려 줄 수 있어요.
+        assert.equal(planPeerPraise(board, { fromId: '2', toId: 's1', today: '2026-10-11' }).ok, true);
     });
 
     it('다음 날 다시 10개를 모으면 빵빠레를 한 번 더 준다', () => {

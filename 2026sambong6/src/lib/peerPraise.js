@@ -1,5 +1,5 @@
 /**
- * 광장 따봉. 하루에 한 번, 서로 주고받는 따봉은 없습니다.
+ * 광장 따봉. 하루에 한 번. 친구에게 받은 날에는 그 친구에게 되돌려 줄 수 없고, 하루가 지나면 줄 수 있습니다.
  * 받은 따봉이 그날 10개가 되면 빵빠레 보상을 한 번 더 줍니다.
  * 자정이 지나면 받은 수와 빵빠레는 다시 0부터 시작하고, 서로 준 기록은 남습니다.
  */
@@ -122,7 +122,8 @@ export function planPeerPraise(board, { fromId, toId, today, reason } = {}) {
     if (needReason && [...reasonText].length > PRAISE_REASON_MAX) return { ok: false, reason: 'long' };
     const src = rollPraiseDay(board, date).board;
     if (src.lastGiven[from] === date) return { ok: false, reason: 'once' };
-    if (src.pairs[pairKey(to, from)]) return { ok: false, reason: 'mutual' };
+    // 같은 날 주고받기만 막아요(받은 다음 날부터는 그 친구에게도 줄 수 있어요).
+    if (src.pairs[pairKey(to, from)] === date) return { ok: false, reason: 'mutual' };
     const received = (src.received[to] || 0) + 1;
     const fanfare = received >= PRAISE_FANFARE_AT && !src.fanfare[to];
     const next = sanitizePraiseBoard(src);
@@ -150,6 +151,6 @@ export function praiseFailMessage(reason) {
     if (reason === 'empty') return '따봉(추천) 사유를 적어 주세요.';
     if (reason === 'long') return `따봉(추천) 사유는 ${PRAISE_REASON_MAX}자까지 적을 수 있습니다.`;
     if (reason === 'once') return '따봉은 하루에 한 번만 줄 수 있습니다.';
-    if (reason === 'mutual') return '서로 따봉은 줄 수 없습니다. 이미 그 친구가 나에게 따봉을 주었습니다.';
+    if (reason === 'mutual') return '오늘 그 친구가 나에게 따봉을 주었어요. 서로 따봉은 내일부터 줄 수 있습니다.';
     return '따봉을 보내지 못했습니다.';
 }

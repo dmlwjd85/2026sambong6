@@ -33696,6 +33696,11 @@ ${subjectLine}
             const lag = window.playerState.isGM ? 15000 : 60000 + Math.floor(Math.random() * 120000);
             await new Promise((ok) => setTimeout(ok, lag));
             if (_oxCheckDone === ymd || _oxCheckBusy) return;
+            // 반 명단을 아직 못 불러왔으면(기본 명단으로 잘못 깎지 않게) 30초 뒤에 다시 봐요.
+            if (!oxCheckRosterReady()) {
+                setTimeout(() => { void maybeRunOxChallengeCheck(); }, 30000);
+                return;
+            }
             _oxCheckBusy = true;
             try {
                 const out = await runOxChallengeCheck(ymd, { by: 'auto' });
@@ -33716,7 +33721,11 @@ ${subjectLine}
             const snap = await getDocs(query(col, where('best', '>', 0), orderBy('best', 'desc'), limit(OX_CHALLENGE_BOARD_MAX)));
             return planOxCheck(snap.docs.map((d) => ({ id: d.id, best: (d.data() || {}).best })), getActiveStudentIds());
         }
+        function oxCheckRosterReady() {
+            return !!(window.classMeta && Array.isArray(window.classMeta.roster) && window.classMeta.roster.length > 0);
+        }
         async function runOxChallengeCheck(ymd, { by = 'auto' } = {}) {
+            if (!oxCheckRosterReady()) throw new Error('반 명단을 아직 불러오지 못했어요. 잠시 뒤에 다시 해 주세요.');
             const lockRef = oxCheckLockRef(ymd);
             const first = await getDoc(lockRef);
             if (first.exists()) return { paid: false, lock: first.data() || null };

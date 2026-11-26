@@ -7163,3 +7163,26 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .oxx-reward-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.85rem; font-weight: 700; color: #e2e8f0; }
         .oxx-reward-input { width: 4.2rem; min-height: 32px; padding: 2px 6px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.5); background: #0f172a; color: #fff; font-weight: 800; text-align: right; }
         .oxx-reward .ox-choice { margin-top: 8px; }
+        /* OX 무제한 하루 정산(선생님) */
+        .oxx-check { margin-top: 10px; border-color: rgba(244, 114, 182, 0.55); }
+        .oxx-check summary { color: #f9a8d4; }
+        .oxx-check-list { margin: 6px 0 0; padding-left: 1.1rem; max-height: 14rem; overflow-y: auto; font-size: 0.82rem; color: #e2e8f0; line-height: 1.5; }
+        /* OX 무제한 하루 정산: 20개 이하 학생 화면의 삐에로 팝업 */
+        .ox-pierrot-overlay { position: fixed; inset: 0; z-index: 830; display: flex; align-items: center; justify-content: center; padding: 1rem;
+            background: radial-gradient(circle at 50% 25%, rgba(251, 191, 36, 0.35), transparent 45%), rgba(15, 23, 42, 0.88); overflow: hidden; }
+        .ox-pierrot-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+        .ox-pierrot-card { position: relative; z-index: 1; width: min(92vw, 30rem); text-align: center; border-radius: 1.75rem; padding: 1.4rem 1.25rem 1.2rem;
+            border: 3px solid #f472b6; background: linear-gradient(160deg, #4c1d95 0%, #1e1b4b 60%, #0f172a 100%);
+            box-shadow: 0 0 60px rgba(244, 114, 182, 0.55); animation: ox-pierrot-pop 0.55s cubic-bezier(.2, 1.5, .4, 1); }
+        .ox-pierrot-face { font-size: clamp(5.5rem, 22vw, 9rem); line-height: 1; display: inline-block; transform-origin: 50% 90%;
+            animation: ox-pierrot-bounce 0.9s ease-in-out infinite, ox-pierrot-tilt 1.8s ease-in-out infinite; filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45)); }
+        .ox-pierrot-horns { margin: 0.2rem 0 0; font-size: clamp(1.6rem, 6vw, 2.2rem); animation: ox-pierrot-toot 0.6s ease-in-out infinite alternate; }
+        .ox-pierrot-title { margin: 0.35rem 0 0.4rem; font-family: 'Jua', sans-serif; font-size: clamp(1.8rem, 7vw, 2.6rem); color: #fde68a; text-shadow: 0 0 18px rgba(244, 114, 182, 0.9); }
+        .ox-pierrot-msg { margin: 0 0 1rem; white-space: pre-wrap; font-size: clamp(1rem, 4vw, 1.25rem); font-weight: 800; line-height: 1.5; color: #fce7f3; }
+        .ox-pierrot-ok { width: 100%; min-height: 52px; border-radius: 999px; border: 0; font-size: 1.2rem; font-weight: 900; color: #fff; cursor: pointer;
+            background: linear-gradient(90deg, #ec4899, #f59e0b); box-shadow: 0 6px 18px rgba(236, 72, 153, 0.45); }
+        @keyframes ox-pierrot-pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(1); } }
+        @keyframes ox-pierrot-bounce { 0%, 100% { translate: 0 0; } 50% { translate: 0 -14px; } }
+        @keyframes ox-pierrot-tilt { 0%, 100% { rotate: -8deg; } 50% { rotate: 8deg; } }
+        @keyframes ox-pierrot-toot { from { transform: scale(1); } to { transform: scale(1.18); } }
+        @media (prefers-reduced-motion: reduce) { .ox-pierrot-face, .ox-pierrot-horns, .ox-pierrot-card { animation: none; } }

@@ -77,6 +77,9 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         recovering: false,
         rewardToday: null, // 오늘 랭킹 보상 지급 기록(선생님 화면)
         rewardOpen: false,
+        checkStatus: null, // OX 무제한 하루 정산 잠금 문서(선생님 화면)
+        checkPreview: null,
+        checkBusy: false,
     };
 
     const myId = () => String(api.studentId() || '');
@@ -251,6 +254,78 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         </details>`;
     }
 
+    /** OX 무제한 하루 정산(우리 반, 그날만): 선생님 화면 상태·미리 보기·지금 정산 */
+    function checkHtml() {
+        const c = api.oxCheck;
+        if (!api.isAdmin() || !c || !c.enabled() || !c.isEventDay()) return '';
+        const name = (id) => esc(api.rosterName ? api.rosterName(id) || id : id);
+        const done = st.checkStatus && Array.isArray(st.checkStatus.results);
+        const sign = (n) => `${num(n) > 0 ? '+' : ''}${num(n)}`;
+        const list = (rows, withAfter) => `<ul class="oxx-check-list">${rows.map((r) => `<li>${name(r.id)} · 최고 ${num(r.best)}개 · ${sign(r.delta)}봉${withAfter ? ` (→ ${num(r.after)}봉)` : ''}</li>`).join('')}</ul>`;
+        let body;
+        if (done) {
+            const r = st.checkStatus.results;
+            body = `<p class="oxc-muted">✅ 정산을 마쳤어요(${st.checkStatus.how === 'manual' ? '선생님이 직접' : '자동'}). ${esc(c.summary(r))}</p>${list(r, true)}`;
+        } else {
+            const pv = st.checkPreview;
+            body = `<p class="oxc-muted">아직 정산하지 않았어요. 시각이 되면 선생님 화면(없으면 학생 화면)이 한 번 해요. 먼저 해도 되고, 한 번 하면 다시 되지 않아요.</p>
+                ${pv ? `<p class="oxc-muted">지금 기록으로 보면: ${esc(c.summary(pv))}</p>${list(pv, false)}` : ''}
+                <div class="ox-row">
+                    <button type="button" class="ox-choice" data-oxx-action="oxcheck-preview"${st.checkBusy ? ' disabled' : ''}>미리 보기</button>
+                    <button type="button" class="ox-choice is-on" data-oxx-action="oxcheck-run"${st.checkBusy ? ' disabled' : ''}>지금 정산하기</button>
+                </div>`;
+        }
+        return `<details class="oxx-reward oxx-check" open data-oxx-check-box>
+            <summary>📋 오늘 무제한 도전 정산 ${done ? '(완료)' : '(대기)'}</summary>
+            <p class="oxx-note">${esc(c.note())}</p>
+            ${body}
+        </details>`;
+    }
+
+    async function loadCheckStatus() {
+        const c = api.oxCheck;
+        if (!api.isAdmin() || !c || !c.enabled() || !c.isEventDay()) return;
+        try { st.checkStatus = await c.status(); } catch (e) { console.warn('ox check status', e); }
+        if (st.active && st.mode === 'home') render();
+    }
+
+    async function previewCheck() {
+        const c = api.oxCheck;
+        if (!c || st.checkBusy) return;
+        st.checkBusy = true;
+        try {
+            st.checkPreview = await c.preview();
+        } catch (e) {
+            console.warn('ox check preview', e);
+            await api.alert(`미리 보기를 못 했어요. ${friendlyOxError(e)}`);
+        } finally {
+            st.checkBusy = false;
+        }
+        if (st.active) render();
+    }
+
+    async function runCheck() {
+        const c = api.oxCheck;
+        if (!c || st.checkBusy) return;
+        let pv = null;
+        try { pv = await c.preview(); } catch (e) { /* 확인창에서 숫자만 빠져요 */ }
+        const ok = await api.confirm(`지금 무제한 도전 정산을 할까요? 한 번만 할 수 있어요.\n${pv ? c.summary(pv) : ''}\n20개 이하 학생 화면에는 삐에로 팝업이 떠요.`);
+        if (!ok) return;
+        st.checkBusy = true;
+        render();
+        try {
+            const out = await c.run();
+            st.checkStatus = out && out.paid ? { results: out.results, how: 'manual' } : (out && out.lock) || await c.status();
+            await api.alert(out && out.paid ? `정산했어요. ${c.summary(out.results)}` : '이미 정산했어요. 다시 하지 않았어요.');
+        } catch (e) {
+            console.warn('ox check run', e);
+            await api.alert(`정산하지 못했어요. ${String((e && e.message) || '')} ${friendlyOxError(e)}`);
+        } finally {
+            st.checkBusy = false;
+        }
+        if (st.active) render();
+    }
+
     async function saveReward() {
         if (!api.isAdmin() || !api.saveRankReward) return;
         const val = (name) => { const el = body.querySelector(`[data-oxx-reward="${name}"]`); return el ? (el.type === 'checkbox' ? el.checked : el.value) : undefined; };
@@ -292,6 +367,7 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
                 ${best !== null && canRecord() ? `<p class="ox-label oxx-best">내 최고 기록 ${best}개</p>` : ''}
                 ${scopeHtml()}
                 ${rewardHtml()}
+                ${checkHtml()}
                 <p class="ox-label">반 랭킹</p>
                 ${rankingHtml()}
             </div>
@@ -447,6 +523,8 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         const action = btn.getAttribute('data-oxx-action');
         if (action === 'start') void start();
         if (action === 'reward-save') void saveReward();
+        if (action === 'oxcheck-preview') void previewCheck();
+        if (action === 'oxcheck-run') void runCheck();
         if (action === 'home') {
             st.mode = 'home';
             render();
@@ -462,6 +540,7 @@ export function createOxChallenge({ body, api, getBank, onExit, setMeta, modeTab
         if (api.isAdmin() && api.rankRewardToday) {
             api.rankRewardToday().then((d) => { st.rewardToday = d; if (st.active && st.mode === 'home') render(); }).catch(() => {});
         }
+        void loadCheckStatus();
         await recoverStaleRuns();
     }
 

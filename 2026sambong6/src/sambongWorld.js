@@ -657,6 +657,22 @@ import {
     oxRankRewardWinners,
     sanitizeOxRankReward,
 } from './lib/oxRankReward.js';
+import {
+    OX_CHECK_EVENT,
+    OX_CHECK_LOCK_COLLECTION,
+    OX_CHECK_NOTICE_KIND,
+    OX_CHECK_SOURCE,
+    applyOxCheckBong,
+    oxCheckDelayMs,
+    oxCheckDueYmd,
+    oxCheckEnabledFor,
+    oxCheckIsEventDay,
+    oxCheckNote,
+    oxCheckPierrotText,
+    oxCheckReasonText,
+    oxCheckSummary,
+    planOxCheck,
+} from './lib/oxChallengeCheck.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
@@ -1417,7 +1433,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v2.07';
+        const APP_VERSION = 'v2.08';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10393,6 +10409,34 @@ ${subjectLine}
                 const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxRankRewards', kstDateStr()));
                 return snap.exists() ? (snap.data() || null) : null;
             },
+            // OX 무제한 하루 정산(우리 반, 2026-11-26): 마스터 화면 상태 확인·미리 보기·수동 실행
+            oxCheck: {
+                enabled: () => oxCheckEnabledFor(appId),
+                note: () => oxCheckNote(),
+                isEventDay: () => oxCheckIsEventDay(classXpNowMs()),
+                status: async () => {
+                    if (!db) return null;
+                    const snap = await getDoc(oxCheckLockRef(OX_CHECK_EVENT.ymd));
+                    return snap.exists() ? (snap.data() || null) : null;
+                },
+                preview: () => previewOxChallengeCheck(),
+                summary: (results) => oxCheckSummary(results),
+                run: async () => {
+                    if (!window.playerState || !window.playerState.isAdmin) throw new Error('마스터만 할 수 있어요');
+                    if (!oxCheckEnabledFor(appId) || !oxCheckIsEventDay(classXpNowMs())) throw new Error('오늘은 정산하는 날이 아니에요');
+                    const authOk = await ensureAnonAuthReady();
+                    if (!authOk) throw new Error('인증에 실패했습니다.');
+                    if (_oxCheckBusy) throw new Error('정산하고 있어요. 잠시 뒤 다시 봐 주세요.');
+                    _oxCheckBusy = true;
+                    try {
+                        const out = await runOxChallengeCheck(OX_CHECK_EVENT.ymd, { by: 'manual' });
+                        _oxCheckDone = OX_CHECK_EVENT.ymd;
+                        return out;
+                    } finally {
+                        _oxCheckBusy = false;
+                    }
+                },
+            },
             setChallengeRankScope: async (rankScope) => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
@@ -16911,7 +16955,8 @@ ${subjectLine}
             else run();
         }
 
-        function playClassBoardFanfare() {
+        /** 팡파레 소리만(따봉 쪽지·삐에로 팝업이 같이 써요). */
+        function playFanfareTones() {
             try {
                 if (audioCtx.state === 'suspended') audioCtx.resume();
                 const now = audioCtx.currentTime;
@@ -16932,6 +16977,10 @@ ${subjectLine}
             } catch (e) {
                 console.warn('playClassBoardFanfare', e);
             }
+        }
+
+        function playClassBoardFanfare() {
+            playFanfareTones();
             let host = document.getElementById('classBoardFanfare');
             if (!host) {
                 host = document.createElement('div');
@@ -23446,6 +23495,8 @@ ${subjectLine}
             armClassXpBellTimer();
             // OX 랭킹 보상: 평일 14:40(마스터 설정)에 상위 5등까지. 마스터 화면이 먼저, 없으면 학생 화면이 조금 뒤에 줘요.
             armOxRankRewardTimer();
+            // OX 무제한 하루 정산(2026-11-26 14:40, 우리 반만): 랭킹 보상과 따로, 잠금 문서로 한 번만.
+            armOxChallengeCheckTimer();
             // 학습 온도계: 15:00 이후 마스터 접속 상태에서 하루 1회 실제 XP 반영 및 초기화
             if (window.playerState && window.playerState.isAdmin && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 checkLearningThermometerAutoSettlement();
@@ -33474,7 +33525,51 @@ ${subjectLine}
             _teacherNoticeShown.add(id);
             try { localStorage.setItem(key, id); } catch (_) { /* 무시 */ }
             const safe = String(n.text).slice(0, 500).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            if (n.kind === OX_CHECK_NOTICE_KIND) {
+                setTimeout(() => { showPierrotFanfarePopup(safe); }, 400);
+                return;
+            }
             setTimeout(() => { void window.customAlert(`📢 선생님 알림\n\n${safe}`); }, 400);
+        }
+
+        /** OX 무제한 정산 20개 이하: 삐에로와 색종이, 팡파레. text는 이미 이스케이프된 글이에요. */
+        function showPierrotFanfarePopup(safeText) {
+            document.querySelectorAll('.ox-pierrot-overlay').forEach((e) => e.remove());
+            const d = document.createElement('div');
+            d.className = 'ox-pierrot-overlay';
+            d.setAttribute('role', 'dialog');
+            d.setAttribute('aria-modal', 'true');
+            d.innerHTML = `
+                <div class="ox-pierrot-confetti" aria-hidden="true"></div>
+                <div class="ox-pierrot-card">
+                    <div class="ox-pierrot-face" aria-hidden="true">🤡</div>
+                    <p class="ox-pierrot-horns" aria-hidden="true">🎺 🎉 🎺</p>
+                    <h3 class="ox-pierrot-title">삐에로 출동!</h3>
+                    <p class="ox-pierrot-msg">${safeText}</p>
+                    <button type="button" class="ox-pierrot-ok">확인</button>
+                </div>`;
+            const rain = d.querySelector('.ox-pierrot-confetti');
+            const colors = ['#f43f5e', '#fbbf24', '#22d3ee', '#a3e635', '#c084fc', '#fb923c', '#f9a8d4'];
+            for (let i = 0; i < 70; i++) {
+                const el = document.createElement('div');
+                el.className = 'lottery-confetti-piece';
+                el.style.left = `${Math.random() * 100}%`;
+                el.style.background = colors[i % colors.length];
+                el.style.animationDuration = `${2 + Math.random() * 2}s`;
+                el.style.animationDelay = `${Math.random() * 0.8}s`;
+                rain.appendChild(el);
+            }
+            sambongModalHost().appendChild(d);
+            playFanfareTones();
+            // 소리가 막혀 있던 기기(아직 화면을 안 눌렀을 때)는 처음 누를 때 한 번 더 울려요.
+            let replayed = false;
+            d.addEventListener('pointerdown', () => {
+                if (replayed) return;
+                replayed = true;
+                try { if (audioCtx.state !== 'running') playFanfareTones(); } catch (_) { /* 무시 */ }
+            });
+            const ok = d.querySelector('.ox-pierrot-ok');
+            if (ok) ok.onclick = () => d.remove();
         }
 
         /* ---------- OX 랭킹 보상 ---------- */
@@ -33563,6 +33658,96 @@ ${subjectLine}
                 });
                 tx.set(payoutRef, { date: ymd, at: Date.now(), by: String(localStorage.getItem('sambong_student_id') || ''), winners: given, prizes: cfg.prizes });
                 return { paid: true, winners: given };
+            });
+        }
+
+        /* ---------- OX 무제한 하루 정산(2026-11-26 14:40) ---------- */
+        // 우리 반(OX_CHECK_EVENT.classIds)에서만 켜져요. 잠금 문서(oxChallengePayouts/{날짜})를 같은 트랜잭션에 써서 한 번만 해요.
+        // 기존 OX 랭킹 보상과는 따로 돌아요(그 기능은 건드리지 않아요).
+        let _oxCheckTimer = 0;
+        let _oxCheckArmed = false;
+        let _oxCheckBusy = false;
+        let _oxCheckDone = '';
+        function oxCheckLockRef(ymd) {
+            return doc(db, 'artifacts', appId, 'public', 'data', OX_CHECK_LOCK_COLLECTION, ymd);
+        }
+        function armOxChallengeCheckTimer() {
+            if (_oxCheckArmed) return;
+            if (!oxCheckEnabledFor(appId)) return;
+            if (!window.playerState || window.playerState.isGuest || typeof db === 'undefined' || !db) return;
+            if (!window.allStudentsData || window.allStudentsData.length === 0) return;
+            if (!oxCheckIsEventDay(classXpNowMs())) return;
+            _oxCheckArmed = true;
+            const wait = oxCheckDelayMs(classXpNowMs());
+            if (wait > 0) {
+                clearTimeout(_oxCheckTimer);
+                _oxCheckTimer = setTimeout(() => { void maybeRunOxChallengeCheck(); }, wait);
+            } else {
+                void maybeRunOxChallengeCheck();
+            }
+        }
+        /** 학생 화면은 마스터 화면에 먼저 맡기고 1~3분 뒤에 봐요(랭킹 보상과 같은 방식). */
+        async function maybeRunOxChallengeCheck() {
+            if (!oxCheckEnabledFor(appId)) return;
+            const ymd = oxCheckDueYmd(classXpNowMs());
+            if (!ymd || _oxCheckDone === ymd || _oxCheckBusy) return;
+            if (!window.playerState || window.playerState.isGuest) return;
+            // 마스터 화면도 랭킹 보상 저장과 겹치지 않게 15초 뒤에 해요.
+            const lag = window.playerState.isGM ? 15000 : 60000 + Math.floor(Math.random() * 120000);
+            await new Promise((ok) => setTimeout(ok, lag));
+            if (_oxCheckDone === ymd || _oxCheckBusy) return;
+            _oxCheckBusy = true;
+            try {
+                const out = await runOxChallengeCheck(ymd, { by: 'auto' });
+                _oxCheckDone = ymd;
+                if (out && out.paid && window.playerState.isAdmin && typeof window.showToast === 'function') {
+                    window.showToast(`📋 OX 무제한 정산을 했어요: ${oxCheckSummary(out.results)}`, 9000);
+                }
+            } catch (e) {
+                console.warn('ox challenge check', e);
+                setTimeout(() => { void maybeRunOxChallengeCheck(); }, 5 * 60000);
+            } finally {
+                _oxCheckBusy = false;
+            }
+        }
+        /** 지금 반 명단과 무제한 기록으로 누가 얼마인지(쓰지 않아요). */
+        async function previewOxChallengeCheck() {
+            const col = collection(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'challengeBoard', 'entries');
+            const snap = await getDocs(query(col, where('best', '>', 0), orderBy('best', 'desc'), limit(OX_CHALLENGE_BOARD_MAX)));
+            return planOxCheck(snap.docs.map((d) => ({ id: d.id, best: (d.data() || {}).best })), getActiveStudentIds());
+        }
+        async function runOxChallengeCheck(ymd, { by = 'auto' } = {}) {
+            const lockRef = oxCheckLockRef(ymd);
+            const first = await getDoc(lockRef);
+            if (first.exists()) return { paid: false, lock: first.data() || null };
+            const plan = await previewOxChallengeCheck();
+            return runTransaction(db, async (tx) => {
+                const again = await tx.get(lockRef);
+                if (again.exists()) return { paid: false, lock: again.data() || null };
+                const refs = plan.map((p) => doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + p.id));
+                const docs = [];
+                for (const ref of refs) docs.push(await tx.get(ref));
+                const at = Date.now();
+                const results = [];
+                plan.forEach((p, i) => {
+                    if (!docs[i].exists()) return;
+                    const data = docs[i].data() || {};
+                    const b = applyOxCheckBong(normalizeBongValue(Number(data.bong) || 0), p.delta);
+                    const patch = {};
+                    if (b.delta !== 0) {
+                        patch.bong = b.after;
+                        const logs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                        logs.push(buildBongChangeLogEntry(oxCheckReasonText(p.best, b.delta), b.before, b.after, { source: OX_CHECK_SOURCE, date: ymd, best: p.best }));
+                        patch.bongChangeLog = logs;
+                    }
+                    if (p.pierrot) {
+                        patch.teacherNotice = { id: `oxcheck_${ymd}_${p.id}`, kind: OX_CHECK_NOTICE_KIND, text: oxCheckPierrotText(p.best, b.delta || p.delta), at };
+                    }
+                    if (Object.keys(patch).length) tx.update(refs[i], patch);
+                    results.push({ id: p.id, best: p.best, tier: p.tier, delta: b.delta, before: b.before, after: b.after });
+                });
+                tx.set(lockRef, { date: ymd, at, by: String(localStorage.getItem('sambong_student_id') || ''), how: by, results });
+                return { paid: true, results };
             });
         }
 

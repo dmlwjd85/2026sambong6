@@ -7186,3 +7186,23 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         @keyframes ox-pierrot-tilt { 0%, 100% { rotate: -8deg; } 50% { rotate: 8deg; } }
         @keyframes ox-pierrot-toot { from { transform: scale(1); } to { transform: scale(1.18); } }
         @media (prefers-reduced-motion: reduce) { .ox-pierrot-face, .ox-pierrot-horns, .ox-pierrot-card { animation: none; } }
+
+/* 은행 사용 기록 */
+.bank-hist-empty { font-size: 0.75rem; color: #94a3b8; }
+.bank-hist-day { border: 1px solid rgba(100, 116, 139, 0.35); border-radius: 0.8rem; overflow: hidden; }
+.bank-hist-date { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0.7rem; background: rgba(15, 23, 42, 0.7); font-size: 0.75rem; font-weight: 800; color: #e2e8f0; }
+.bank-hist-sum b { font-weight: 800; margin-left: 0.4rem; }
+.bank-hist-list { list-style: none; margin: 0; padding: 0; }
+.bank-hist-row { display: grid; grid-template-columns: 2.8rem 2.6rem 1fr auto; grid-template-areas: "time cat reason delta" ". . after after"; gap: 0.05rem 0.4rem; align-items: center; padding: 0.4rem 0.7rem; border-top: 1px solid rgba(51, 65, 85, 0.6); font-size: 0.72rem; }
+.bank-hist-time { grid-area: time; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.bank-hist-cat { grid-area: cat; text-align: center; font-size: 0.62rem; font-weight: 800; border-radius: 999px; padding: 0.05rem 0.2rem; background: #334155; color: #cbd5e1; }
+.bank-hist-cat.is-loan { background: rgba(225, 29, 72, 0.25); color: #fda4af; }
+.bank-hist-cat.is-saving { background: rgba(14, 165, 233, 0.22); color: #7dd3fc; }
+.bank-hist-cat.is-income { background: rgba(16, 185, 129, 0.22); color: #6ee7b7; }
+.bank-hist-cat.is-spending { background: rgba(245, 158, 11, 0.22); color: #fcd34d; }
+.bank-hist-cat.is-transfer { background: rgba(139, 92, 246, 0.25); color: #c4b5fd; }
+.bank-hist-reason { grid-area: reason; color: #f1f5f9; min-width: 0; overflow-wrap: anywhere; }
+.bank-hist-delta { grid-area: delta; font-weight: 900; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bank-hist-after { grid-area: after; text-align: right; font-size: 0.62rem; color: #64748b; font-variant-numeric: tabular-nums; }
+.bank-hist-day .is-in { color: #34d399; }
+.bank-hist-day .is-out { color: #fb7185; }

@@ -875,6 +875,7 @@ import {
     planPasswordChange,
 } from './lib/studentPassword.js';
 import { buildGroupBuyOrder, groupBuyOrderHtml, pendingGroupBuyOrders } from './lib/groupBuyOrder.js';
+import { bankHistoryHtml } from './lib/bankHistory.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -1433,7 +1434,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v2.11';
+        const APP_VERSION = 'v2.12';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -25815,6 +25816,10 @@ ${subjectLine}
             const r = document.getElementById('bankRateDisplay');
             const dailyLine = document.getElementById('bankDailyBonusLine');
             const termList = document.getElementById('bankTermDepositsList');
+            const hist = document.getElementById('bankHistoryList');
+            if (hist && window.playerState) {
+                hist.innerHTML = bankHistoryHtml(window.playerState.bongChangeLog, { fmt: (n) => formatBongAmount(normalizeBongValue(n)) });
+            }
             if (!w || !s || !r) return;
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
             const walletBal = normalizeBongValue(Number(window.playerState.bong) || 0);

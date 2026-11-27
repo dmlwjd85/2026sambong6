@@ -19,6 +19,7 @@ export const HOME_CLASS_DEFAULT_PORTALS = Object.freeze([
     { id: 'englishrpg', name: '영켓몬', url: 'https://joontube82.github.io/English-RPG/', emoji: '🐾', desc: '영어 RPG 세계로 이동', tone: 'red' },
     { id: 'iscream', name: '지식의 샘', url: 'https://www.i-scream.co.kr/', emoji: '📚', desc: '아이스크림 지식 세계로 이동', tone: 'amber' },
     { id: 'picbook', name: '픽북', url: 'https://dmlwjd85.github.io/picbook/', emoji: '📖', desc: 'AI 그림책 세계로 이동', tone: 'fuchsia' },
+    { id: 'chimera', name: '키메라 디펜스', url: 'https://dmlwjd85.github.io/chimera-defense/', emoji: '🐲', desc: '키메라 디펜스 세계로 이동', tone: 'sky' },
 ].map((row) => Object.freeze(row)));
 
 /** 기본 링크를 쓰는 학급인지 — 학급 ID로만 판별합니다(6학년 1반 = sambong-class-2026). */

@@ -102,9 +102,9 @@ describe('6학년 1반(sambong-class-2026)과 신규 학급 구분', () => {
         assert.equal(usesHomeClassDefaultPortals(''), false);
         assert.equal(usesHomeClassDefaultPortals(undefined), false);
     });
-    it('6학년 1반은 저장된 목록이 없으면 기존 기본 링크 5개를 그대로 보여 준다', () => {
+    it('6학년 1반은 저장된 목록이 없으면 기본 링크 6개를 그대로 보여 준다', () => {
         const list = resolveExternalPortals(undefined, { classId: HOME });
-        assert.deepEqual(list.map((r) => r.name), ['삼봉FC', '가나다 눈치게임', '영켓몬', '지식의 샘', '픽북']);
+        assert.deepEqual(list.map((r) => r.name), ['삼봉FC', '가나다 눈치게임', '영켓몬', '지식의 샘', '픽북', '키메라 디펜스']);
         assert.deepEqual(list.map((r) => r.url), HOME_CLASS_DEFAULT_PORTALS.map((r) => r.url));
         assert.equal(list[0].emoji, '⚽');
         assert.equal(list[0].desc, '축구 세계로 이동');
@@ -121,9 +121,9 @@ describe('6학년 1반(sambong-class-2026)과 신규 학급 구분', () => {
     it('6학년 1반에서 처음 + 로 추가하면 기본 링크 뒤에 붙는다', () => {
         const res = appendExternalPortal(undefined, { name: '우리 반 패들렛', url: 'https://padlet.com/x' }, { classId: HOME, nowMs: 1, rand: () => 0.5 });
         assert.equal(res.ok, true);
-        assert.equal(res.list.length, 6);
+        assert.equal(res.list.length, 7);
         assert.equal(res.list[0].name, '삼봉FC');
-        assert.equal(res.list[5].name, '우리 반 패들렛');
+        assert.equal(res.list[6].name, '우리 반 패들렛');
     });
     it('6학년 1반 기본 링크와 같은 주소는 중복으로 막는다', () => {
         const res = appendExternalPortal(undefined, { name: '픽북2', url: 'https://dmlwjd85.github.io/picbook/' }, { classId: HOME });
